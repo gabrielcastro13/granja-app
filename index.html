@@ -8,172 +8,147 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
 :root {
-  --bg: #F5F2EB;
-  --card: #FDFAF4;
-  --green: #2D6A4F;
-  --green-light: #52B788;
-  --green-pale: #D8F3DC;
-  --amber: #E76F51;
-  --amber-pale: #FDE8DC;
-  --blue: #3A7CA5;
-  --blue-pale: #DFF0FA;
-  --purple: #7B5EA7;
-  --purple-pale: #EDE8F5;
-  --text: #1A1A1A;
-  --muted: #6B6B5E;
-  --border: #D9D4C7;
-  --shadow: 0 2px 12px rgba(0,0,0,0.07);
-  --radius: 16px;
-  --font: 'DM Sans', sans-serif;
-  --mono: 'DM Mono', monospace;
+  --bg:#F5F2EB;--card:#FDFAF4;--green:#2D6A4F;--green-light:#52B788;--green-pale:#D8F3DC;
+  --amber:#E76F51;--amber-pale:#FDE8DC;--blue:#3A7CA5;--blue-pale:#DFF0FA;
+  --purple:#7B5EA7;--purple-pale:#EDE8F5;--text:#1A1A1A;--muted:#6B6B5E;
+  --border:#D9D4C7;--shadow:0 2px 12px rgba(0,0,0,0.07);--radius:16px;
+  --font:'DM Sans',sans-serif;--mono:'DM Mono',monospace;
 }
-* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; padding-bottom: 48px; }
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100vh;padding-bottom:48px}
 
-/* HEADER */
-.header { background: var(--green); color: #fff; padding: 20px 20px 36px; position: relative; }
-.header::after { content:''; position:absolute; bottom:-1px; left:0; right:0; height:28px; background:var(--bg); border-radius:50% 50% 0 0 / 28px 28px 0 0; }
-.header-top { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; }
-.header-brand { font-size:11px; letter-spacing:0.12em; text-transform:uppercase; opacity:0.65; font-family:var(--mono); }
-.header-date { font-size:11px; font-family:var(--mono); opacity:0.65; text-align:right; }
-.header h1 { font-size:24px; font-weight:600; letter-spacing:-0.02em; }
-.header-sub { font-size:13px; opacity:0.7; margin-top:3px; }
+.header{background:var(--green);color:#fff;padding:20px 20px 36px;position:relative}
+.header::after{content:'';position:absolute;bottom:-1px;left:0;right:0;height:28px;background:var(--bg);border-radius:50% 50% 0 0/28px 28px 0 0}
+.header-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px}
+.header-brand{font-size:11px;letter-spacing:0.12em;text-transform:uppercase;opacity:0.65;font-family:var(--mono)}
+.header-date{font-size:11px;font-family:var(--mono);opacity:0.65;text-align:right}
+.header h1{font-size:24px;font-weight:600;letter-spacing:-0.02em}
+.header-sub{font-size:13px;opacity:0.7;margin-top:3px}
+.sync-status{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-family:var(--mono);opacity:0.8;margin-top:6px}
+.sync-dot{width:7px;height:7px;border-radius:50%;background:#52B788}
+.sync-dot.offline{background:#E76F51}
+.sync-dot.syncing{background:#FAC775;animation:pulse 1s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
 
-/* CONTAINER */
-.container { padding: 20px 16px 0; max-width: 480px; margin: 0 auto; }
+.container{padding:20px 16px 0;max-width:480px;margin:0 auto}
 
-/* TABS */
-.tab-bar { display:flex; background:var(--border); border-radius:12px; padding:3px; margin-bottom:20px; gap:2px; }
-.tab { flex:1; text-align:center; padding:9px 4px; font-size:13px; font-weight:500; border-radius:10px; cursor:pointer; transition:all 0.15s; color:var(--muted); border:none; background:none; font-family:var(--font); }
-.tab.active { background:var(--card); color:var(--green); box-shadow:var(--shadow); }
-.tab-panel { display:none; }
-.tab-panel.active { display:block; }
+.tab-bar{display:flex;background:var(--border);border-radius:12px;padding:3px;margin-bottom:20px;gap:2px}
+.tab{flex:1;text-align:center;padding:9px 4px;font-size:13px;font-weight:500;border-radius:10px;cursor:pointer;transition:all 0.15s;color:var(--muted);border:none;background:none;font-family:var(--font)}
+.tab.active{background:var(--card);color:var(--green);box-shadow:var(--shadow)}
+.tab-panel{display:none}.tab-panel.active{display:block}
 
-/* SECTION LABEL */
-.section-label { font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:var(--muted); font-family:var(--mono); margin-bottom:8px; }
+.section-label{font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted);font-family:var(--mono);margin-bottom:8px}
 
-/* COLLABORATOR */
-.collab-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:22px; }
-.collab-btn { background:var(--card); border:1.5px solid var(--border); border-radius:12px; padding:10px 4px; text-align:center; font-family:var(--font); font-size:12px; font-weight:500; color:var(--muted); cursor:pointer; transition:all 0.15s; display:flex; flex-direction:column; align-items:center; gap:4px; }
-.collab-btn .avatar { width:32px; height:32px; border-radius:50%; background:var(--border); display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:600; color:var(--muted); transition:all 0.15s; }
-.collab-btn.active { border-color:var(--green); background:var(--green-pale); color:var(--green); }
-.collab-btn.active .avatar { background:var(--green); color:#fff; }
+.collab-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:22px}
+.collab-btn{background:var(--card);border:1.5px solid var(--border);border-radius:12px;padding:10px 4px;text-align:center;font-family:var(--font);font-size:12px;font-weight:500;color:var(--muted);cursor:pointer;transition:all 0.15s;display:flex;flex-direction:column;align-items:center;gap:4px}
+.collab-btn .avatar{width:32px;height:32px;border-radius:50%;background:var(--border);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:var(--muted);transition:all 0.15s}
+.collab-btn.active{border-color:var(--green);background:var(--green-pale);color:var(--green)}
+.collab-btn.active .avatar{background:var(--green);color:#fff}
 
-/* GALPÃO */
-.galpao-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:22px; }
-.galpao-btn { background:var(--card); border:1.5px solid var(--border); border-radius:var(--radius); padding:14px 12px; cursor:pointer; transition:all 0.15s; font-family:var(--font); text-align:left; }
-.galpao-btn .g-name { font-size:15px; font-weight:600; color:var(--text); margin-bottom:4px; }
-.galpao-btn .g-aves-row { display:flex; align-items:center; gap:6px; }
-.galpao-btn .g-aves { font-size:11px; color:var(--muted); font-family:var(--mono); }
-.galpao-btn .g-edit { font-size:11px; color:var(--green); font-family:var(--mono); cursor:pointer; text-decoration:underline; margin-left:auto; }
-.galpao-btn.active { border-color:var(--green); background:var(--green-pale); }
-.galpao-btn.active .g-name { color:var(--green); }
+.galpao-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:22px}
+.galpao-btn{background:var(--card);border:1.5px solid var(--border);border-radius:var(--radius);padding:14px 12px;cursor:pointer;transition:all 0.15s;font-family:var(--font);text-align:left}
+.galpao-btn .g-name{font-size:15px;font-weight:600;color:var(--text);margin-bottom:4px}
+.galpao-btn .g-aves-row{display:flex;align-items:center;gap:6px}
+.galpao-btn .g-aves{font-size:11px;color:var(--muted);font-family:var(--mono)}
+.galpao-btn .g-edit{font-size:11px;color:var(--green);font-family:var(--mono);cursor:pointer;text-decoration:underline;margin-left:auto}
+.galpao-btn.active{border-color:var(--green);background:var(--green-pale)}
+.galpao-btn.active .g-name{color:var(--green)}
 
-/* FORM CARD */
-.form-card { background:var(--card); border-radius:var(--radius); border:1.5px solid var(--border); padding:18px; margin-bottom:14px; box-shadow:var(--shadow); }
-.form-card-title { font-size:14px; font-weight:600; color:var(--text); margin-bottom:14px; display:flex; align-items:center; gap:8px; }
-.dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+.form-card{background:var(--card);border-radius:var(--radius);border:1.5px solid var(--border);padding:18px;margin-bottom:14px;box-shadow:var(--shadow)}
+.form-card-title{font-size:14px;font-weight:600;color:var(--text);margin-bottom:14px;display:flex;align-items:center;gap:8px}
+.dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
 
-/* NUM INPUT */
-.num-input-wrap { display:flex; align-items:center; border:1.5px solid var(--border); border-radius:10px; overflow:hidden; background:var(--bg); width:fit-content; }
-.num-btn { width:38px; height:38px; background:none; border:none; font-size:20px; color:var(--green); cursor:pointer; display:flex; align-items:center; justify-content:center; font-weight:500; transition:background 0.1s; user-select:none; }
-.num-btn:active { background:var(--green-pale); }
-.num-val { width:64px; text-align:center; font-size:17px; font-weight:600; font-family:var(--mono); color:var(--text); border:none; background:none; outline:none; padding:0; }
+.num-input-wrap{display:flex;align-items:center;border:1.5px solid var(--border);border-radius:10px;overflow:hidden;background:var(--bg);width:fit-content}
+.num-btn{width:38px;height:38px;background:none;border:none;font-size:20px;color:var(--green);cursor:pointer;display:flex;align-items:center;justify-content:center;font-weight:500;transition:background 0.1s;user-select:none}
+.num-btn:active{background:var(--green-pale)}
+.num-val{width:64px;text-align:center;font-size:17px;font-weight:600;font-family:var(--mono);color:var(--text);border:none;background:none;outline:none;padding:0}
 
-/* FIELDS */
-.field-group { margin-bottom:12px; }
-.field-group:last-child { margin-bottom:0; }
-.field-label { font-size:11px; color:var(--muted); margin-bottom:5px; font-family:var(--mono); letter-spacing:0.04em; }
-.field-input { width:100%; background:var(--bg); border:1.5px solid var(--border); border-radius:10px; padding:10px 13px; font-size:15px; font-family:var(--mono); color:var(--text); outline:none; transition:border-color 0.15s; -webkit-appearance:none; }
-.field-input:focus { border-color:var(--green); }
-textarea.field-input { resize:none; height:68px; font-size:13px; }
-.field-row { display:flex; gap:10px; }
-.field-row .field-group { flex:1; }
+.field-group{margin-bottom:12px}.field-group:last-child{margin-bottom:0}
+.field-label{font-size:11px;color:var(--muted);margin-bottom:5px;font-family:var(--mono);letter-spacing:0.04em}
+.field-input{width:100%;background:var(--bg);border:1.5px solid var(--border);border-radius:10px;padding:10px 13px;font-size:15px;font-family:var(--mono);color:var(--text);outline:none;transition:border-color 0.15s;-webkit-appearance:none}
+.field-input:focus{border-color:var(--green)}
+textarea.field-input{resize:none;height:68px;font-size:13px}
+.field-row{display:flex;gap:10px}.field-row .field-group{flex:1}
 
-/* COLETA ROW */
-.coleta-row { display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--border); }
-.coleta-row:last-of-type { border-bottom:none; }
-.coleta-label { font-size:13px; color:var(--muted); flex:1; min-width:60px; }
-.coleta-calc { font-size:11px; font-family:var(--mono); color:var(--green); min-width:60px; text-align:right; }
-.add-coleta { width:100%; background:none; border:1.5px dashed var(--border); border-radius:10px; padding:9px; font-size:13px; color:var(--green); font-family:var(--font); font-weight:500; cursor:pointer; margin-top:10px; transition:background 0.15s; }
-.add-coleta:active { background:var(--green-pale); }
+.coleta-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)}
+.coleta-row:last-of-type{border-bottom:none}
+.coleta-label{font-size:13px;color:var(--muted);flex:1;min-width:60px}
+.coleta-calc{font-size:11px;font-family:var(--mono);color:var(--green);min-width:60px;text-align:right}
+.add-coleta{width:100%;background:none;border:1.5px dashed var(--border);border-radius:10px;padding:9px;font-size:13px;color:var(--green);font-family:var(--font);font-weight:500;cursor:pointer;margin-top:10px;transition:background 0.15s}
+.add-coleta:active{background:var(--green-pale)}
 
-/* OVOS SUMMARY */
-.ovos-summary { background:var(--green-pale); border-radius:10px; padding:10px 14px; margin-top:12px; display:flex; justify-content:space-between; align-items:center; }
-.ovos-summary .label { font-size:12px; color:var(--green); font-family:var(--mono); }
-.ovos-summary .value { font-size:18px; font-weight:600; font-family:var(--mono); color:var(--green); }
+.ovos-summary{background:var(--green-pale);border-radius:10px;padding:10px 14px;margin-top:12px;display:flex;justify-content:space-between;align-items:center}
+.ovos-summary .label{font-size:12px;color:var(--green);font-family:var(--mono)}
+.ovos-summary .value{font-size:18px;font-weight:600;font-family:var(--mono);color:var(--green)}
 
-/* SILO ROW */
-.silo-row { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--border); }
-.silo-row:last-of-type { border-bottom:none; }
-.silo-check { width:22px; height:22px; accent-color:var(--green); cursor:pointer; flex-shrink:0; }
-.silo-label { font-size:13px; color:var(--text); flex:1; }
-.silo-kg { width:90px; }
-.silo-kg .field-input { padding:7px 10px; font-size:13px; }
+.silo-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)}
+.silo-row:last-of-type{border-bottom:none}
+.silo-check{width:22px;height:22px;accent-color:var(--green);cursor:pointer;flex-shrink:0}
+.silo-label{font-size:13px;color:var(--text);flex:1}
+.silo-kg{width:90px}.silo-kg .field-input{padding:7px 10px;font-size:13px}
 
-/* TRATO ROW */
-.trato-row { display:flex; align-items:center; gap:12px; padding:8px 0; border-bottom:1px solid var(--border); }
-.trato-row:last-of-type { border-bottom:none; }
-.trato-label { font-size:13px; color:var(--text); flex:1; }
-.toggle-wrap { position:relative; width:44px; height:24px; flex-shrink:0; }
-.toggle-wrap input { opacity:0; width:0; height:0; }
-.toggle-track { position:absolute; inset:0; background:var(--border); border-radius:12px; cursor:pointer; transition:background 0.2s; }
-.toggle-track::after { content:''; position:absolute; top:3px; left:3px; width:18px; height:18px; background:#fff; border-radius:50%; transition:transform 0.2s; box-shadow:0 1px 4px rgba(0,0,0,0.2); }
-.toggle-wrap input:checked + .toggle-track { background:var(--green); }
-.toggle-wrap input:checked + .toggle-track::after { transform:translateX(20px); }
+.trato-row{display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--border)}
+.trato-row:last-of-type{border-bottom:none}
+.trato-label{font-size:13px;color:var(--text);flex:1}
+.toggle-wrap{position:relative;width:44px;height:24px;flex-shrink:0}
+.toggle-wrap input{opacity:0;width:0;height:0}
+.toggle-track{position:absolute;inset:0;background:var(--border);border-radius:12px;cursor:pointer;transition:background 0.2s}
+.toggle-track::after{content:'';position:absolute;top:3px;left:3px;width:18px;height:18px;background:#fff;border-radius:50%;transition:transform 0.2s;box-shadow:0 1px 4px rgba(0,0,0,0.2)}
+.toggle-wrap input:checked+.toggle-track{background:var(--green)}
+.toggle-wrap input:checked+.toggle-track::after{transform:translateX(20px)}
 
-/* SUBMIT */
-.submit-btn { width:100%; background:var(--green); color:#fff; border:none; border-radius:var(--radius); padding:16px; font-size:16px; font-weight:600; font-family:var(--font); cursor:pointer; transition:all 0.15s; margin-top:6px; }
-.submit-btn:active { transform:scale(0.98); background:#255c44; }
+.submit-btn{width:100%;background:var(--green);color:#fff;border:none;border-radius:var(--radius);padding:16px;font-size:16px;font-weight:600;font-family:var(--font);cursor:pointer;transition:all 0.15s;margin-top:6px}
+.submit-btn:active{transform:scale(0.98);background:#255c44}
+.submit-btn:disabled{background:var(--border);color:var(--muted);cursor:not-allowed;transform:none}
 
-/* TOAST */
-.toast { position:fixed; bottom:28px; left:50%; transform:translateX(-50%) translateY(80px); background:var(--green); color:#fff; border-radius:30px; padding:12px 24px; font-size:14px; font-weight:500; box-shadow:0 4px 20px rgba(0,0,0,0.2); transition:transform 0.3s cubic-bezier(.34,1.56,.64,1); white-space:nowrap; z-index:99; }
-.toast.show { transform:translateX(-50%) translateY(0); }
+.toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--green);color:#fff;border-radius:30px;padding:12px 24px;font-size:14px;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,0.2);transition:transform 0.3s cubic-bezier(.34,1.56,.64,1);white-space:nowrap;z-index:99}
+.toast.show{transform:translateX(-50%) translateY(0)}
 
-/* BADGE */
-.badge { display:inline-block; font-size:10px; font-family:var(--mono); border-radius:4px; padding:2px 6px; margin-left:6px; vertical-align:middle; }
-.badge-req { background:var(--amber-pale); color:var(--amber); }
+.badge{display:inline-block;font-size:10px;font-family:var(--mono);border-radius:4px;padding:2px 6px;margin-left:6px;vertical-align:middle}
+.badge-req{background:var(--amber-pale);color:var(--amber)}
 
-/* HISTÓRICO */
-.history-empty { text-align:center; padding:40px 20px; color:var(--muted); font-size:14px; line-height:1.8; }
-.history-item { background:var(--card); border:1.5px solid var(--border); border-radius:12px; padding:14px 16px; margin-bottom:10px; }
-.history-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
-.history-galpao { font-weight:600; font-size:14px; }
-.history-time { font-family:var(--mono); font-size:11px; color:var(--muted); }
-.history-tags { display:flex; flex-wrap:wrap; gap:6px; }
-.tag { font-size:12px; font-family:var(--mono); border-radius:6px; padding:3px 8px; font-weight:500; }
-.tag-ovos { background:var(--green-pale); color:var(--green); }
-.tag-morte { background:var(--amber-pale); color:var(--amber); }
-.tag-racao { background:var(--blue-pale); color:var(--blue); }
-.tag-collab { background:var(--bg); color:var(--muted); border:1px solid var(--border); }
+.history-empty{text-align:center;padding:40px 20px;color:var(--muted);font-size:14px;line-height:1.8}
+.history-item{background:var(--card);border:1.5px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:10px}
+.history-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.history-galpao{font-weight:600;font-size:14px}
+.history-time{font-family:var(--mono);font-size:11px;color:var(--muted)}
+.history-tags{display:flex;flex-wrap:wrap;gap:6px}
+.tag{font-size:12px;font-family:var(--mono);border-radius:6px;padding:3px 8px;font-weight:500}
+.tag-ovos{background:var(--green-pale);color:var(--green)}
+.tag-morte{background:var(--amber-pale);color:var(--amber)}
+.tag-racao{background:var(--blue-pale);color:var(--blue)}
+.tag-collab{background:var(--bg);color:var(--muted);border:1px solid var(--border)}
 
-/* DASHBOARD */
-.dash-card { background:var(--card); border-radius:var(--radius); border:1.5px solid var(--border); padding:18px; margin-bottom:14px; box-shadow:var(--shadow); }
-.dash-card h3 { font-size:13px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:14px; font-family:var(--mono); }
-.kpi-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:14px; }
-.kpi { background:var(--bg); border-radius:10px; padding:12px; }
-.kpi-label { font-size:11px; color:var(--muted); font-family:var(--mono); margin-bottom:4px; }
-.kpi-value { font-size:22px; font-weight:600; font-family:var(--mono); color:var(--text); }
-.kpi-sub { font-size:11px; color:var(--muted); font-family:var(--mono); }
-.postura-bar-wrap { margin-bottom:10px; }
-.postura-bar-label { display:flex; justify-content:space-between; font-size:12px; font-family:var(--mono); margin-bottom:4px; }
-.postura-bar-label .name { color:var(--text); }
-.postura-bar-label .pct { color:var(--green); font-weight:500; }
-.bar-track { background:var(--border); border-radius:6px; height:8px; overflow:hidden; }
-.bar-fill { height:8px; border-radius:6px; background:var(--green-light); transition:width 0.4s; }
+.dash-card{background:var(--card);border-radius:var(--radius);border:1.5px solid var(--border);padding:18px;margin-bottom:14px;box-shadow:var(--shadow)}
+.dash-card h3{font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:14px;font-family:var(--mono)}
+.kpi-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px}
+.kpi{background:var(--bg);border-radius:10px;padding:12px}
+.kpi-label{font-size:11px;color:var(--muted);font-family:var(--mono);margin-bottom:4px}
+.kpi-value{font-size:22px;font-weight:600;font-family:var(--mono);color:var(--text)}
+.kpi-sub{font-size:11px;color:var(--muted);font-family:var(--mono)}
+.postura-bar-wrap{margin-bottom:10px}
+.postura-bar-label{display:flex;justify-content:space-between;font-size:12px;font-family:var(--mono);margin-bottom:4px}
+.bar-track{background:var(--border);border-radius:6px;height:8px;overflow:hidden}
+.bar-fill{height:8px;border-radius:6px;background:var(--green-light);transition:width 0.4s}
 
-/* EDIT MODAL */
-.modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:100; display:flex; align-items:flex-end; justify-content:center; }
-.modal-overlay.hidden { display:none; }
-.modal-sheet { background:var(--card); border-radius:20px 20px 0 0; padding:24px 20px 36px; width:100%; max-width:480px; }
-.modal-sheet h3 { font-size:16px; font-weight:600; margin-bottom:16px; }
-.modal-actions { display:flex; gap:10px; margin-top:16px; }
-.modal-btn { flex:1; padding:12px; border-radius:12px; border:none; font-size:14px; font-weight:600; font-family:var(--font); cursor:pointer; }
-.modal-btn-cancel { background:var(--border); color:var(--muted); }
-.modal-btn-save { background:var(--green); color:#fff; }
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:100;display:flex;align-items:flex-end;justify-content:center}
+.modal-overlay.hidden{display:none}
+.modal-sheet{background:var(--card);border-radius:20px 20px 0 0;padding:24px 20px 36px;width:100%;max-width:480px}
+.modal-sheet h3{font-size:16px;font-weight:600;margin-bottom:16px}
+.modal-actions{display:flex;gap:10px;margin-top:16px}
+.modal-btn{flex:1;padding:12px;border-radius:12px;border:none;font-size:14px;font-weight:600;font-family:var(--font);cursor:pointer}
+.modal-btn-cancel{background:var(--border);color:var(--muted)}
+.modal-btn-save{background:var(--green);color:#fff}
+
+.offline-banner{background:var(--amber-pale);color:var(--amber);font-size:12px;font-family:var(--mono);text-align:center;padding:8px;display:none}
+.offline-banner.show{display:block}
+
+.pending-badge{background:var(--amber-pale);color:var(--amber);font-size:11px;font-family:var(--mono);border-radius:6px;padding:2px 7px;margin-left:6px}
 </style>
 </head>
 <body>
+
+<div class="offline-banner" id="offline-banner">⚠ Sem conexão — registro salvo localmente e enviado quando voltar</div>
 
 <div class="header">
   <div class="header-top">
@@ -182,26 +157,24 @@ textarea.field-input { resize:none; height:68px; font-size:13px; }
   </div>
   <h1 id="header-greeting">Bom dia 👋</h1>
   <div class="header-sub">Selecione o galpão e registre o dia</div>
+  <div class="sync-status"><span class="sync-dot" id="sync-dot"></span><span id="sync-label">conectando...</span></div>
 </div>
 
 <div class="container">
-
   <div class="tab-bar">
     <button class="tab active" onclick="setTab('registrar')">Registrar</button>
     <button class="tab" onclick="setTab('dashboard')">Dashboard</button>
     <button class="tab" onclick="setTab('historico')">Histórico</button>
   </div>
 
-  <!-- ===== TAB REGISTRAR ===== -->
+  <!-- REGISTRAR -->
   <div class="tab-panel active" id="tab-registrar">
-
     <div class="section-label">Quem está registrando?</div>
     <div class="collab-grid" id="collab-grid"></div>
 
     <div class="section-label">Galpão <span class="badge badge-req">obrigatório</span></div>
     <div class="galpao-grid" id="galpao-grid"></div>
 
-    <!-- OVOS -->
     <div class="form-card">
       <div class="form-card-title"><span class="dot" style="background:#52B788"></span>Coleta de ovos</div>
       <div id="coletas-wrap"></div>
@@ -215,7 +188,6 @@ textarea.field-input { resize:none; height:68px; font-size:13px; }
       </div>
     </div>
 
-    <!-- MORTALIDADE -->
     <div class="form-card">
       <div class="form-card-title"><span class="dot" style="background:#E76F51"></span>Mortalidade</div>
       <div class="field-row">
@@ -223,7 +195,7 @@ textarea.field-input { resize:none; height:68px; font-size:13px; }
           <div class="field-label">Mortes hoje</div>
           <div class="num-input-wrap">
             <button class="num-btn" onclick="stepNum('mortes',-1)">−</button>
-            <input class="num-val" id="mortes" type="number" value="0" min="0" oninput="updateMortes()">
+            <input class="num-val" id="mortes" type="number" value="0" min="0" oninput="updateRestantes()">
             <button class="num-btn" onclick="stepNum('mortes',1)">+</button>
           </div>
         </div>
@@ -238,7 +210,6 @@ textarea.field-input { resize:none; height:68px; font-size:13px; }
       </div>
     </div>
 
-    <!-- RAÇÃO -->
     <div class="form-card">
       <div class="form-card-title"><span class="dot" style="background:#3A7CA5"></span>Ração — Distribuição para silos</div>
       <div id="silo-rows"></div>
@@ -250,64 +221,33 @@ textarea.field-input { resize:none; height:68px; font-size:13px; }
       <div id="trato-rows"></div>
     </div>
 
-    <!-- OBS -->
     <div class="form-card">
       <div class="form-card-title"><span class="dot" style="background:#B5838D"></span>Observações gerais</div>
       <textarea class="field-input" id="obs_geral" placeholder="Qualquer ocorrência do dia..."></textarea>
     </div>
 
-    <button class="submit-btn" onclick="salvar()">✓ Salvar registro</button>
+    <button class="submit-btn" id="submit-btn" onclick="salvar()">✓ Salvar registro</button>
   </div>
 
-  <!-- ===== TAB DASHBOARD ===== -->
+  <!-- DASHBOARD -->
   <div class="tab-panel" id="tab-dashboard">
     <div class="kpi-grid">
-      <div class="kpi">
-        <div class="kpi-label">Total aves</div>
-        <div class="kpi-value" id="kpi-total-aves">—</div>
-        <div class="kpi-sub">todos os galpões</div>
-      </div>
-      <div class="kpi">
-        <div class="kpi-label">Ovos hoje</div>
-        <div class="kpi-value" id="kpi-ovos-hoje">—</div>
-        <div class="kpi-sub" id="kpi-ovos-pentes">—</div>
-      </div>
-      <div class="kpi">
-        <div class="kpi-label">Mortes hoje</div>
-        <div class="kpi-value" id="kpi-mortes-hoje">—</div>
-        <div class="kpi-sub">acumulado do dia</div>
-      </div>
-      <div class="kpi">
-        <div class="kpi-label">Postura média</div>
-        <div class="kpi-value" id="kpi-postura-media">—</div>
-        <div class="kpi-sub">todos os galpões</div>
-      </div>
+      <div class="kpi"><div class="kpi-label">Total aves</div><div class="kpi-value" id="kpi-total-aves">—</div><div class="kpi-sub">todos os galpões</div></div>
+      <div class="kpi"><div class="kpi-label">Ovos hoje</div><div class="kpi-value" id="kpi-ovos-hoje">—</div><div class="kpi-sub" id="kpi-ovos-pentes">—</div></div>
+      <div class="kpi"><div class="kpi-label">Mortes hoje</div><div class="kpi-value" id="kpi-mortes-hoje">—</div><div class="kpi-sub">acumulado do dia</div></div>
+      <div class="kpi"><div class="kpi-label">Postura média</div><div class="kpi-value" id="kpi-postura-media">—</div><div class="kpi-sub">todos os galpões</div></div>
     </div>
-
-    <div class="dash-card">
-      <h3>Postura por galpão (hoje)</h3>
-      <div id="postura-bars"></div>
-    </div>
-
-    <div class="dash-card">
-      <h3>Postura % — últimos 7 dias</h3>
-      <canvas id="chart-postura" height="200"></canvas>
-    </div>
-
-    <div class="dash-card">
-      <h3>Galinhas por galpão</h3>
-      <div id="aves-por-galpao"></div>
-    </div>
+    <div class="dash-card"><h3>Postura por galpão (hoje)</h3><div id="postura-bars"></div></div>
+    <div class="dash-card"><h3>Postura % — últimos 7 dias</h3><canvas id="chart-postura" height="200"></canvas></div>
+    <div class="dash-card"><h3>Galinhas por galpão</h3><div id="aves-por-galpao"></div></div>
   </div>
 
-  <!-- ===== TAB HISTÓRICO ===== -->
+  <!-- HISTÓRICO -->
   <div class="tab-panel" id="tab-historico">
     <div id="historico-list"></div>
   </div>
-
 </div>
 
-<!-- MODAL EDITAR GALINHAS -->
 <div class="modal-overlay hidden" id="modal-aves">
   <div class="modal-sheet">
     <h3 id="modal-title">Editar galinhas</h3>
@@ -323,9 +263,45 @@ textarea.field-input { resize:none; height:68px; font-size:13px; }
 <div class="toast" id="toast"></div>
 
 <script>
-// ============================
+// =============================================
+// SUPABASE CONFIG
+// =============================================
+const SUPA_URL = 'https://xxjdjtydpbmtikdaxobv.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh4amRqdHlkcGJtdGlrZGF4b2J2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3OTY4NzMsImV4cCI6MjA5NTM3Mjg3M30.FwchD8BtKBhK3lHs3eHyFIuij4f_nHJtPqwAGnSgS74';
+
+const supa = {
+  async query(method, path, body) {
+    try {
+      const res = await fetch(SUPA_URL + '/rest/v1/' + path, {
+        method,
+        headers: {
+          'apikey': SUPA_KEY,
+          'Authorization': 'Bearer ' + SUPA_KEY,
+          'Content-Type': 'application/json',
+          'Prefer': method === 'POST' ? 'return=representation' : ''
+        },
+        body: body ? JSON.stringify(body) : undefined
+      });
+      if (!res.ok) {
+        const err = await res.text();
+        console.error('Supabase error:', err);
+        return null;
+      }
+      const text = await res.text();
+      return text ? JSON.parse(text) : [];
+    } catch(e) {
+      console.error('Fetch error:', e);
+      return null;
+    }
+  },
+  get: (path) => supa.query('GET', path),
+  post: (path, body) => supa.query('POST', path, body),
+  patch: (path, body) => supa.query('PATCH', path, body),
+};
+
+// =============================================
 // CONFIG
-// ============================
+// =============================================
 const GALPOES_CONFIG = [
   { id:'g1', nome:'Galpão 1',     capacidade:4000 },
   { id:'g2', nome:'Galpão 2',     capacidade:4500 },
@@ -335,23 +311,17 @@ const GALPOES_CONFIG = [
 const COLABORADORES = ['Lena','Lene','Diego','Gil'];
 const PENTE = 30;
 
-// ============================
-// STATE (localStorage)
-// ============================
-function loadState(key, def) {
-  try { return JSON.parse(localStorage.getItem(key)) ?? def; } catch { return def; }
-}
-function saveState(key, val) {
-  localStorage.setItem(key, JSON.stringify(val));
-}
+// =============================================
+// STATE
+// =============================================
+function loadLocal(key, def) { try { return JSON.parse(localStorage.getItem(key)) ?? def; } catch { return def; } }
+function saveLocal(key, val) { localStorage.setItem(key, JSON.stringify(val)); }
 
-// Quantidade real de galinhas por galpão (editável)
-let avesReais = loadState('granja_aves', {
-  g1: 4000, g2: 4500, g3: 4000, pb: 5000
-});
-let history = loadState('granja_history', []);
+let avesReais = loadLocal('granja_aves', { g1:4000, g2:4500, g3:4000, pb:5000 });
+let historyCache = loadLocal('granja_history_cache', []);
+let pendingQueue = loadLocal('granja_pending', []);
+let isOnline = navigator.onLine;
 
-// Session state
 let selectedCollab = null;
 let selectedGalpao = null;
 let coletas = [];
@@ -359,14 +329,82 @@ let coletaCount = 0;
 let editingGalpaoId = null;
 let chartInstance = null;
 
-// ============================
+// =============================================
+// CONNECTIVITY
+// =============================================
+function setSyncStatus(state) {
+  const dot = document.getElementById('sync-dot');
+  const label = document.getElementById('sync-label');
+  const banner = document.getElementById('offline-banner');
+  if (state === 'online') {
+    dot.className = 'sync-dot';
+    label.textContent = 'sincronizado';
+    banner.classList.remove('show');
+  } else if (state === 'offline') {
+    dot.className = 'sync-dot offline';
+    label.textContent = 'sem conexão';
+    banner.classList.add('show');
+  } else if (state === 'syncing') {
+    dot.className = 'sync-dot syncing';
+    label.textContent = 'sincronizando...';
+  }
+}
+
+window.addEventListener('online', () => { isOnline = true; setSyncStatus('syncing'); flushPending(); });
+window.addEventListener('offline', () => { isOnline = false; setSyncStatus('offline'); });
+
+async function flushPending() {
+  if (!pendingQueue.length) { setSyncStatus('online'); return; }
+  const toFlush = [...pendingQueue];
+  let success = 0;
+  for (const record of toFlush) {
+    const res = await supa.post('registros', record);
+    if (res !== null) {
+      pendingQueue = pendingQueue.filter(p => p.id !== record.id);
+      success++;
+    }
+  }
+  saveLocal('granja_pending', pendingQueue);
+  if (pendingQueue.length === 0) {
+    setSyncStatus('online');
+    if (success > 0) showToast(`✓ ${success} registro(s) sincronizado(s)`);
+  } else {
+    setSyncStatus('offline');
+  }
+}
+
+// =============================================
+// SETUP TABLES (cria tabelas via SQL se não existirem)
+// =============================================
+async function setupTables() {
+  // Tenta buscar da tabela — se der erro 404/42P01, a tabela não existe
+  const test = await supa.get('registros?limit=1');
+  if (test === null) {
+    // Tabela não existe — mostra instrução
+    console.warn('Tabela "registros" não encontrada. Crie via SQL Editor no Supabase.');
+    setSyncStatus('offline');
+    showToast('⚠ Configure o banco — veja instruções', true);
+    return false;
+  }
+  // Carrega aves reais do banco
+  const avesDb = await supa.get('galpoes?select=*');
+  if (avesDb && avesDb.length > 0) {
+    avesDb.forEach(g => { avesReais[g.galpao_id] = g.aves_atuais; });
+    saveLocal('granja_aves', avesReais);
+    buildGalpoes();
+  }
+  setSyncStatus('online');
+  return true;
+}
+
+// =============================================
 // INIT
-// ============================
-function init() {
+// =============================================
+async function init() {
   const now = new Date();
   const h = now.getHours();
-  const greet = h < 12 ? 'Bom dia 👋' : h < 18 ? 'Boa tarde 👋' : 'Boa noite 👋';
-  document.getElementById('header-greeting').textContent = greet;
+  document.getElementById('header-greeting').textContent =
+    h < 12 ? 'Bom dia 👋' : h < 18 ? 'Boa tarde 👋' : 'Boa noite 👋';
   document.getElementById('hdate').textContent =
     now.toLocaleDateString('pt-BR', { weekday:'short', day:'2-digit', month:'short' });
 
@@ -375,10 +413,35 @@ function init() {
   buildSilos();
   buildTratos();
   addColeta();
+
+  if (!isOnline) {
+    setSyncStatus('offline');
+  } else {
+    setSyncStatus('syncing');
+    await setupTables();
+    await flushPending();
+    await loadHistory();
+  }
+
+  // Sempre atualiza a UI com o que foi carregado (cache local ou banco)
   renderHistory();
   renderDashboard();
+
+  // Se online, recarrega aves reais do banco e atualiza UI
+  if (isOnline) {
+    const avesDb = await supa.get('galpoes?select=*');
+    if (avesDb && avesDb.length > 0) {
+      avesDb.forEach(g => { avesReais[g.galpao_id] = g.aves_atuais; });
+      saveLocal('granja_aves', avesReais);
+      buildGalpoes();
+      renderDashboard();
+    }
+  }
 }
 
+// =============================================
+// BUILD UI
+// =============================================
 function buildCollabs() {
   const grid = document.getElementById('collab-grid');
   COLABORADORES.forEach(name => {
@@ -426,33 +489,29 @@ function buildSilos() {
     row.innerHTML = `
       <input type="checkbox" class="silo-check" id="silo_chk_${g.id}">
       <label class="silo-label" for="silo_chk_${g.id}">${g.nome}</label>
-      <div class="silo-kg">
-        <input class="field-input" type="number" id="silo_kg_${g.id}" placeholder="kg" min="0" step="0.5">
-      </div>`;
+      <div class="silo-kg"><input class="field-input" type="number" id="silo_kg_${g.id}" placeholder="kg" min="0" step="0.5"></div>`;
     wrap.appendChild(row);
   });
 }
 
 function buildTratos() {
   const wrap = document.getElementById('trato-rows');
-  const tratos = ['1º trato (manhã)','2º trato (tarde)'];
-  tratos.forEach((label, i) => {
-    const id = 'trato_' + i;
+  ['1º trato (manhã)','2º trato (tarde)'].forEach((label, i) => {
     const row = document.createElement('div');
     row.className = 'trato-row';
     row.innerHTML = `
       <span class="trato-label">${label}</span>
       <label class="toggle-wrap">
-        <input type="checkbox" id="${id}">
+        <input type="checkbox" id="trato_${i}">
         <span class="toggle-track"></span>
       </label>`;
     wrap.appendChild(row);
   });
 }
 
-// ============================
+// =============================================
 // COLETAS
-// ============================
+// =============================================
 function addColeta() {
   coletaCount++;
   const id = 'col_' + coletaCount;
@@ -461,7 +520,6 @@ function addColeta() {
   const wrap = document.getElementById('coletas-wrap');
   const row = document.createElement('div');
   row.className = 'coleta-row';
-  row.id = 'row_' + id;
   row.innerHTML = `
     <div class="coleta-label">Coleta ${coletaCount}<br><span style="font-size:10px;font-family:var(--mono);color:var(--muted)">${t}</span></div>
     <div class="num-input-wrap">
@@ -481,15 +539,15 @@ function stepColeta(id, delta) {
 }
 
 function updateOvosSummary() {
-  let totalPentes = 0;
+  let total = 0;
   coletas.forEach(c => {
-    const v = parseInt(document.getElementById(c.id)?.value || 0);
-    totalPentes += v;
-    const calc = document.getElementById('calc_' + c.id);
-    if (calc) calc.textContent = `= ${(v * PENTE).toLocaleString('pt-BR')} ovos`;
+    const v = parseInt(document.getElementById(c.id)?.value||0);
+    total += v;
+    const calc = document.getElementById('calc_'+c.id);
+    if (calc) calc.textContent = `= ${(v*PENTE).toLocaleString('pt-BR')} ovos`;
   });
-  document.getElementById('total-pentes').textContent = totalPentes.toLocaleString('pt-BR') + ' pentes';
-  document.getElementById('total-ovos-calc').textContent = '= ' + (totalPentes * PENTE).toLocaleString('pt-BR') + ' ovos';
+  document.getElementById('total-pentes').textContent = total.toLocaleString('pt-BR') + ' pentes';
+  document.getElementById('total-ovos-calc').textContent = '= ' + (total*PENTE).toLocaleString('pt-BR') + ' ovos';
 }
 
 function stepNum(id, delta) {
@@ -498,18 +556,16 @@ function stepNum(id, delta) {
   if (id === 'mortes') updateRestantes();
 }
 
-function updateMortes() { updateRestantes(); }
-
 function updateRestantes() {
   if (!selectedGalpao) { document.getElementById('restantes-display').textContent = '—'; return; }
   const aves = avesReais[selectedGalpao] ?? 0;
-  const mortes = parseInt(document.getElementById('mortes').value || 0);
-  document.getElementById('restantes-display').textContent = (aves - mortes).toLocaleString('pt-BR');
+  const mortes = parseInt(document.getElementById('mortes').value||0);
+  document.getElementById('restantes-display').textContent = (aves-mortes).toLocaleString('pt-BR');
 }
 
-// ============================
-// MODAL EDITAR GALINHAS
-// ============================
+// =============================================
+// MODAL AVES
+// =============================================
 function openModal(galpaoId, e) {
   e.stopPropagation();
   editingGalpaoId = galpaoId;
@@ -518,30 +574,37 @@ function openModal(galpaoId, e) {
   document.getElementById('modal-input').value = avesReais[galpaoId] ?? g.capacidade;
   document.getElementById('modal-aves').classList.remove('hidden');
 }
-function closeModal() {
-  document.getElementById('modal-aves').classList.add('hidden');
-  editingGalpaoId = null;
-}
-function saveAves() {
-  const val = parseInt(document.getElementById('modal-input').value || 0);
-  if (editingGalpaoId) {
-    avesReais[editingGalpaoId] = val;
-    saveState('granja_aves', avesReais);
-    buildGalpoes();
-    updateRestantes();
-    showToast('✓ Quantidade atualizada');
+function closeModal() { document.getElementById('modal-aves').classList.add('hidden'); editingGalpaoId = null; }
+async function saveAves() {
+  const val = parseInt(document.getElementById('modal-input').value||0);
+  if (!editingGalpaoId) return;
+  avesReais[editingGalpaoId] = val;
+  saveLocal('granja_aves', avesReais);
+  buildGalpoes();
+  updateRestantes();
+  // Salvar no banco
+  if (isOnline) {
+    const existing = await supa.get(`galpoes?galpao_id=eq.${editingGalpaoId}`);
+    if (existing && existing.length > 0) {
+      await supa.patch(`galpoes?galpao_id=eq.${editingGalpaoId}`, { aves_atuais: val });
+    } else {
+      await supa.post('galpoes', { galpao_id: editingGalpaoId, aves_atuais: val });
+    }
   }
+  showToast('✓ Quantidade atualizada');
   closeModal();
 }
-document.getElementById('modal-aves').onclick = function(e) {
-  if (e.target === this) closeModal();
-};
+document.getElementById('modal-aves').onclick = function(e) { if (e.target === this) closeModal(); };
 
-// ============================
-// SALVAR
-// ============================
-function salvar() {
+// =============================================
+// SALVAR REGISTRO
+// =============================================
+async function salvar() {
   if (!selectedGalpao) { showToast('⚠ Selecione o galpão', true); return; }
+
+  const btn = document.getElementById('submit-btn');
+  btn.disabled = true;
+  btn.textContent = 'Salvando...';
 
   const totalPentes = coletas.reduce((s,c) => s + parseInt(document.getElementById(c.id)?.value||0), 0);
   const totalOvos = totalPentes * PENTE;
@@ -555,60 +618,81 @@ function salvar() {
   const aves = avesReais[selectedGalpao] ?? 0;
   const mortes = parseInt(document.getElementById('mortes').value||0);
   const avesRestantes = aves - mortes;
-  const taxaPostura = aves > 0 ? ((totalOvos / aves) * 100).toFixed(1) : 0;
-  const causa = document.getElementById('causa').value;
-  const obs = document.getElementById('obs_geral').value;
-  const now = new Date();
+  const taxaPostura = aves > 0 ? parseFloat((totalOvos/aves*100).toFixed(1)) : 0;
 
-  // silos
   const silos = GALPOES_CONFIG.map(g => ({
     galpao_id: g.id,
     galpao_nome: g.nome,
-    recebeu: document.getElementById('silo_chk_' + g.id)?.checked || false,
-    kg: parseFloat(document.getElementById('silo_kg_' + g.id)?.value || 0),
+    recebeu: document.getElementById('silo_chk_'+g.id)?.checked||false,
+    kg: parseFloat(document.getElementById('silo_kg_'+g.id)?.value||0),
   })).filter(s => s.recebeu || s.kg > 0);
 
-  // tratos
   const tratos = [
-    { label: '1º trato (manhã)', feito: document.getElementById('trato_0')?.checked || false },
-    { label: '2º trato (tarde)', feito: document.getElementById('trato_1')?.checked || false },
+    { label:'1º trato (manhã)', feito: document.getElementById('trato_0')?.checked||false },
+    { label:'2º trato (tarde)', feito: document.getElementById('trato_1')?.checked||false },
   ];
 
+  const now = new Date();
   const record = {
     id: Date.now(),
-    timestamp: now.toISOString(),
-    data: now.toLocaleDateString('pt-BR'),
-    horario: now.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' }),
+    created_at: now.toISOString(),
+    data_registro: now.toLocaleDateString('pt-BR'),
+    horario: now.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}),
     colaborador: selectedCollab || 'Não informado',
     galpao_id: selectedGalpao,
     galpao_nome: galpao.nome,
     aves_no_dia: aves,
     mortes,
     aves_restantes: avesRestantes,
-    causa,
-    coletas: coletasData,
+    causa_morte: document.getElementById('causa').value,
+    coletas: JSON.stringify(coletasData),
     total_pentes: totalPentes,
     total_ovos: totalOvos,
-    taxa_postura: parseFloat(taxaPostura),
-    silos,
-    tratos,
-    obs,
+    taxa_postura: taxaPostura,
+    silos: JSON.stringify(silos),
+    tratos: JSON.stringify(tratos),
+    obs: document.getElementById('obs_geral').value,
   };
 
-  // Atualizar aves reais com subtração de mortes
+  // Atualiza aves localmente
   if (mortes > 0) {
     avesReais[selectedGalpao] = avesRestantes;
-    saveState('granja_aves', avesReais);
+    saveLocal('granja_aves', avesReais);
+    if (isOnline) {
+      const existing = await supa.get(`galpoes?galpao_id=eq.${selectedGalpao}`);
+      if (existing && existing.length > 0) {
+        await supa.patch(`galpoes?galpao_id=eq.${selectedGalpao}`, { aves_atuais: avesRestantes });
+      } else {
+        await supa.post('galpoes', { galpao_id: selectedGalpao, aves_atuais: avesRestantes });
+      }
+    }
     buildGalpoes();
   }
 
-  history.unshift(record);
-  saveState('granja_history', history);
+  // Salva no banco ou na fila offline
+  let saved = false;
+  if (isOnline) {
+    const res = await supa.post('registros', record);
+    saved = res !== null;
+  }
+  if (!saved) {
+    pendingQueue.push(record);
+    saveLocal('granja_pending', pendingQueue);
+    setSyncStatus('offline');
+  }
 
-  showToast('✓ Registro salvo!');
+  // Cache local sempre
+  historyCache.unshift(record);
+  if (historyCache.length > 100) historyCache = historyCache.slice(0, 100);
+  saveLocal('granja_history_cache', historyCache);
+
+  showToast(saved ? '✓ Registro salvo!' : '✓ Salvo — será sincronizado');
   resetForm();
   renderDashboard();
   renderHistory();
+
+  btn.disabled = false;
+  btn.textContent = '✓ Salvar registro';
 }
 
 function resetForm() {
@@ -616,7 +700,6 @@ function resetForm() {
   document.querySelectorAll('.galpao-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('mortes').value = 0;
   document.getElementById('restantes-display').textContent = '—';
-  document.getElementById('racao_kg') && (document.getElementById('racao_kg').value = '');
   document.getElementById('causa').value = '';
   document.getElementById('obs_geral').value = '';
   document.getElementById('coletas-wrap').innerHTML = '';
@@ -624,172 +707,162 @@ function resetForm() {
   addColeta();
   updateOvosSummary();
   GALPOES_CONFIG.forEach(g => {
-    const chk = document.getElementById('silo_chk_' + g.id);
-    const kg = document.getElementById('silo_kg_' + g.id);
+    const chk = document.getElementById('silo_chk_'+g.id);
+    const kg = document.getElementById('silo_kg_'+g.id);
     if (chk) chk.checked = false;
     if (kg) kg.value = '';
   });
-  document.getElementById('trato_0') && (document.getElementById('trato_0').checked = false);
-  document.getElementById('trato_1') && (document.getElementById('trato_1').checked = false);
+  if (document.getElementById('trato_0')) document.getElementById('trato_0').checked = false;
+  if (document.getElementById('trato_1')) document.getElementById('trato_1').checked = false;
 }
 
-// ============================
+// =============================================
+// CARREGAR HISTÓRICO DO BANCO
+// =============================================
+async function loadHistory() {
+  const data = await supa.get('registros?order=created_at.desc&limit=100');
+  if (data !== null) {
+    historyCache = data;
+    saveLocal('granja_history_cache', historyCache);
+    renderHistory();
+    renderDashboard();
+  }
+}
+
+// =============================================
 // DASHBOARD
-// ============================
+// =============================================
 function renderDashboard() {
   const today = new Date().toLocaleDateString('pt-BR');
-  const todayRecords = history.filter(r => r.data === today);
+  const todayRecs = historyCache.filter(r => r.data_registro === today);
 
-  // KPIs
   const totalAves = Object.values(avesReais).reduce((a,b) => a+b, 0);
   document.getElementById('kpi-total-aves').textContent = totalAves.toLocaleString('pt-BR');
 
-  const ovosHoje = todayRecords.reduce((s,r) => s + r.total_ovos, 0);
-  const pentesHoje = todayRecords.reduce((s,r) => s + r.total_pentes, 0);
+  const ovosHoje = todayRecs.reduce((s,r) => s + (r.total_ovos||0), 0);
+  const pentesHoje = todayRecs.reduce((s,r) => s + (r.total_pentes||0), 0);
   document.getElementById('kpi-ovos-hoje').textContent = ovosHoje.toLocaleString('pt-BR');
   document.getElementById('kpi-ovos-pentes').textContent = pentesHoje + ' pentes';
 
-  const mortesHoje = todayRecords.reduce((s,r) => s + r.mortes, 0);
+  const mortesHoje = todayRecs.reduce((s,r) => s + (r.mortes||0), 0);
   document.getElementById('kpi-mortes-hoje').textContent = mortesHoje;
 
-  const posturaMedia = totalAves > 0 ? ((ovosHoje / totalAves) * 100).toFixed(1) : 0;
+  const posturaMedia = totalAves > 0 ? ((ovosHoje/totalAves)*100).toFixed(1) : 0;
   document.getElementById('kpi-postura-media').textContent = posturaMedia + '%';
 
-  // Barras de postura por galpão
   const barsWrap = document.getElementById('postura-bars');
   barsWrap.innerHTML = '';
   GALPOES_CONFIG.forEach(g => {
-    const recs = todayRecords.filter(r => r.galpao_id === g.id);
-    const ovos = recs.reduce((s,r) => s + r.total_ovos, 0);
-    const aves = avesReais[g.id] || 1;
-    const pct = Math.min(100, (ovos / aves * 100)).toFixed(1);
+    const recs = todayRecs.filter(r => r.galpao_id === g.id);
+    const ovos = recs.reduce((s,r) => s+(r.total_ovos||0), 0);
+    const aves = avesReais[g.id]||1;
+    const pct = Math.min(100,(ovos/aves*100)).toFixed(1);
     barsWrap.innerHTML += `
       <div class="postura-bar-wrap">
-        <div class="postura-bar-label">
-          <span class="name">${g.nome}</span>
-          <span class="pct">${pct}%</span>
-        </div>
+        <div class="postura-bar-label"><span style="color:var(--text)">${g.nome}</span><span style="color:var(--green);font-weight:500">${pct}%</span></div>
         <div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>
       </div>`;
   });
 
-  // Aves por galpão
   const avesWrap = document.getElementById('aves-por-galpao');
   avesWrap.innerHTML = '';
   GALPOES_CONFIG.forEach(g => {
-    const aves = avesReais[g.id] ?? g.capacidade;
+    const aves = avesReais[g.id]??g.capacidade;
     avesWrap.innerHTML += `
       <div class="postura-bar-wrap">
-        <div class="postura-bar-label">
-          <span class="name">${g.nome}</span>
-          <span class="pct" style="color:var(--text)">${aves.toLocaleString('pt-BR')}</span>
-        </div>
+        <div class="postura-bar-label"><span style="color:var(--text)">${g.nome}</span><span style="color:var(--text)">${aves.toLocaleString('pt-BR')}</span></div>
         <div class="bar-track"><div class="bar-fill" style="width:${(aves/5000*100).toFixed(0)}%;background:var(--blue)"></div></div>
       </div>`;
   });
 
-  // Gráfico 7 dias
   renderChart();
 }
 
 function renderChart() {
   const labels = [];
-  const datasets = GALPOES_CONFIG.map(g => ({ label: g.nome, data: [], gid: g.id }));
-
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date();
-    d.setDate(d.getDate() - i);
+  const datasets = GALPOES_CONFIG.map(g => ({ label:g.nome, data:[], gid:g.id }));
+  for (let i=6;i>=0;i--) {
+    const d = new Date(); d.setDate(d.getDate()-i);
     const dStr = d.toLocaleDateString('pt-BR');
     labels.push(dStr.slice(0,5));
-    GALPOES_CONFIG.forEach((g, gi) => {
-      const recs = history.filter(r => r.data === dStr && r.galpao_id === g.id);
-      const ovos = recs.reduce((s,r) => s + r.total_ovos, 0);
-      const aves = avesReais[g.id] || 1;
-      datasets[gi].data.push(parseFloat((ovos / aves * 100).toFixed(1)));
+    GALPOES_CONFIG.forEach((g,gi) => {
+      const recs = historyCache.filter(r => r.data_registro === dStr && r.galpao_id === g.id);
+      const ovos = recs.reduce((s,r) => s+(r.total_ovos||0), 0);
+      const aves = avesReais[g.id]||1;
+      datasets[gi].data.push(parseFloat((ovos/aves*100).toFixed(1)));
     });
   }
-
   const colors = ['#52B788','#3A7CA5','#E76F51','#7B5EA7'];
   const ctx = document.getElementById('chart-postura').getContext('2d');
   if (chartInstance) chartInstance.destroy();
   chartInstance = new Chart(ctx, {
-    type: 'line',
-    data: {
+    type:'line',
+    data:{
       labels,
-      datasets: datasets.map((ds, i) => ({
-        label: ds.label,
-        data: ds.data,
-        borderColor: colors[i],
-        backgroundColor: colors[i] + '22',
-        borderWidth: 2,
-        pointRadius: 3,
-        tension: 0.3,
-        fill: false,
+      datasets: datasets.map((ds,i) => ({
+        label:ds.label, data:ds.data,
+        borderColor:colors[i], backgroundColor:colors[i]+'22',
+        borderWidth:2, pointRadius:3, tension:0.3, fill:false
       }))
     },
-    options: {
-      responsive: true,
-      plugins: {
-        legend: { position:'bottom', labels:{ font:{ size:11 }, boxWidth:12 } },
-      },
-      scales: {
-        y: {
-          min: 0, max: 100,
-          ticks: { callback: v => v + '%', font:{ size:11 } },
-          grid: { color:'rgba(0,0,0,0.06)' }
-        },
-        x: { ticks: { font:{ size:10 } }, grid:{ display:false } }
+    options:{
+      responsive:true,
+      plugins:{ legend:{ position:'bottom', labels:{ font:{size:11}, boxWidth:12 } } },
+      scales:{
+        y:{ min:0, max:100, ticks:{ callback:v=>v+'%', font:{size:11} }, grid:{color:'rgba(0,0,0,0.06)'} },
+        x:{ ticks:{ font:{size:10} }, grid:{ display:false } }
       }
     }
   });
 }
 
-// ============================
+// =============================================
 // HISTÓRICO
-// ============================
+// =============================================
 function renderHistory() {
   const list = document.getElementById('historico-list');
-  if (history.length === 0) {
+  const pending = pendingQueue.length;
+  const combined = [...historyCache];
+  if (!combined.length && !pending) {
     list.innerHTML = '<div class="history-empty">Nenhum registro ainda.<br>Comece pela aba "Registrar".</div>';
     return;
   }
-  list.innerHTML = history.slice(0, 40).map(r => `
+  const pendingHtml = pending ? `<div style="text-align:center;padding:8px 0 12px;font-size:12px;color:var(--amber);font-family:var(--mono)">⏳ ${pending} registro(s) aguardando sincronização</div>` : '';
+  list.innerHTML = pendingHtml + combined.slice(0,50).map(r => {
+    const silos = typeof r.silos === 'string' ? JSON.parse(r.silos||'[]') : (r.silos||[]);
+    return `
     <div class="history-item">
       <div class="history-header">
         <div class="history-galpao">${r.galpao_nome}</div>
-        <div class="history-time">${r.data} ${r.horario}</div>
+        <div class="history-time">${r.data_registro} ${r.horario}</div>
       </div>
       <div class="history-tags">
         <span class="tag tag-ovos">🥚 ${r.total_pentes} pentes (${r.taxa_postura}%)</span>
-        ${r.mortes > 0 ? `<span class="tag tag-morte">☠ ${r.mortes} mortes</span>` : ''}
-        ${r.silos && r.silos.length > 0 ? `<span class="tag tag-racao">🌾 silo: ${r.silos.map(s=>s.galpao_nome.split(' ')[0]).join(', ')}</span>` : ''}
+        ${r.mortes>0?`<span class="tag tag-morte">☠ ${r.mortes} mortes</span>`:''}
+        ${silos.length>0?`<span class="tag tag-racao">🌾 silo: ${silos.map(s=>s.galpao_nome.split(' ')[0]).join(', ')}</span>`:''}
         <span class="tag tag-collab">👤 ${r.colaborador}</span>
       </div>
-    </div>
-  `).join('');
+    </div>`}).join('');
 }
 
-// ============================
-// TABS
-// ============================
+// =============================================
+// TABS / TOAST
+// =============================================
 function setTab(tab) {
   const tabs = ['registrar','dashboard','historico'];
-  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', tabs[i] === tab));
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', tabs[i]===tab));
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-  document.getElementById('tab-' + tab).classList.add('active');
-  if (tab === 'dashboard') renderDashboard();
-  if (tab === 'historico') renderHistory();
+  document.getElementById('tab-'+tab).classList.add('active');
+  if (tab==='dashboard') renderDashboard();
+  if (tab==='historico') renderHistory();
 }
 
-// ============================
-// TOAST
-// ============================
 function showToast(msg, warn=false) {
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.style.background = warn ? '#E76F51' : '#2D6A4F';
   t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2500);
+  setTimeout(() => t.classList.remove('show'), 2800);
 }
 
 init();
