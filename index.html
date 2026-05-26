@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Granja — Registro Diário</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg: #F5F2EB;
+  --card: #FDFAF4;
+  --green: #2D6A4F;
+  --green-light: #52B788;
+  --green-pale: #D8F3DC;
+  --amber: #E76F51;
+  --amber-pale: #FDE8DC;
+  --blue: #3A7CA5;
+  --blue-pale: #DFF0FA;
+  --purple: #7B5EA7;
+  --purple-pale: #EDE8F5;
+  --text: #1A1A1A;
+  --muted: #6B6B5E;
+  --border: #D9D4C7;
+  --shadow: 0 2px 12px rgba(0,0,0,0.07);
+  --radius: 16px;
+  --font: 'DM Sans', sans-serif;
+  --mono: 'DM Mono', monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+body { font-family: var(--font); background: var(--bg); color: var(--text); min-height: 100vh; padding-bottom: 48px; }
+
+/* HEADER */
+.header { background: var(--green); color: #fff; padding: 20px 20px 36px; position: relative; }
+.header::after { content:''; position:absolute; bottom:-1px; left:0; right:0; height:28px; background:var(--bg); border-radius:50% 50% 0 0 / 28px 28px 0 0; }
+.header-top { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; }
+.header-brand { font-size:11px; letter-spacing:0.12em; text-transform:uppercase; opacity:0.65; font-family:var(--mono); }
+.header-date { font-size:11px; font-family:var(--mono); opacity:0.65; text-align:right; }
+.header h1 { font-size:24px; font-weight:600; letter-spacing:-0.02em; }
+.header-sub { font-size:13px; opacity:0.7; margin-top:3px; }
+
+/* CONTAINER */
+.container { padding: 20px 16px 0; max-width: 480px; margin: 0 auto; }
+
+/* TABS */
+.tab-bar { display:flex; background:var(--border); border-radius:12px; padding:3px; margin-bottom:20px; gap:2px; }
+.tab { flex:1; text-align:center; padding:9px 4px; font-size:13px; font-weight:500; border-radius:10px; cursor:pointer; transition:all 0.15s; color:var(--muted); border:none; background:none; font-family:var(--font); }
+.tab.active { background:var(--card); color:var(--green); box-shadow:var(--shadow); }
+.tab-panel { display:none; }
+.tab-panel.active { display:block; }
+
+/* SECTION LABEL */
+.section-label { font-size:11px; letter-spacing:0.1em; text-transform:uppercase; color:var(--muted); font-family:var(--mono); margin-bottom:8px; }
+
+/* COLLABORATOR */
+.collab-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:22px; }
+.collab-btn { background:var(--card); border:1.5px solid var(--border); border-radius:12px; padding:10px 4px; text-align:center; font-family:var(--font); font-size:12px; font-weight:500; color:var(--muted); cursor:pointer; transition:all 0.15s; display:flex; flex-direction:column; align-items:center; gap:4px; }
+.collab-btn .avatar { width:32px; height:32px; border-radius:50%; background:var(--border); display:flex; align-items:center; justify-content:center; font-size:13px; font-weight:600; color:var(--muted); transition:all 0.15s; }
+.collab-btn.active { border-color:var(--green); background:var(--green-pale); color:var(--green); }
+.collab-btn.active .avatar { background:var(--green); color:#fff; }
+
+/* GALPÃO */
+.galpao-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:22px; }
+.galpao-btn { background:var(--card); border:1.5px solid var(--border); border-radius:var(--radius); padding:14px 12px; cursor:pointer; transition:all 0.15s; font-family:var(--font); text-align:left; }
+.galpao-btn .g-name { font-size:15px; font-weight:600; color:var(--text); margin-bottom:4px; }
+.galpao-btn .g-aves-row { display:flex; align-items:center; gap:6px; }
+.galpao-btn .g-aves { font-size:11px; color:var(--muted); font-family:var(--mono); }
+.galpao-btn .g-edit { font-size:11px; color:var(--green); font-family:var(--mono); cursor:pointer; text-decoration:underline; margin-left:auto; }
+.galpao-btn.active { border-color:var(--green); background:var(--green-pale); }
+.galpao-btn.active .g-name { color:var(--green); }
+
+/* FORM CARD */
+.form-card { background:var(--card); border-radius:var(--radius); border:1.5px solid var(--border); padding:18px; margin-bottom:14px; box-shadow:var(--shadow); }
+.form-card-title { font-size:14px; font-weight:600; color:var(--text); margin-bottom:14px; display:flex; align-items:center; gap:8px; }
+.dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+
+/* NUM INPUT */
+.num-input-wrap { display:flex; align-items:center; border:1.5px solid var(--border); border-radius:10px; overflow:hidden; background:var(--bg); width:fit-content; }
+.num-btn { width:38px; height:38px; background:none; border:none; font-size:20px; color:var(--green); cursor:pointer; display:flex; align-items:center; justify-content:center; font-weight:500; transition:background 0.1s; user-select:none; }
+.num-btn:active { background:var(--green-pale); }
+.num-val { width:64px; text-align:center; font-size:17px; font-weight:600; font-family:var(--mono); color:var(--text); border:none; background:none; outline:none; padding:0; }
+
+/* FIELDS */
+.field-group { margin-bottom:12px; }
+.field-group:last-child { margin-bottom:0; }
+.field-label { font-size:11px; color:var(--muted); margin-bottom:5px; font-family:var(--mono); letter-spacing:0.04em; }
+.field-input { width:100%; background:var(--bg); border:1.5px solid var(--border); border-radius:10px; padding:10px 13px; font-size:15px; font-family:var(--mono); color:var(--text); outline:none; transition:border-color 0.15s; -webkit-appearance:none; }
+.field-input:focus { border-color:var(--green); }
+textarea.field-input { resize:none; height:68px; font-size:13px; }
+.field-row { display:flex; gap:10px; }
+.field-row .field-group { flex:1; }
+
+/* COLETA ROW */
+.coleta-row { display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid var(--border); }
+.coleta-row:last-of-type { border-bottom:none; }
+.coleta-label { font-size:13px; color:var(--muted); flex:1; min-width:60px; }
+.coleta-calc { font-size:11px; font-family:var(--mono); color:var(--green); min-width:60px; text-align:right; }
+.add-coleta { width:100%; background:none; border:1.5px dashed var(--border); border-radius:10px; padding:9px; font-size:13px; color:var(--green); font-family:var(--font); font-weight:500; cursor:pointer; margin-top:10px; transition:background 0.15s; }
+.add-coleta:active { background:var(--green-pale); }
+
+/* OVOS SUMMARY */
+.ovos-summary { background:var(--green-pale); border-radius:10px; padding:10px 14px; margin-top:12px; display:flex; justify-content:space-between; align-items:center; }
+.ovos-summary .label { font-size:12px; color:var(--green); font-family:var(--mono); }
+.ovos-summary .value { font-size:18px; font-weight:600; font-family:var(--mono); color:var(--green); }
+
+/* SILO ROW */
+.silo-row { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--border); }
+.silo-row:last-of-type { border-bottom:none; }
+.silo-check { width:22px; height:22px; accent-color:var(--green); cursor:pointer; flex-shrink:0; }
+.silo-label { font-size:13px; color:var(--text); flex:1; }
+.silo-kg { width:90px; }
+.silo-kg .field-input { padding:7px 10px; font-size:13px; }
+
+/* TRATO ROW */
+.trato-row { display:flex; align-items:center; gap:12px; padding:8px 0; border-bottom:1px solid var(--border); }
+.trato-row:last-of-type { border-bottom:none; }
+.trato-label { font-size:13px; color:var(--text); flex:1; }
+.toggle-wrap { position:relative; width:44px; height:24px; flex-shrink:0; }
+.toggle-wrap input { opacity:0; width:0; height:0; }
+.toggle-track { position:absolute; inset:0; background:var(--border); border-radius:12px; cursor:pointer; transition:background 0.2s; }
+.toggle-track::after { content:''; position:absolute; top:3px; left:3px; width:18px; height:18px; background:#fff; border-radius:50%; transition:transform 0.2s; box-shadow:0 1px 4px rgba(0,0,0,0.2); }
+.toggle-wrap input:checked + .toggle-track { background:var(--green); }
+.toggle-wrap input:checked + .toggle-track::after { transform:translateX(20px); }
+
+/* SUBMIT */
+.submit-btn { width:100%; background:var(--green); color:#fff; border:none; border-radius:var(--radius); padding:16px; font-size:16px; font-weight:600; font-family:var(--font); cursor:pointer; transition:all 0.15s; margin-top:6px; }
+.submit-btn:active { transform:scale(0.98); background:#255c44; }
+
+/* TOAST */
+.toast { position:fixed; bottom:28px; left:50%; transform:translateX(-50%) translateY(80px); background:var(--green); color:#fff; border-radius:30px; padding:12px 24px; font-size:14px; font-weight:500; box-shadow:0 4px 20px rgba(0,0,0,0.2); transition:transform 0.3s cubic-bezier(.34,1.56,.64,1); white-space:nowrap; z-index:99; }
+.toast.show { transform:translateX(-50%) translateY(0); }
+
+/* BADGE */
+.badge { display:inline-block; font-size:10px; font-family:var(--mono); border-radius:4px; padding:2px 6px; margin-left:6px; vertical-align:middle; }
+.badge-req { background:var(--amber-pale); color:var(--amber); }
+
+/* HISTÓRICO */
+.history-empty { text-align:center; padding:40px 20px; color:var(--muted); font-size:14px; line-height:1.8; }
+.history-item { background:var(--card); border:1.5px solid var(--border); border-radius:12px; padding:14px 16px; margin-bottom:10px; }
+.history-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; }
+.history-galpao { font-weight:600; font-size:14px; }
+.history-time { font-family:var(--mono); font-size:11px; color:var(--muted); }
+.history-tags { display:flex; flex-wrap:wrap; gap:6px; }
+.tag { font-size:12px; font-family:var(--mono); border-radius:6px; padding:3px 8px; font-weight:500; }
+.tag-ovos { background:var(--green-pale); color:var(--green); }
+.tag-morte { background:var(--amber-pale); color:var(--amber); }
+.tag-racao { background:var(--blue-pale); color:var(--blue); }
+.tag-collab { background:var(--bg); color:var(--muted); border:1px solid var(--border); }
+
+/* DASHBOARD */
+.dash-card { background:var(--card); border-radius:var(--radius); border:1.5px solid var(--border); padding:18px; margin-bottom:14px; box-shadow:var(--shadow); }
+.dash-card h3 { font-size:13px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:0.08em; margin-bottom:14px; font-family:var(--mono); }
+.kpi-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:10px; margin-bottom:14px; }
+.kpi { background:var(--bg); border-radius:10px; padding:12px; }
+.kpi-label { font-size:11px; color:var(--muted); font-family:var(--mono); margin-bottom:4px; }
+.kpi-value { font-size:22px; font-weight:600; font-family:var(--mono); color:var(--text); }
+.kpi-sub { font-size:11px; color:var(--muted); font-family:var(--mono); }
+.postura-bar-wrap { margin-bottom:10px; }
+.postura-bar-label { display:flex; justify-content:space-between; font-size:12px; font-family:var(--mono); margin-bottom:4px; }
+.postura-bar-label .name { color:var(--text); }
+.postura-bar-label .pct { color:var(--green); font-weight:500; }
+.bar-track { background:var(--border); border-radius:6px; height:8px; overflow:hidden; }
+.bar-fill { height:8px; border-radius:6px; background:var(--green-light); transition:width 0.4s; }
+
+/* EDIT MODAL */
+.modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:100; display:flex; align-items:flex-end; justify-content:center; }
+.modal-overlay.hidden { display:none; }
+.modal-sheet { background:var(--card); border-radius:20px 20px 0 0; padding:24px 20px 36px; width:100%; max-width:480px; }
+.modal-sheet h3 { font-size:16px; font-weight:600; margin-bottom:16px; }
+.modal-actions { display:flex; gap:10px; margin-top:16px; }
+.modal-btn { flex:1; padding:12px; border-radius:12px; border:none; font-size:14px; font-weight:600; font-family:var(--font); cursor:pointer; }
+.modal-btn-cancel { background:var(--border); color:var(--muted); }
+.modal-btn-save { background:var(--green); color:#fff; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-top">
+    <div class="header-brand">Granja — Registro</div>
+    <div class="header-date" id="hdate"></div>
+  </div>
+  <h1 id="header-greeting">Bom dia 👋</h1>
+  <div class="header-sub">Selecione o galpão e registre o dia</div>
+</div>
+
+<div class="container">
+
+  <div class="tab-bar">
+    <button class="tab active" onclick="setTab('registrar')">Registrar</button>
+    <button class="tab" onclick="setTab('dashboard')">Dashboard</button>
+    <button class="tab" onclick="setTab('historico')">Histórico</button>
+  </div>
+
+  <!-- ===== TAB REGISTRAR ===== -->
+  <div class="tab-panel active" id="tab-registrar">
+
+    <div class="section-label">Quem está registrando?</div>
+    <div class="collab-grid" id="collab-grid"></div>
+
+    <div class="section-label">Galpão <span class="badge badge-req">obrigatório</span></div>
+    <div class="galpao-grid" id="galpao-grid"></div>
+
+    <!-- OVOS -->
+    <div class="form-card">
+      <div class="form-card-title"><span class="dot" style="background:#52B788"></span>Coleta de ovos</div>
+      <div id="coletas-wrap"></div>
+      <button class="add-coleta" onclick="addColeta()">+ Adicionar coleta</button>
+      <div class="ovos-summary">
+        <span class="label">Total do dia</span>
+        <div style="text-align:right">
+          <div class="value" id="total-pentes">0 pentes</div>
+          <div style="font-size:11px;color:var(--green);font-family:var(--mono)" id="total-ovos-calc">= 0 ovos</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MORTALIDADE -->
+    <div class="form-card">
+      <div class="form-card-title"><span class="dot" style="background:#E76F51"></span>Mortalidade</div>
+      <div class="field-row">
+        <div class="field-group">
+          <div class="field-label">Mortes hoje</div>
+          <div class="num-input-wrap">
+            <button class="num-btn" onclick="stepNum('mortes',-1)">−</button>
+            <input class="num-val" id="mortes" type="number" value="0" min="0" oninput="updateMortes()">
+            <button class="num-btn" onclick="stepNum('mortes',1)">+</button>
+          </div>
+        </div>
+        <div class="field-group">
+          <div class="field-label">Galinhas restantes</div>
+          <div style="font-size:22px;font-weight:600;font-family:var(--mono);color:var(--text);padding-top:6px" id="restantes-display">—</div>
+        </div>
+      </div>
+      <div class="field-group" style="margin-top:10px">
+        <div class="field-label">Causa (opcional)</div>
+        <textarea class="field-input" id="causa" placeholder="Ex: Doença respiratória, calor excessivo..."></textarea>
+      </div>
+    </div>
+
+    <!-- RAÇÃO -->
+    <div class="form-card">
+      <div class="form-card-title"><span class="dot" style="background:#3A7CA5"></span>Ração — Distribuição para silos</div>
+      <div id="silo-rows"></div>
+    </div>
+
+    <div class="form-card">
+      <div class="form-card-title"><span class="dot" style="background:#7B5EA7"></span>Ração — Tratamento (cocho)</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px;font-family:var(--mono)">Marque os tratos realizados hoje</div>
+      <div id="trato-rows"></div>
+    </div>
+
+    <!-- OBS -->
+    <div class="form-card">
+      <div class="form-card-title"><span class="dot" style="background:#B5838D"></span>Observações gerais</div>
+      <textarea class="field-input" id="obs_geral" placeholder="Qualquer ocorrência do dia..."></textarea>
+    </div>
+
+    <button class="submit-btn" onclick="salvar()">✓ Salvar registro</button>
+  </div>
+
+  <!-- ===== TAB DASHBOARD ===== -->
+  <div class="tab-panel" id="tab-dashboard">
+    <div class="kpi-grid">
+      <div class="kpi">
+        <div class="kpi-label">Total aves</div>
+        <div class="kpi-value" id="kpi-total-aves">—</div>
+        <div class="kpi-sub">todos os galpões</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Ovos hoje</div>
+        <div class="kpi-value" id="kpi-ovos-hoje">—</div>
+        <div class="kpi-sub" id="kpi-ovos-pentes">—</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Mortes hoje</div>
+        <div class="kpi-value" id="kpi-mortes-hoje">—</div>
+        <div class="kpi-sub">acumulado do dia</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Postura média</div>
+        <div class="kpi-value" id="kpi-postura-media">—</div>
+        <div class="kpi-sub">todos os galpões</div>
+      </div>
+    </div>
+
+    <div class="dash-card">
+      <h3>Postura por galpão (hoje)</h3>
+      <div id="postura-bars"></div>
+    </div>
+
+    <div class="dash-card">
+      <h3>Postura % — últimos 7 dias</h3>
+      <canvas id="chart-postura" height="200"></canvas>
+    </div>
+
+    <div class="dash-card">
+      <h3>Galinhas por galpão</h3>
+      <div id="aves-por-galpao"></div>
+    </div>
+  </div>
+
+  <!-- ===== TAB HISTÓRICO ===== -->
+  <div class="tab-panel" id="tab-historico">
+    <div id="historico-list"></div>
+  </div>
+
+</div>
+
+<!-- MODAL EDITAR GALINHAS -->
+<div class="modal-overlay hidden" id="modal-aves">
+  <div class="modal-sheet">
+    <h3 id="modal-title">Editar galinhas</h3>
+    <div class="field-label">Quantidade atual de galinhas</div>
+    <input class="field-input" id="modal-input" type="number" min="0" placeholder="Ex: 3850">
+    <div class="modal-actions">
+      <button class="modal-btn modal-btn-cancel" onclick="closeModal()">Cancelar</button>
+      <button class="modal-btn modal-btn-save" onclick="saveAves()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ============================
+// CONFIG
+// ============================
+const GALPOES_CONFIG = [
+  { id:'g1', nome:'Galpão 1',     capacidade:4000 },
+  { id:'g2', nome:'Galpão 2',     capacidade:4500 },
+  { id:'g3', nome:'Galpão 3',     capacidade:4000 },
+  { id:'pb', nome:'Pedra Bonita', capacidade:5000 },
+];
+const COLABORADORES = ['Lena','Lene','Diego','Gil'];
+const PENTE = 30;
+
+// ============================
+// STATE (localStorage)
+// ============================
+function loadState(key, def) {
+  try { return JSON.parse(localStorage.getItem(key)) ?? def; } catch { return def; }
+}
+function saveState(key, val) {
+  localStorage.setItem(key, JSON.stringify(val));
+}
+
+// Quantidade real de galinhas por galpão (editável)
+let avesReais = loadState('granja_aves', {
+  g1: 4000, g2: 4500, g3: 4000, pb: 5000
+});
+let history = loadState('granja_history', []);
+
+// Session state
+let selectedCollab = null;
+let selectedGalpao = null;
+let coletas = [];
+let coletaCount = 0;
+let editingGalpaoId = null;
+let chartInstance = null;
+
+// ============================
+// INIT
+// ============================
+function init() {
+  const now = new Date();
+  const h = now.getHours();
+  const greet = h < 12 ? 'Bom dia 👋' : h < 18 ? 'Boa tarde 👋' : 'Boa noite 👋';
+  document.getElementById('header-greeting').textContent = greet;
+  document.getElementById('hdate').textContent =
+    now.toLocaleDateString('pt-BR', { weekday:'short', day:'2-digit', month:'short' });
+
+  buildCollabs();
+  buildGalpoes();
+  buildSilos();
+  buildTratos();
+  addColeta();
+  renderHistory();
+  renderDashboard();
+}
+
+function buildCollabs() {
+  const grid = document.getElementById('collab-grid');
+  COLABORADORES.forEach(name => {
+    const btn = document.createElement('button');
+    btn.className = 'collab-btn';
+    btn.dataset.name = name;
+    btn.innerHTML = `<div class="avatar">${name[0]}</div><span>${name}</span>`;
+    btn.onclick = () => {
+      selectedCollab = name;
+      document.querySelectorAll('.collab-btn').forEach(b => b.classList.toggle('active', b.dataset.name === name));
+    };
+    grid.appendChild(btn);
+  });
+}
+
+function buildGalpoes() {
+  const grid = document.getElementById('galpao-grid');
+  grid.innerHTML = '';
+  GALPOES_CONFIG.forEach(g => {
+    const aves = avesReais[g.id] ?? g.capacidade;
+    const btn = document.createElement('button');
+    btn.className = 'galpao-btn';
+    btn.dataset.id = g.id;
+    btn.innerHTML = `
+      <div class="g-name">${g.nome}</div>
+      <div class="g-aves-row">
+        <span class="g-aves">${aves.toLocaleString('pt-BR')} galinhas</span>
+        <span class="g-edit" onclick="openModal('${g.id}',event)">editar</span>
+      </div>`;
+    btn.onclick = (e) => {
+      if (e.target.classList.contains('g-edit')) return;
+      selectedGalpao = g.id;
+      document.querySelectorAll('.galpao-btn').forEach(b => b.classList.toggle('active', b.dataset.id === g.id));
+      updateRestantes();
+    };
+    grid.appendChild(btn);
+  });
+}
+
+function buildSilos() {
+  const wrap = document.getElementById('silo-rows');
+  GALPOES_CONFIG.forEach(g => {
+    const row = document.createElement('div');
+    row.className = 'silo-row';
+    row.innerHTML = `
+      <input type="checkbox" class="silo-check" id="silo_chk_${g.id}">
+      <label class="silo-label" for="silo_chk_${g.id}">${g.nome}</label>
+      <div class="silo-kg">
+        <input class="field-input" type="number" id="silo_kg_${g.id}" placeholder="kg" min="0" step="0.5">
+      </div>`;
+    wrap.appendChild(row);
+  });
+}
+
+function buildTratos() {
+  const wrap = document.getElementById('trato-rows');
+  const tratos = ['1º trato (manhã)','2º trato (tarde)'];
+  tratos.forEach((label, i) => {
+    const id = 'trato_' + i;
+    const row = document.createElement('div');
+    row.className = 'trato-row';
+    row.innerHTML = `
+      <span class="trato-label">${label}</span>
+      <label class="toggle-wrap">
+        <input type="checkbox" id="${id}">
+        <span class="toggle-track"></span>
+      </label>`;
+    wrap.appendChild(row);
+  });
+}
+
+// ============================
+// COLETAS
+// ============================
+function addColeta() {
+  coletaCount++;
+  const id = 'col_' + coletaCount;
+  const now = new Date();
+  const t = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+  const wrap = document.getElementById('coletas-wrap');
+  const row = document.createElement('div');
+  row.className = 'coleta-row';
+  row.id = 'row_' + id;
+  row.innerHTML = `
+    <div class="coleta-label">Coleta ${coletaCount}<br><span style="font-size:10px;font-family:var(--mono);color:var(--muted)">${t}</span></div>
+    <div class="num-input-wrap">
+      <button class="num-btn" onclick="stepColeta('${id}',-1)">−</button>
+      <input class="num-val" id="${id}" type="number" value="0" min="0" oninput="updateOvosSummary()">
+      <button class="num-btn" onclick="stepColeta('${id}',1)">+</button>
+    </div>
+    <div class="coleta-calc" id="calc_${id}">= 0 ovos</div>`;
+  wrap.appendChild(row);
+  coletas.push({ id, time: t });
+}
+
+function stepColeta(id, delta) {
+  const el = document.getElementById(id);
+  el.value = Math.max(0, parseInt(el.value||0) + delta);
+  updateOvosSummary();
+}
+
+function updateOvosSummary() {
+  let totalPentes = 0;
+  coletas.forEach(c => {
+    const v = parseInt(document.getElementById(c.id)?.value || 0);
+    totalPentes += v;
+    const calc = document.getElementById('calc_' + c.id);
+    if (calc) calc.textContent = `= ${(v * PENTE).toLocaleString('pt-BR')} ovos`;
+  });
+  document.getElementById('total-pentes').textContent = totalPentes.toLocaleString('pt-BR') + ' pentes';
+  document.getElementById('total-ovos-calc').textContent = '= ' + (totalPentes * PENTE).toLocaleString('pt-BR') + ' ovos';
+}
+
+function stepNum(id, delta) {
+  const el = document.getElementById(id);
+  el.value = Math.max(0, parseInt(el.value||0) + delta);
+  if (id === 'mortes') updateRestantes();
+}
+
+function updateMortes() { updateRestantes(); }
+
+function updateRestantes() {
+  if (!selectedGalpao) { document.getElementById('restantes-display').textContent = '—'; return; }
+  const aves = avesReais[selectedGalpao] ?? 0;
+  const mortes = parseInt(document.getElementById('mortes').value || 0);
+  document.getElementById('restantes-display').textContent = (aves - mortes).toLocaleString('pt-BR');
+}
+
+// ============================
+// MODAL EDITAR GALINHAS
+// ============================
+function openModal(galpaoId, e) {
+  e.stopPropagation();
+  editingGalpaoId = galpaoId;
+  const g = GALPOES_CONFIG.find(x => x.id === galpaoId);
+  document.getElementById('modal-title').textContent = 'Galinhas — ' + g.nome;
+  document.getElementById('modal-input').value = avesReais[galpaoId] ?? g.capacidade;
+  document.getElementById('modal-aves').classList.remove('hidden');
+}
+function closeModal() {
+  document.getElementById('modal-aves').classList.add('hidden');
+  editingGalpaoId = null;
+}
+function saveAves() {
+  const val = parseInt(document.getElementById('modal-input').value || 0);
+  if (editingGalpaoId) {
+    avesReais[editingGalpaoId] = val;
+    saveState('granja_aves', avesReais);
+    buildGalpoes();
+    updateRestantes();
+    showToast('✓ Quantidade atualizada');
+  }
+  closeModal();
+}
+document.getElementById('modal-aves').onclick = function(e) {
+  if (e.target === this) closeModal();
+};
+
+// ============================
+// SALVAR
+// ============================
+function salvar() {
+  if (!selectedGalpao) { showToast('⚠ Selecione o galpão', true); return; }
+
+  const totalPentes = coletas.reduce((s,c) => s + parseInt(document.getElementById(c.id)?.value||0), 0);
+  const totalOvos = totalPentes * PENTE;
+  const coletasData = coletas.map(c => ({
+    horario: c.time,
+    pentes: parseInt(document.getElementById(c.id)?.value||0),
+    ovos: parseInt(document.getElementById(c.id)?.value||0) * PENTE,
+  }));
+
+  const galpao = GALPOES_CONFIG.find(g => g.id === selectedGalpao);
+  const aves = avesReais[selectedGalpao] ?? 0;
+  const mortes = parseInt(document.getElementById('mortes').value||0);
+  const avesRestantes = aves - mortes;
+  const taxaPostura = aves > 0 ? ((totalOvos / aves) * 100).toFixed(1) : 0;
+  const causa = document.getElementById('causa').value;
+  const obs = document.getElementById('obs_geral').value;
+  const now = new Date();
+
+  // silos
+  const silos = GALPOES_CONFIG.map(g => ({
+    galpao_id: g.id,
+    galpao_nome: g.nome,
+    recebeu: document.getElementById('silo_chk_' + g.id)?.checked || false,
+    kg: parseFloat(document.getElementById('silo_kg_' + g.id)?.value || 0),
+  })).filter(s => s.recebeu || s.kg > 0);
+
+  // tratos
+  const tratos = [
+    { label: '1º trato (manhã)', feito: document.getElementById('trato_0')?.checked || false },
+    { label: '2º trato (tarde)', feito: document.getElementById('trato_1')?.checked || false },
+  ];
+
+  const record = {
+    id: Date.now(),
+    timestamp: now.toISOString(),
+    data: now.toLocaleDateString('pt-BR'),
+    horario: now.toLocaleTimeString('pt-BR', { hour:'2-digit', minute:'2-digit' }),
+    colaborador: selectedCollab || 'Não informado',
+    galpao_id: selectedGalpao,
+    galpao_nome: galpao.nome,
+    aves_no_dia: aves,
+    mortes,
+    aves_restantes: avesRestantes,
+    causa,
+    coletas: coletasData,
+    total_pentes: totalPentes,
+    total_ovos: totalOvos,
+    taxa_postura: parseFloat(taxaPostura),
+    silos,
+    tratos,
+    obs,
+  };
+
+  // Atualizar aves reais com subtração de mortes
+  if (mortes > 0) {
+    avesReais[selectedGalpao] = avesRestantes;
+    saveState('granja_aves', avesReais);
+    buildGalpoes();
+  }
+
+  history.unshift(record);
+  saveState('granja_history', history);
+
+  showToast('✓ Registro salvo!');
+  resetForm();
+  renderDashboard();
+  renderHistory();
+}
+
+function resetForm() {
+  selectedGalpao = null;
+  document.querySelectorAll('.galpao-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('mortes').value = 0;
+  document.getElementById('restantes-display').textContent = '—';
+  document.getElementById('racao_kg') && (document.getElementById('racao_kg').value = '');
+  document.getElementById('causa').value = '';
+  document.getElementById('obs_geral').value = '';
+  document.getElementById('coletas-wrap').innerHTML = '';
+  coletas = []; coletaCount = 0;
+  addColeta();
+  updateOvosSummary();
+  GALPOES_CONFIG.forEach(g => {
+    const chk = document.getElementById('silo_chk_' + g.id);
+    const kg = document.getElementById('silo_kg_' + g.id);
+    if (chk) chk.checked = false;
+    if (kg) kg.value = '';
+  });
+  document.getElementById('trato_0') && (document.getElementById('trato_0').checked = false);
+  document.getElementById('trato_1') && (document.getElementById('trato_1').checked = false);
+}
+
+// ============================
+// DASHBOARD
+// ============================
+function renderDashboard() {
+  const today = new Date().toLocaleDateString('pt-BR');
+  const todayRecords = history.filter(r => r.data === today);
+
+  // KPIs
+  const totalAves = Object.values(avesReais).reduce((a,b) => a+b, 0);
+  document.getElementById('kpi-total-aves').textContent = totalAves.toLocaleString('pt-BR');
+
+  const ovosHoje = todayRecords.reduce((s,r) => s + r.total_ovos, 0);
+  const pentesHoje = todayRecords.reduce((s,r) => s + r.total_pentes, 0);
+  document.getElementById('kpi-ovos-hoje').textContent = ovosHoje.toLocaleString('pt-BR');
+  document.getElementById('kpi-ovos-pentes').textContent = pentesHoje + ' pentes';
+
+  const mortesHoje = todayRecords.reduce((s,r) => s + r.mortes, 0);
+  document.getElementById('kpi-mortes-hoje').textContent = mortesHoje;
+
+  const posturaMedia = totalAves > 0 ? ((ovosHoje / totalAves) * 100).toFixed(1) : 0;
+  document.getElementById('kpi-postura-media').textContent = posturaMedia + '%';
+
+  // Barras de postura por galpão
+  const barsWrap = document.getElementById('postura-bars');
+  barsWrap.innerHTML = '';
+  GALPOES_CONFIG.forEach(g => {
+    const recs = todayRecords.filter(r => r.galpao_id === g.id);
+    const ovos = recs.reduce((s,r) => s + r.total_ovos, 0);
+    const aves = avesReais[g.id] || 1;
+    const pct = Math.min(100, (ovos / aves * 100)).toFixed(1);
+    barsWrap.innerHTML += `
+      <div class="postura-bar-wrap">
+        <div class="postura-bar-label">
+          <span class="name">${g.nome}</span>
+          <span class="pct">${pct}%</span>
+        </div>
+        <div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>
+      </div>`;
+  });
+
+  // Aves por galpão
+  const avesWrap = document.getElementById('aves-por-galpao');
+  avesWrap.innerHTML = '';
+  GALPOES_CONFIG.forEach(g => {
+    const aves = avesReais[g.id] ?? g.capacidade;
+    avesWrap.innerHTML += `
+      <div class="postura-bar-wrap">
+        <div class="postura-bar-label">
+          <span class="name">${g.nome}</span>
+          <span class="pct" style="color:var(--text)">${aves.toLocaleString('pt-BR')}</span>
+        </div>
+        <div class="bar-track"><div class="bar-fill" style="width:${(aves/5000*100).toFixed(0)}%;background:var(--blue)"></div></div>
+      </div>`;
+  });
+
+  // Gráfico 7 dias
+  renderChart();
+}
+
+function renderChart() {
+  const labels = [];
+  const datasets = GALPOES_CONFIG.map(g => ({ label: g.nome, data: [], gid: g.id }));
+
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const dStr = d.toLocaleDateString('pt-BR');
+    labels.push(dStr.slice(0,5));
+    GALPOES_CONFIG.forEach((g, gi) => {
+      const recs = history.filter(r => r.data === dStr && r.galpao_id === g.id);
+      const ovos = recs.reduce((s,r) => s + r.total_ovos, 0);
+      const aves = avesReais[g.id] || 1;
+      datasets[gi].data.push(parseFloat((ovos / aves * 100).toFixed(1)));
+    });
+  }
+
+  const colors = ['#52B788','#3A7CA5','#E76F51','#7B5EA7'];
+  const ctx = document.getElementById('chart-postura').getContext('2d');
+  if (chartInstance) chartInstance.destroy();
+  chartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: datasets.map((ds, i) => ({
+        label: ds.label,
+        data: ds.data,
+        borderColor: colors[i],
+        backgroundColor: colors[i] + '22',
+        borderWidth: 2,
+        pointRadius: 3,
+        tension: 0.3,
+        fill: false,
+      }))
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { position:'bottom', labels:{ font:{ size:11 }, boxWidth:12 } },
+      },
+      scales: {
+        y: {
+          min: 0, max: 100,
+          ticks: { callback: v => v + '%', font:{ size:11 } },
+          grid: { color:'rgba(0,0,0,0.06)' }
+        },
+        x: { ticks: { font:{ size:10 } }, grid:{ display:false } }
+      }
+    }
+  });
+}
+
+// ============================
+// HISTÓRICO
+// ============================
+function renderHistory() {
+  const list = document.getElementById('historico-list');
+  if (history.length === 0) {
+    list.innerHTML = '<div class="history-empty">Nenhum registro ainda.<br>Comece pela aba "Registrar".</div>';
+    return;
+  }
+  list.innerHTML = history.slice(0, 40).map(r => `
+    <div class="history-item">
+      <div class="history-header">
+        <div class="history-galpao">${r.galpao_nome}</div>
+        <div class="history-time">${r.data} ${r.horario}</div>
+      </div>
+      <div class="history-tags">
+        <span class="tag tag-ovos">🥚 ${r.total_pentes} pentes (${r.taxa_postura}%)</span>
+        ${r.mortes > 0 ? `<span class="tag tag-morte">☠ ${r.mortes} mortes</span>` : ''}
+        ${r.silos && r.silos.length > 0 ? `<span class="tag tag-racao">🌾 silo: ${r.silos.map(s=>s.galpao_nome.split(' ')[0]).join(', ')}</span>` : ''}
+        <span class="tag tag-collab">👤 ${r.colaborador}</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+// ============================
+// TABS
+// ============================
+function setTab(tab) {
+  const tabs = ['registrar','dashboard','historico'];
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', tabs[i] === tab));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+  if (tab === 'dashboard') renderDashboard();
+  if (tab === 'historico') renderHistory();
+}
+
+// ============================
+// TOAST
+// ============================
+function showToast(msg, warn=false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.background = warn ? '#E76F51' : '#2D6A4F';
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+init();
+</script>
+</body>
+</html>
