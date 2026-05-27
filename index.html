@@ -413,10 +413,21 @@ async function init(){
   document.getElementById('header-greeting').textContent=h<12?'Bom dia':h<18?'Boa tarde':'Boa noite';
   document.getElementById('hdate').textContent=now.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'short'});
   buildGReg();addColeta();buildColabSelect();
-  // Set today's date in date field
   document.getElementById('data-registro-input').value=new Date().toISOString().slice(0,10);
-  if(!isOnline){setSS('offline');}else{setSS('syncing');await flushQ();await loadAll();}
-  renderPosturaTab('registrar');renderAlerts();
+  if(!isOnline){
+    setSS('offline');
+    renderPosturaTab('registrar');renderAlerts();
+  }else{
+    setSS('syncing');
+    try{
+      await flushQ();
+      await loadAll();
+    }catch(e){
+      console.error('loadAll error:',e);
+      setSS('online');
+    }
+    renderPosturaTab(window._posturaSubTab||'registrar');renderAlerts();
+  }
 }
 
 async function loadAll(){
@@ -429,7 +440,7 @@ async function loadAll(){
     supa.get('usuarios?order=nivel.asc,nome.asc'),
     supa.get('fabricacao_racao?order=data_fabricacao.desc&limit=100'),
     supa.get('produtos?order=tipo.asc,descricao.asc'),
-    supa.get('compras?order=created_at.desc&limit=50'),
+    supa.get('compras?order=data_transacao.asc,id.asc'),
     supa.get('vendas?order=data_venda.desc&limit=100'),
     supa.get('venda_itens?order=id.asc'),
     supa.get('venda_pagamentos?order=created_at.desc'),
@@ -447,7 +458,7 @@ async function loadAll(){
   if(vitens!==null)vendasItensC=vitens;
   if(vpags!==null)vendasPagamentosC=vpags;
   buildColabSelect();
-  setSS('online');renderPosturaTab(window._posturaSubTab||'registrar');renderAlerts();
+  setSS('online');
   await seedProdutosRacao();
 }
 
@@ -967,20 +978,49 @@ async function salvarRacao(){
   const fabId=res&&res[0]?res[0].id:null;
   if(res&&res[0])racaoCache.unshift(res[0]);
   const formula=tipo==='Postura'?FORMULA_POSTURA:FORMULA_CRESCIMENTO;
+  let custoTotalFab=0;
   for(const[nome,q]of Object.entries(formula)){
     if(nome==='Corante'&&!comCorante)continue;if(q===0)continue;
-    const qt=q*misturas;const prod=produtosC.find(p=>p.descricao===nome);if(!prod)continue;
+    const qt=q*misturas;
+    const prod=produtosC.find(p=>p.descricao===nome);if(!prod)continue;
+    // PEPS: deduct from oldest lots with quantidade_restante > 0
+    const lotes=comprasC
+      .filter(x=>x.produto_id===prod.id&&parseFloat(x.quantidade_restante||0)>0)
+      .sort((a,b)=>new Date(a.data_transacao)-new Date(b.data_transacao));
+    let qtRestante=qt;
+    let custoIngrediente=0;
+    for(const lote of lotes){
+      if(qtRestante<=0)break;
+      const usar=Math.min(qtRestante,parseFloat(lote.quantidade_restante||0));
+      custoIngrediente+=usar*parseFloat(lote.custo_unitario||0);
+      qtRestante-=usar;
+      const novaQtRest=parseFloat(lote.quantidade_restante||0)-usar;
+      await supa.patch('compras?id=eq.'+lote.id,{quantidade_restante:parseFloat(novaQtRest.toFixed(4))});
+      comprasC=comprasC.map(x=>x.id===lote.id?{...x,quantidade_restante:novaQtRest}:x);
+    }
+    // If stock ran out, use last known price for remainder
+    if(qtRestante>0&&lotes.length>0){
+      custoIngrediente+=qtRestante*parseFloat(lotes[lotes.length-1].custo_unitario||0);
+    }
+    custoTotalFab+=custoIngrediente;
+    // Update estoque_atual and custo_medio (next lot price)
     const novoEst=Math.max(0,(parseFloat(prod.estoque_atual)||0)-qt);
-    await supa.patch('produtos?id=eq.'+prod.id,{estoque_atual:novoEst});
+    const nextLote=comprasC.filter(x=>x.produto_id===prod.id&&parseFloat(x.quantidade_restante||0)>0).sort((a,b)=>new Date(a.data_transacao)-new Date(b.data_transacao))[0];
+    const novoCusto=nextLote?parseFloat(nextLote.custo_unitario):parseFloat(prod.custo_medio||0);
+    await supa.patch('produtos?id=eq.'+prod.id,{estoque_atual:novoEst,custo_medio:parseFloat(novoCusto.toFixed(4))});
     await supa.post('estoque_movimentos',{produto_id:prod.id,produto_nome:prod.descricao,tipo_movimento:'saida',origem:'fabricacao_racao',origem_id:fabId,quantidade:qt,unidade:'kg'});
-    produtosC=produtosC.map(p=>p.id===prod.id?{...p,estoque_atual:novoEst}:p);
+    produtosC=produtosC.map(p=>p.id===prod.id?{...p,estoque_atual:novoEst,custo_medio:novoCusto}:p);
   }
-  toast('Fabricacao registrada! Estoque deduzido.');renderRacao();
+  // Update fabricacao with real PEPS cost
+  const custoPorMistura=misturas>0?custoTotalFab/misturas:0;
+  if(fabId)await supa.patch('fabricacao_racao?id=eq.'+fabId,{valor_mistura:parseFloat(custoPorMistura.toFixed(2))});
+  if(res&&res[0])racaoCache[0]={...racaoCache[0],valor_mistura:parseFloat(custoPorMistura.toFixed(2))};
+  toast('Fabricacao registrada! Custo PEPS: R$ '+custoPorMistura.toFixed(2)+'/mistura');renderRacao();
 }
 function renderRacaoHist(){
   const el=document.getElementById('rpanel-historico');if(!el)return;
   if(!racaoCache.length){el.innerHTML='<div class="history-empty">Nenhuma fabricacao registrada.</div>';return;}
-  el.innerHTML=racaoCache.map(r=>'<div class="history-item"><div class="history-header"><div class="history-galpao">'+r.tipo+'</div><div class="history-time">'+fmtD(r.data_fabricacao)+'</div></div><div class="history-tags"><span class="tag tag-ovos">'+r.num_misturas+' mistura(s)</span><span class="tag tag-racao">'+(r.peso_total_kg||0).toLocaleString('pt-BR')+' kg</span>'+(r.galpao_destino_nome?'<span class="tag tag-collab">'+r.galpao_destino_nome+'</span>':'')+(r.com_corante===false?'<span class="tag" style="background:var(--bg);color:var(--muted);border:1px solid var(--border)">Sem corante</span>':'<span class="tag" style="background:var(--amber-pale);color:var(--amber)">Com corante</span>')+(r.valor_mistura?'<span class="tag" style="background:var(--green-pale);color:var(--green)">R$ '+r.valor_mistura+'</span>':'')+'</div></div>').join('');
+  el.innerHTML=racaoCache.map(r=>'<div class="history-item"><div class="history-header"><div class="history-galpao">'+r.tipo+'</div><div class="history-time">'+fmtD(r.data_fabricacao)+'</div></div><div class="history-tags"><span class="tag tag-ovos">'+r.num_misturas+' mistura(s)</span><span class="tag tag-racao">'+(r.peso_total_kg||0).toLocaleString('pt-BR')+' kg</span>'+(r.galpao_destino_nome?'<span class="tag tag-collab">'+r.galpao_destino_nome+'</span>':'')+(r.com_corante===false?'<span class="tag" style="background:var(--bg);color:var(--muted);border:1px solid var(--border)">Sem corante</span>':'<span class="tag" style="background:var(--amber-pale);color:var(--amber)">Com corante</span>')+(r.valor_mistura?'<span class="tag" style="background:var(--green-pale);color:var(--green)">R$ '+parseFloat(r.valor_mistura).toFixed(2)+'/mis</span>':'')+'</div></div>').join('');
 }
 function renderRacaoFormula(){
   const el=document.getElementById('rpanel-formula');if(!el)return;
@@ -1047,10 +1087,14 @@ async function salvarCompra(){
   const data=document.getElementById('c-data').value;const cuUnit=parseFloat(document.getElementById('c-custo-unit').value||0);
   const cuAdd=parseFloat(document.getElementById('c-custos-add').value||0);const total=qtd*cuUnit+cuAdd;
   if(!qtd||!data){toast('Preencha quantidade e data',true);return;}
-  const res=await supa.post('compras',{produto_id:pid,produto_nome:p.descricao,quantidade:qtd,unidade,data_transacao:data,custo_unitario:cuUnit,custos_adicionais:cuAdd,custo_total:total,obs:document.getElementById('c-obs').value});
+  const res=await supa.post('compras',{produto_id:pid,produto_nome:p.descricao,quantidade:qtd,quantidade_restante:qtd,unidade,data_transacao:data,custo_unitario:cuUnit,custos_adicionais:cuAdd,custo_total:total,obs:document.getElementById('c-obs').value});
   if(res===null)return;const cid=res&&res[0]?res[0].id:null;
   await supa.post('estoque_movimentos',{produto_id:pid,produto_nome:p.descricao,tipo_movimento:'entrada',origem:'compra',origem_id:cid,quantidade:qtd,unidade});
-  const novoEst=(parseFloat(p.estoque_atual)||0)+qtd;const novoCusto=((parseFloat(p.custo_medio)||0)*(parseFloat(p.estoque_atual)||0)+total)/(novoEst||1);
+  const novoEst=(parseFloat(p.estoque_atual)||0)+qtd;
+  // PEPS: custo_medio stores cost of NEXT lot to be consumed (oldest with qty_restante > 0)
+  // After adding new purchase, recalculate next-lot cost
+  const nextLote=comprasC.filter(x=>x.produto_id===pid&&parseFloat(x.quantidade_restante||0)>0).sort((a,b)=>new Date(a.data_transacao)-new Date(b.data_transacao))[0];
+  const novoCusto=nextLote?parseFloat(nextLote.custo_unitario):parseFloat(cuUnit);
   await supa.patch('produtos?id=eq.'+pid,{estoque_atual:novoEst,custo_medio:parseFloat(novoCusto.toFixed(4))});
   produtosC=produtosC.map(x=>x.id===pid?{...x,estoque_atual:novoEst,custo_medio:novoCusto}:x);
   if(comprasC&&res&&res[0])comprasC.unshift(res[0]);toast('Compra registrada!');renderFormCompra();
