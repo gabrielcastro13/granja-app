@@ -7,106 +7,104 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
-:root {
+:root{
   --bg:#F5F2EB;--card:#FDFAF4;--green:#2D6A4F;--green-light:#52B788;--green-pale:#D8F3DC;
   --amber:#E76F51;--amber-pale:#FDE8DC;--blue:#3A7CA5;--blue-pale:#DFF0FA;
-  --purple:#7B5EA7;--purple-pale:#EDE8F5;--text:#1A1A1A;--muted:#6B6B5E;
-  --border:#D9D4C7;--shadow:0 2px 12px rgba(0,0,0,0.07);--radius:16px;
+  --purple:#7B5EA7;--purple-pale:#EDE8F5;--red:#C0392B;--red-pale:#FDECEA;
+  --text:#1A1A1A;--muted:#6B6B5E;--border:#D9D4C7;
+  --shadow:0 2px 12px rgba(0,0,0,0.07);--radius:16px;
   --font:'DM Sans',sans-serif;--mono:'DM Mono',monospace;
 }
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100vh;padding-bottom:48px}
-
+body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100vh;padding-bottom:56px}
 .header{background:var(--green);color:#fff;padding:20px 20px 36px;position:relative}
 .header::after{content:'';position:absolute;bottom:-1px;left:0;right:0;height:28px;background:var(--bg);border-radius:50% 50% 0 0/28px 28px 0 0}
 .header-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px}
-.header-brand{font-size:11px;letter-spacing:0.12em;text-transform:uppercase;opacity:0.65;font-family:var(--mono)}
-.header-date{font-size:11px;font-family:var(--mono);opacity:0.65;text-align:right}
-.header h1{font-size:24px;font-weight:600;letter-spacing:-0.02em}
-.header-sub{font-size:13px;opacity:0.7;margin-top:3px}
-.sync-status{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-family:var(--mono);opacity:0.8;margin-top:6px}
+.header-brand{font-size:11px;letter-spacing:.12em;text-transform:uppercase;opacity:.65;font-family:var(--mono)}
+.header-date{font-size:11px;font-family:var(--mono);opacity:.65;text-align:right}
+.header h1{font-size:24px;font-weight:600;letter-spacing:-.02em}
+.header-sub{font-size:13px;opacity:.7;margin-top:3px}
+.sync-status{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-family:var(--mono);opacity:.8;margin-top:6px}
 .sync-dot{width:7px;height:7px;border-radius:50%;background:#52B788}
 .sync-dot.offline{background:#E76F51}
 .sync-dot.syncing{background:#FAC775;animation:pulse 1s infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.4}}
-
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.alert-banner{background:var(--amber-pale);border-left:4px solid var(--amber);padding:12px 16px;margin:0 16px 10px;border-radius:10px;display:none}
+.alert-banner.show{display:block}
+.alert-banner.critical{background:var(--red-pale);border-color:var(--red)}
+.alert-title{font-size:13px;font-weight:600;color:var(--amber);margin-bottom:2px}
+.alert-banner.critical .alert-title{color:var(--red)}
+.alert-text{font-size:12px;color:var(--muted);font-family:var(--mono)}
+.offline-banner{background:var(--amber-pale);color:var(--amber);font-size:12px;font-family:var(--mono);text-align:center;padding:8px;display:none}
+.offline-banner.show{display:block}
 .container{padding:20px 16px 0;max-width:480px;margin:0 auto}
-
 .tab-bar{display:flex;background:var(--border);border-radius:12px;padding:3px;margin-bottom:20px;gap:2px}
-.tab{flex:1;text-align:center;padding:9px 4px;font-size:13px;font-weight:500;border-radius:10px;cursor:pointer;transition:all 0.15s;color:var(--muted);border:none;background:none;font-family:var(--font)}
+.tab{flex:1;text-align:center;padding:8px 2px;font-size:12px;font-weight:500;border-radius:10px;cursor:pointer;transition:all .15s;color:var(--muted);border:none;background:none;font-family:var(--font)}
 .tab.active{background:var(--card);color:var(--green);box-shadow:var(--shadow)}
 .tab-panel{display:none}.tab-panel.active{display:block}
-
-.section-label{font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted);font-family:var(--mono);margin-bottom:8px}
-
+.section-label{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-family:var(--mono);margin-bottom:8px}
 .collab-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:22px}
-.collab-btn{background:var(--card);border:1.5px solid var(--border);border-radius:12px;padding:10px 4px;text-align:center;font-family:var(--font);font-size:12px;font-weight:500;color:var(--muted);cursor:pointer;transition:all 0.15s;display:flex;flex-direction:column;align-items:center;gap:4px}
-.collab-btn .avatar{width:32px;height:32px;border-radius:50%;background:var(--border);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:var(--muted);transition:all 0.15s}
+.collab-btn{background:var(--card);border:1.5px solid var(--border);border-radius:12px;padding:10px 4px;text-align:center;font-family:var(--font);font-size:12px;font-weight:500;color:var(--muted);cursor:pointer;transition:all .15s;display:flex;flex-direction:column;align-items:center;gap:4px}
+.collab-btn .avatar{width:32px;height:32px;border-radius:50%;background:var(--border);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:600;color:var(--muted);transition:all .15s}
 .collab-btn.active{border-color:var(--green);background:var(--green-pale);color:var(--green)}
 .collab-btn.active .avatar{background:var(--green);color:#fff}
-
 .galpao-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:22px}
-.galpao-btn{background:var(--card);border:1.5px solid var(--border);border-radius:var(--radius);padding:14px 12px;cursor:pointer;transition:all 0.15s;font-family:var(--font);text-align:left}
-.galpao-btn .g-name{font-size:15px;font-weight:600;color:var(--text);margin-bottom:4px}
-.galpao-btn .g-aves-row{display:flex;align-items:center;gap:6px}
-.galpao-btn .g-aves{font-size:11px;color:var(--muted);font-family:var(--mono)}
-.galpao-btn .g-edit{font-size:11px;color:var(--green);font-family:var(--mono);cursor:pointer;text-decoration:underline;margin-left:auto}
-.galpao-btn.active{border-color:var(--green);background:var(--green-pale)}
-.galpao-btn.active .g-name{color:var(--green)}
-
+.galpao-card{background:var(--card);border:1.5px solid var(--border);border-radius:var(--radius);padding:14px 12px;cursor:pointer;transition:all .15s;font-family:var(--font);text-align:left}
+.galpao-card .g-name{font-size:15px;font-weight:600;color:var(--text);margin-bottom:2px}
+.galpao-card .g-lote{font-size:11px;color:var(--green);font-family:var(--mono);margin-bottom:4px}
+.galpao-card .g-aves{font-size:11px;color:var(--muted);font-family:var(--mono)}
+.galpao-card .g-semanas{font-size:10px;font-family:var(--mono);margin-top:4px}
+.galpao-card.active{border-color:var(--green);background:var(--green-pale)}
+.galpao-card.active .g-name{color:var(--green)}
+.semana-ok{color:var(--green)}.semana-aviso{color:var(--amber)}.semana-alerta{color:var(--red)}
+.lote-vazio{color:var(--muted);font-style:italic}
+.g-btn{font-size:10px;font-family:var(--mono);border:none;border-radius:5px;padding:3px 8px;cursor:pointer;margin-top:6px}
+.g-btn-lote{background:var(--green-pale);color:var(--green)}
+.g-btn-edit{background:var(--bg);color:var(--muted);border:1px solid var(--border)}
 .form-card{background:var(--card);border-radius:var(--radius);border:1.5px solid var(--border);padding:18px;margin-bottom:14px;box-shadow:var(--shadow)}
 .form-card-title{font-size:14px;font-weight:600;color:var(--text);margin-bottom:14px;display:flex;align-items:center;gap:8px}
 .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
-
 .num-input-wrap{display:flex;align-items:center;border:1.5px solid var(--border);border-radius:10px;overflow:hidden;background:var(--bg);width:fit-content}
-.num-btn{width:38px;height:38px;background:none;border:none;font-size:20px;color:var(--green);cursor:pointer;display:flex;align-items:center;justify-content:center;font-weight:500;transition:background 0.1s;user-select:none}
+.num-btn{width:38px;height:38px;background:none;border:none;font-size:20px;color:var(--green);cursor:pointer;display:flex;align-items:center;justify-content:center;font-weight:500;transition:background .1s;user-select:none}
 .num-btn:active{background:var(--green-pale)}
 .num-val{width:64px;text-align:center;font-size:17px;font-weight:600;font-family:var(--mono);color:var(--text);border:none;background:none;outline:none;padding:0}
-
 .field-group{margin-bottom:12px}.field-group:last-child{margin-bottom:0}
-.field-label{font-size:11px;color:var(--muted);margin-bottom:5px;font-family:var(--mono);letter-spacing:0.04em}
-.field-input{width:100%;background:var(--bg);border:1.5px solid var(--border);border-radius:10px;padding:10px 13px;font-size:15px;font-family:var(--mono);color:var(--text);outline:none;transition:border-color 0.15s;-webkit-appearance:none}
+.field-label{font-size:11px;color:var(--muted);margin-bottom:5px;font-family:var(--mono);letter-spacing:.04em}
+.field-input{width:100%;background:var(--bg);border:1.5px solid var(--border);border-radius:10px;padding:10px 13px;font-size:15px;font-family:var(--mono);color:var(--text);outline:none;transition:border-color .15s;-webkit-appearance:none}
 .field-input:focus{border-color:var(--green)}
 textarea.field-input{resize:none;height:68px;font-size:13px}
 .field-row{display:flex;gap:10px}.field-row .field-group{flex:1}
-
+select.field-input{cursor:pointer}
 .coleta-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)}
 .coleta-row:last-of-type{border-bottom:none}
 .coleta-label{font-size:13px;color:var(--muted);flex:1;min-width:60px}
 .coleta-calc{font-size:11px;font-family:var(--mono);color:var(--green);min-width:60px;text-align:right}
-.add-coleta{width:100%;background:none;border:1.5px dashed var(--border);border-radius:10px;padding:9px;font-size:13px;color:var(--green);font-family:var(--font);font-weight:500;cursor:pointer;margin-top:10px;transition:background 0.15s}
+.add-coleta{width:100%;background:none;border:1.5px dashed var(--border);border-radius:10px;padding:9px;font-size:13px;color:var(--green);font-family:var(--font);font-weight:500;cursor:pointer;margin-top:10px;transition:background .15s}
 .add-coleta:active{background:var(--green-pale)}
-
 .ovos-summary{background:var(--green-pale);border-radius:10px;padding:10px 14px;margin-top:12px;display:flex;justify-content:space-between;align-items:center}
 .ovos-summary .label{font-size:12px;color:var(--green);font-family:var(--mono)}
 .ovos-summary .value{font-size:18px;font-weight:600;font-family:var(--mono);color:var(--green)}
-
 .silo-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)}
 .silo-row:last-of-type{border-bottom:none}
 .silo-check{width:22px;height:22px;accent-color:var(--green);cursor:pointer;flex-shrink:0}
 .silo-label{font-size:13px;color:var(--text);flex:1}
 .silo-kg{width:90px}.silo-kg .field-input{padding:7px 10px;font-size:13px}
-
 .trato-row{display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--border)}
 .trato-row:last-of-type{border-bottom:none}
 .trato-label{font-size:13px;color:var(--text);flex:1}
 .toggle-wrap{position:relative;width:44px;height:24px;flex-shrink:0}
 .toggle-wrap input{opacity:0;width:0;height:0}
-.toggle-track{position:absolute;inset:0;background:var(--border);border-radius:12px;cursor:pointer;transition:background 0.2s}
-.toggle-track::after{content:'';position:absolute;top:3px;left:3px;width:18px;height:18px;background:#fff;border-radius:50%;transition:transform 0.2s;box-shadow:0 1px 4px rgba(0,0,0,0.2)}
+.toggle-track{position:absolute;inset:0;background:var(--border);border-radius:12px;cursor:pointer;transition:background .2s}
+.toggle-track::after{content:'';position:absolute;top:3px;left:3px;width:18px;height:18px;background:#fff;border-radius:50%;transition:transform .2s;box-shadow:0 1px 4px rgba(0,0,0,.2)}
 .toggle-wrap input:checked+.toggle-track{background:var(--green)}
 .toggle-wrap input:checked+.toggle-track::after{transform:translateX(20px)}
-
-.submit-btn{width:100%;background:var(--green);color:#fff;border:none;border-radius:var(--radius);padding:16px;font-size:16px;font-weight:600;font-family:var(--font);cursor:pointer;transition:all 0.15s;margin-top:6px}
-.submit-btn:active{transform:scale(0.98);background:#255c44}
+.submit-btn{width:100%;background:var(--green);color:#fff;border:none;border-radius:var(--radius);padding:16px;font-size:16px;font-weight:600;font-family:var(--font);cursor:pointer;transition:all .15s;margin-top:6px}
+.submit-btn:active{transform:scale(.98);background:#255c44}
 .submit-btn:disabled{background:var(--border);color:var(--muted);cursor:not-allowed;transform:none}
-
-.toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--green);color:#fff;border-radius:30px;padding:12px 24px;font-size:14px;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,0.2);transition:transform 0.3s cubic-bezier(.34,1.56,.64,1);white-space:nowrap;z-index:99}
+.toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--green);color:#fff;border-radius:30px;padding:12px 24px;font-size:14px;font-weight:500;box-shadow:0 4px 20px rgba(0,0,0,.2);transition:transform .3s cubic-bezier(.34,1.56,.64,1);white-space:nowrap;z-index:200}
 .toast.show{transform:translateX(-50%) translateY(0)}
-
 .badge{display:inline-block;font-size:10px;font-family:var(--mono);border-radius:4px;padding:2px 6px;margin-left:6px;vertical-align:middle}
 .badge-req{background:var(--amber-pale);color:var(--amber)}
-
 .history-empty{text-align:center;padding:40px 20px;color:var(--muted);font-size:14px;line-height:1.8}
 .history-item{background:var(--card);border:1.5px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:10px}
 .history-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
@@ -118,9 +116,8 @@ textarea.field-input{resize:none;height:68px;font-size:13px}
 .tag-morte{background:var(--amber-pale);color:var(--amber)}
 .tag-racao{background:var(--blue-pale);color:var(--blue)}
 .tag-collab{background:var(--bg);color:var(--muted);border:1px solid var(--border)}
-
 .dash-card{background:var(--card);border-radius:var(--radius);border:1.5px solid var(--border);padding:18px;margin-bottom:14px;box-shadow:var(--shadow)}
-.dash-card h3{font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:14px;font-family:var(--mono)}
+.dash-card h3{font-size:13px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;margin-bottom:14px;font-family:var(--mono)}
 .kpi-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:14px}
 .kpi{background:var(--bg);border-radius:10px;padding:12px}
 .kpi-label{font-size:11px;color:var(--muted);font-family:var(--mono);margin-bottom:4px}
@@ -129,52 +126,1002 @@ textarea.field-input{resize:none;height:68px;font-size:13px}
 .postura-bar-wrap{margin-bottom:10px}
 .postura-bar-label{display:flex;justify-content:space-between;font-size:12px;font-family:var(--mono);margin-bottom:4px}
 .bar-track{background:var(--border);border-radius:6px;height:8px;overflow:hidden}
-.bar-fill{height:8px;border-radius:6px;background:var(--green-light);transition:width 0.4s}
-
-.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:100;display:flex;align-items:flex-end;justify-content:center}
+.bar-fill{height:8px;border-radius:6px;background:var(--green-light);transition:width .4s}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;display:flex;align-items:flex-end;justify-content:center}
 .modal-overlay.hidden{display:none}
-.modal-sheet{background:var(--card);border-radius:20px 20px 0 0;padding:24px 20px 36px;width:100%;max-width:480px}
-.modal-sheet h3{font-size:16px;font-weight:600;margin-bottom:16px}
-.modal-actions{display:flex;gap:10px;margin-top:16px}
-.modal-btn{flex:1;padding:12px;border-radius:12px;border:none;font-size:14px;font-weight:600;font-family:var(--font);cursor:pointer}
+.modal-sheet{background:var(--card);border-radius:20px 20px 0 0;padding:24px 20px 40px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto}
+.modal-sheet h3{font-size:17px;font-weight:600;margin-bottom:18px}
+.modal-actions{display:flex;gap:10px;margin-top:18px}
+.modal-btn{flex:1;padding:13px;border-radius:12px;border:none;font-size:14px;font-weight:600;font-family:var(--font);cursor:pointer}
 .modal-btn-cancel{background:var(--border);color:var(--muted)}
 .modal-btn-save{background:var(--green);color:#fff}
-
-.offline-banner{background:var(--amber-pale);color:var(--amber);font-size:12px;font-family:var(--mono);text-align:center;padding:8px;display:none}
-.offline-banner.show{display:block}
-
-.pending-badge{background:var(--amber-pale);color:var(--amber);font-size:11px;font-family:var(--mono);border-radius:6px;padding:2px 7px;margin-left:6px}
+.modal-btn-danger{background:var(--red);color:#fff}
+.lote-ficha{background:var(--card);border-radius:var(--radius);border:1.5px solid var(--border);padding:18px;margin-bottom:14px;box-shadow:var(--shadow)}
+.lote-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px}
+.lote-titulo{font-size:16px;font-weight:600}
+.lote-status{font-size:11px;font-family:var(--mono);border-radius:6px;padding:3px 8px}
+.lote-status.ativo{background:var(--green-pale);color:var(--green)}
+.lote-status.encerrado{background:var(--border);color:var(--muted)}
+.lote-info-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.lote-info-item{background:var(--bg);border-radius:8px;padding:10px}
+.lote-info-label{font-size:10px;color:var(--muted);font-family:var(--mono);margin-bottom:3px;text-transform:uppercase;letter-spacing:.06em}
+.lote-info-value{font-size:14px;font-weight:600;font-family:var(--mono)}
+.lote-semanas-badge{display:inline-flex;align-items:center;gap:6px;border-radius:8px;padding:8px 12px;margin-bottom:14px;font-family:var(--mono);font-size:13px;font-weight:600}
+.lote-semanas-badge.ok{background:var(--green-pale);color:var(--green)}
+.lote-semanas-badge.aviso{background:var(--amber-pale);color:var(--amber)}
+.lote-semanas-badge.critico{background:var(--red-pale);color:var(--red)}
+.doc-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)}
+.doc-row:last-of-type{border-bottom:none}
+.doc-tipo{font-size:12px;font-family:var(--mono);background:var(--purple-pale);color:var(--purple);border-radius:5px;padding:2px 7px;white-space:nowrap}
+.doc-nome{font-size:13px;flex:1;color:var(--text)}
+.doc-link{font-size:11px;color:var(--blue);text-decoration:none;font-family:var(--mono)}
+.doc-del{background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:0 4px}
+.resp-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)}
+.resp-row:last-of-type{border-bottom:none}
+.resp-nome{font-size:13px;font-weight:500;flex:1}
+.resp-data{font-size:11px;font-family:var(--mono);color:var(--muted)}
+.resp-atual{font-size:10px;background:var(--green-pale);color:var(--green);border-radius:4px;padding:2px 6px;font-family:var(--mono)}
+.arquivo-item{background:var(--card);border:1.5px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:10px;opacity:.7}
+.back-btn{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--green);font-weight:500;cursor:pointer;margin-bottom:16px;background:none;border:none;font-family:var(--font);padding:0}
+/* FICHA MENSAL */
+.ficha-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.ficha-nav-title{font-size:15px;font-weight:600;text-align:center;flex:1}
+.ficha-nav-btn{background:var(--card);border:1.5px solid var(--border);border-radius:8px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:18px;color:var(--green);flex-shrink:0}
+.ficha-table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.ficha-table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px;min-width:340px}
+.ficha-table th{background:var(--green);color:#fff;padding:7px 4px;text-align:center;font-weight:500;font-size:11px;position:sticky;top:0}
+.ficha-table th:first-child{width:28px}
+.ficha-table td{border:1px solid var(--border);padding:0;text-align:center;height:32px}
+.ficha-table td:first-child{background:var(--bg);color:var(--muted);font-size:11px;font-weight:500;padding:0 4px}
+.ficha-table tr.hoje td{background:#fffbe6}
+.ficha-table tr.futuro td input{background:var(--bg);color:var(--border);pointer-events:none}
+.ficha-table tr.futuro td:first-child{color:var(--border)}
+.ficha-total-row td{background:var(--green-pale);font-weight:600;color:var(--green);padding:6px 4px;font-size:11px}
+.ficha-input{width:100%;height:32px;border:none;background:transparent;text-align:center;font-family:var(--mono);font-size:12px;color:var(--text);outline:none;padding:0 2px}
+.ficha-input:focus{background:var(--blue-pale)}
+.ficha-total-cell{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--green);padding:0 4px}
+.ficha-mortes-cell{font-family:var(--mono);font-size:12px;color:var(--amber);font-weight:500;padding:0 4px}
+.ficha-resumo{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}
+.ficha-resumo-item{background:var(--bg);border-radius:8px;padding:10px;text-align:center}
+.ficha-resumo-label{font-size:10px;color:var(--muted);font-family:var(--mono);margin-bottom:3px;text-transform:uppercase}
+.ficha-resumo-value{font-size:16px;font-weight:600;font-family:var(--mono);color:var(--text)}
+.ficha-save-btn{width:100%;background:var(--green);color:#fff;border:none;border-radius:12px;padding:13px;font-size:14px;font-weight:600;font-family:var(--font);cursor:pointer;margin-top:12px;transition:all .15s}
+.ficha-save-btn:active{transform:scale(.98)}
+.ficha-save-btn:disabled{background:var(--border);color:var(--muted)}
+.ficha-mes-badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-family:var(--mono);background:var(--green-pale);color:var(--green);border-radius:6px;padding:4px 10px;margin-bottom:14px}
 </style>
 </head>
 <body>
-
-<div class="offline-banner" id="offline-banner">⚠ Sem conexão — registro salvo localmente e enviado quando voltar</div>
-
+<div class="offline-banner" id="offline-banner">Sem conexao - registro salvo localmente</div>
 <div class="header">
   <div class="header-top">
-    <div class="header-brand">Granja — Registro</div>
+    <div class="header-brand">Granja</div>
     <div class="header-date" id="hdate"></div>
   </div>
-  <h1 id="header-greeting">Bom dia 👋</h1>
-  <div class="header-sub">Selecione o galpão e registre o dia</div>
+  <h1 id="header-greeting">Bom dia</h1>
+  <div class="header-sub">Selecione o galpao e registre o dia</div>
   <div class="sync-status"><span class="sync-dot" id="sync-dot"></span><span id="sync-label">conectando...</span></div>
 </div>
-
+<div id="alert-container" style="margin-top:14px"></div>
 <div class="container">
   <div class="tab-bar">
-    <button class="tab active" onclick="setTab('registrar')">Registrar</button>
-    <button class="tab" onclick="setTab('dashboard')">Dashboard</button>
-    <button class="tab" onclick="setTab('historico')">Histórico</button>
+    <button class="tab active" onclick="setTab('postura')">Postura</button>
+    <button class="tab" onclick="setTab('usuarios')">Usuarios</button>
+    <button class="tab" onclick="setTab('racao')">Racao</button>
+    <button class="tab" onclick="setTab('produtos')">Produtos</button>
+    <button class="tab" onclick="setTab('financeiro')">Financeiro</button>
   </div>
+  <div class="tab-panel active" id="tab-postura">
+    <div id="postura-subtabs" style="display:flex;gap:4px;margin-bottom:16px"></div>
+    <div id="postura-subpanel"></div>
+  </div>
+  <div class="tab-panel" id="tab-usuarios">
 
-  <!-- REGISTRAR -->
-  <div class="tab-panel active" id="tab-registrar">
-    <div class="section-label">Quem está registrando?</div>
-    <div class="collab-grid" id="collab-grid"></div>
+    <div id="usuarios-list"></div>
+    <button class="submit-btn" style="margin-top:8px" onclick="abrirModalUsuario()">+ Novo usuario</button>
+  </div>
+  <div class="tab-panel" id="tab-racao"></div>
+  <div class="tab-panel" id="tab-produtos"></div>
+  <div class="tab-panel" id="tab-financeiro"></div>
+</div>
+<div class="modal-overlay hidden" id="modal-aves">
+  <div class="modal-sheet">
+    <h3 id="modal-aves-title">Editar galinhas</h3>
+    <div class="field-label">Quantidade atual de galinhas</div>
+    <input class="field-input" id="modal-aves-input" type="number" min="0" placeholder="Ex: 3850">
+    <div class="modal-actions">
+      <button class="modal-btn modal-btn-cancel" onclick="closeModal('modal-aves')">Cancelar</button>
+      <button class="modal-btn modal-btn-save" onclick="saveAves()">Salvar</button>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay hidden" id="modal-lote">
+  <div class="modal-sheet">
+    <h3 id="modal-lote-title">Novo lote</h3>
+    <input type="hidden" id="modal-lote-id">
+    <input type="hidden" id="modal-lote-galpao">
+    <div class="field-group"><div class="field-label">Raca da galinha</div><input class="field-input" id="lote-raca" placeholder="Ex: Hisex White"></div>
+    <div class="field-row">
+      <div class="field-group"><div class="field-label">Nascimento</div><input class="field-input" id="lote-nascimento" type="date"></div>
+      <div class="field-group"><div class="field-label">Chegada na granja</div><input class="field-input" id="lote-chegada" type="date"></div>
+    </div>
+    <div class="field-group"><div class="field-label">Responsavel atual</div>
+      <select class="field-input" id="lote-responsavel"><option value="">Selecione...</option><option>Lena</option><option>Lene</option><option>Diego</option><option>Gil</option></select>
+    </div>
+    <div class="field-group"><div class="field-label">Quantidade inicial de galinhas</div><input class="field-input" id="lote-aves" type="number" min="0" placeholder="Ex: 4000"></div>
+    <div class="field-group"><div class="field-label">Observacoes (opcional)</div><textarea class="field-input" id="lote-obs" placeholder="Fornecedor, procedencia..."></textarea></div>
+    <div class="modal-actions">
+      <button class="modal-btn modal-btn-cancel" onclick="closeModal('modal-lote')">Cancelar</button>
+      <button class="modal-btn modal-btn-save" onclick="salvarLote()">Salvar lote</button>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay hidden" id="modal-doc">
+  <div class="modal-sheet">
+    <h3>Adicionar documento</h3>
+    <input type="hidden" id="modal-doc-lote-id">
+    <div class="field-group"><div class="field-label">Tipo</div>
+      <select class="field-input" id="doc-tipo"><option>GTA</option><option>Nota Fiscal</option><option>Vacina</option><option>Laudo</option><option>Outro</option></select>
+    </div>
+    <div class="field-group"><div class="field-label">Nome / descricao</div><input class="field-input" id="doc-nome" placeholder="Ex: GTA 2025/001"></div>
+    <div class="field-group"><div class="field-label">Link externo (opcional)</div><input class="field-input" id="doc-url" type="url" placeholder="https://drive.google.com/..."></div>
+    <div class="field-group"><div class="field-label">Observacao</div><input class="field-input" id="doc-obs" placeholder="Opcional"></div>
+    <div class="modal-actions">
+      <button class="modal-btn modal-btn-cancel" onclick="closeModal('modal-doc')">Cancelar</button>
+      <button class="modal-btn modal-btn-save" onclick="salvarDoc()">Salvar</button>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay hidden" id="modal-encerrar">
+  <div class="modal-sheet">
+    <h3>Encerrar lote</h3>
+    <p style="font-size:13px;color:var(--muted);margin-bottom:16px">O lote sera arquivado. Esta acao nao pode ser desfeita.</p>
+    <div class="field-group"><div class="field-label">Data de encerramento</div><input class="field-input" id="encerrar-data" type="date"></div>
+    <div class="field-group"><div class="field-label">Motivo / observacao</div><textarea class="field-input" id="encerrar-motivo" placeholder="Ex: Descarte por fim de ciclo"></textarea></div>
+    <div class="modal-actions">
+      <button class="modal-btn modal-btn-cancel" onclick="closeModal('modal-encerrar')">Cancelar</button>
+      <button class="modal-btn modal-btn-danger" onclick="confirmarEncerramento()">Encerrar lote</button>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay hidden" id="modal-resp">
+  <div class="modal-sheet">
+    <h3>Trocar responsavel</h3>
+    <input type="hidden" id="modal-resp-lote-id">
+    <div class="field-group"><div class="field-label">Novo responsavel</div>
+      <select class="field-input" id="resp-novo"><option value="">Selecione...</option><option>Lena</option><option>Lene</option><option>Diego</option><option>Gil</option></select>
+    </div>
+    <div class="field-group"><div class="field-label">Data de inicio</div><input class="field-input" id="resp-data" type="date"></div>
+    <div class="modal-actions">
+      <button class="modal-btn modal-btn-cancel" onclick="closeModal('modal-resp')">Cancelar</button>
+      <button class="modal-btn modal-btn-save" onclick="salvarResponsavel()">Confirmar</button>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay hidden" id="modal-edit-reg">
+  <div class="modal-sheet">
+    <h3>Editar registro</h3>
+    <input type="hidden" id="edit-reg-id">
+    <div class="field-group"><div class="field-label">Total de pentes</div>
+      <div class="num-input-wrap">
+        <button class="num-btn" onclick="stepNum('edit-reg-pentes',-1)">-</button>
+        <input class="num-val" id="edit-reg-pentes" type="number" min="0">
+        <button class="num-btn" onclick="stepNum('edit-reg-pentes',1)">+</button>
+      </div>
+      <div style="font-size:11px;color:var(--green);font-family:var(--mono);margin-top:4px" id="edit-reg-ovos-calc"></div>
+    </div>
+    <div class="field-group"><div class="field-label">Mortes</div>
+      <div class="num-input-wrap">
+        <button class="num-btn" onclick="stepNum('edit-reg-mortes',-1)">-</button>
+        <input class="num-val" id="edit-reg-mortes" type="number" min="0">
+        <button class="num-btn" onclick="stepNum('edit-reg-mortes',1)">+</button>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="modal-btn modal-btn-cancel" onclick="closeModal('modal-edit-reg')">Cancelar</button>
+      <button class="modal-btn modal-btn-save" onclick="salvarEdicaoRegistro()">Salvar</button>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay hidden" id="modal-produto-detail">
+  <div class="modal-sheet">
+    <h3 id="mpd-title">Produto</h3>
+    <div id="mpd-body"></div>
+    <div class="modal-actions">
+      <button class="modal-btn modal-btn-cancel" onclick="closeModal('modal-produto-detail')">Fechar</button>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay hidden" id="modal-usuario">
+  <div class="modal-sheet">
+    <h3 id="modal-usuario-title">Novo usuario</h3>
+    <input type="hidden" id="modal-usuario-id">
+    <div class="field-group"><div class="field-label">Nome</div><input class="field-input" id="usuario-nome" placeholder="Nome completo"></div>
+    <div class="field-group"><div class="field-label">Nivel de usuario</div>
+      <select class="field-input" id="usuario-nivel">
+        <option value="1">1 — Administrador</option>
+        <option value="2">2 — Supervisor</option>
+        <option value="3">3 — Colaborador</option>
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="modal-btn modal-btn-cancel" onclick="closeModal('modal-usuario')">Cancelar</button>
+      <button class="modal-btn modal-btn-save" onclick="salvarUsuario()">Salvar</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const SUPA_URL='https://xxjdjtydpbmtikdaxobv.supabase.co';
+const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh4amRqdHlkcGJtdGlrZGF4b2J2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3OTY4NzMsImV4cCI6MjA5NTM3Mjg3M30.FwchD8BtKBhK3lHs3eHyFIuij4f_nHJtPqwAGnSgS74';
+const supa={
+  async query(method,path,body,extraHeaders){
+    try{
+      const headers={'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Content-Type':'application/json','Prefer':method==='POST'?'return=representation':'',...(extraHeaders||{})};
+      const res=await fetch(SUPA_URL+'/rest/v1/'+path,{method,headers,body:body?JSON.stringify(body):undefined});
+      const text=await res.text();
+      if(!res.ok){
+        let msg=text;
+        try{const j=JSON.parse(text);msg=j.message||j.hint||j.details||text;}catch(e){}
+        console.error('Supabase error ['+method+' '+path+']:',msg);
+        toast('Erro Supabase: '+msg.slice(0,80),true);
+        return null;
+      }
+      return text?JSON.parse(text):[];
+    }catch(e){console.error('Fetch error:',e);return null;}
+  },
+  get:p=>supa.query('GET',p),
+  post:(p,b)=>supa.query('POST',p,b),
+  patch:(p,b)=>supa.query('PATCH',p,b),
+  del:p=>supa.query('DELETE',p),
+};
+const GALPOES=[{id:'g1',nome:'Galpao 1',cap:4000},{id:'g2',nome:'Galpao 2',cap:4500},{id:'g3',nome:'Galpao 3',cap:4000},{id:'pb',nome:'Pedra Bonita',cap:5000}];
+const COLAB=['Lena','Lene','Diego','Gil'];
+const PENTE=30;
+const LS={get:(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d;}catch{return d;}},set:(k,v)=>localStorage.setItem(k,JSON.stringify(v))};
+let avesReais=LS.get('g_aves',{g1:4000,g2:4500,g3:4000,pb:5000});
+let histCache=LS.get('g_hist',[]);
+let pendQ=LS.get('g_pend',[]);
+let lotesC=LS.get('g_lotes',[]);
+let docsC=LS.get('g_docs',[]);
+let respsC=LS.get('g_resps',[]);
+let isOnline=navigator.onLine;
+let selCollab=null,selGalpao=null,coletas=[],coletaCnt=0,editGalpaoId=null,editLoteId=null,chartInst=null,viewGalpaoId=null;
 
-    <div class="section-label">Galpão <span class="badge badge-req">obrigatório</span></div>
-    <div class="galpao-grid" id="galpao-grid"></div>
+function setSS(s){
+  const dot=document.getElementById('sync-dot'),lbl=document.getElementById('sync-label'),ban=document.getElementById('offline-banner');
+  if(s==='online'){dot.className='sync-dot';lbl.textContent='sincronizado';ban.classList.remove('show');}
+  else if(s==='offline'){dot.className='sync-dot offline';lbl.textContent='sem conexao';ban.classList.add('show');}
+  else{dot.className='sync-dot syncing';lbl.textContent='sincronizando...';}
+}
+window.addEventListener('online',()=>{isOnline=true;setSS('syncing');flushQ();});
+window.addEventListener('offline',()=>{isOnline=false;setSS('offline');});
 
+async function flushQ(){
+  if(!pendQ.length){setSS('online');return;}
+  let ok=0;
+  for(const r of[...pendQ]){const res=await supa.post('registros',r);if(res!==null){pendQ=pendQ.filter(p=>p.id!==r.id);ok++;}}
+  LS.set('g_pend',pendQ);
+  if(!pendQ.length){setSS('online');if(ok>0)toast(ok+' registro(s) sincronizado(s)');}else setSS('offline');
+}
+
+function calcSem(nasc){if(!nasc)return null;return Math.floor((Date.now()-new Date(nasc).getTime())/(7*24*60*60*1000));}
+function fmtD(d){if(!d)return '-';const p=d.slice(0,10).split('-');return p[2]+'/'+p[1]+'/'+p[0];}
+
+async function init(){
+  const now=new Date(),h=now.getHours();
+  document.getElementById('header-greeting').textContent=h<12?'Bom dia':h<18?'Boa tarde':'Boa noite';
+  document.getElementById('hdate').textContent=now.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'short'});
+  buildGReg();addColeta();buildColabSelect();
+  // Set today's date in date field
+  document.getElementById('data-registro-input').value=new Date().toISOString().slice(0,10);
+  if(!isOnline){setSS('offline');}else{setSS('syncing');await flushQ();await loadAll();}
+  renderPosturaTab('registrar');renderAlerts();
+}
+
+async function loadAll(){
+  const[hist,aves,lotes,docs,resps,usuarios,racao,prods,comps,vends,vitens,vpags]=await Promise.all([
+    supa.get('registros?order=created_at.desc&limit=200'),
+    supa.get('galpoes?select=*'),
+    supa.get('lotes?order=created_at.desc'),
+    supa.get('lote_documentos?order=created_at.desc'),
+    supa.get('lote_responsaveis?order=created_at.desc'),
+    supa.get('usuarios?order=nivel.asc,nome.asc'),
+    supa.get('fabricacao_racao?order=data_fabricacao.desc&limit=100'),
+    supa.get('produtos?order=tipo.asc,descricao.asc'),
+    supa.get('compras?order=created_at.desc&limit=50'),
+    supa.get('vendas?order=data_venda.desc&limit=100'),
+    supa.get('venda_itens?order=id.asc'),
+    supa.get('venda_pagamentos?order=created_at.desc'),
+  ]);
+  if(hist!==null){histCache=hist;LS.set('g_hist',histCache);}
+  if(aves&&aves.length){aves.forEach(g=>{avesReais[g.galpao_id]=g.aves_atuais;});LS.set('g_aves',avesReais);}
+  if(lotes!==null){lotesC=lotes;LS.set('g_lotes',lotesC);}
+  if(docs!==null){docsC=docs;LS.set('g_docs',docsC);}
+  if(resps!==null){respsC=resps;LS.set('g_resps',respsC);}
+  if(usuarios!==null){usuariosC=usuarios;LS.set('g_usuarios',usuariosC);}
+  if(racao!==null){racaoCache=racao;}
+  if(prods!==null)produtosC=prods;
+  if(comps!==null)comprasC=comps;
+  if(vends!==null)vendasC=vends;
+  if(vitens!==null)vendasItensC=vitens;
+  if(vpags!==null)vendasPagamentosC=vpags;
+  buildColabSelect();
+  setSS('online');renderPosturaTab(window._posturaSubTab||'registrar');renderAlerts();
+  await seedProdutosRacao();
+}
+
+function renderAlerts(){
+  const c=document.getElementById('alert-container');
+  const alerts=[];
+  GALPOES.forEach(g=>{
+    const lote=lotesC.find(l=>l.galpao_id===g.id&&l.status==='ativo');
+    if(!lote)return;
+    const sem=calcSem(lote.nascimento);if(sem===null)return;
+    if(sem>=90)alerts.push({t:'critical',title:g.nome+' - Muda urgente',text:'Lote com '+sem+' semanas. Avaliar descarte imediatamente.'});
+    else if(sem>=85)alerts.push({t:'aviso',title:g.nome+' - Verificar necessidade de muda',text:'Lote com '+sem+' semanas (85-100 semanas).'});
+  });
+  c.innerHTML=alerts.map(a=>'<div class="alert-banner show '+a.t+'"><div class="alert-title">'+a.title+'</div><div class="alert-text">'+a.text+'</div></div>').join('');
+}
+
+function buildCollabs(){
+  const g=document.getElementById('collab-grid');
+  COLAB.forEach(n=>{const b=document.createElement('button');b.className='collab-btn';b.dataset.name=n;b.innerHTML='<div class="avatar">'+n[0]+'</div><span>'+n+'</span>';b.onclick=()=>{selCollab=n;document.querySelectorAll('.collab-btn').forEach(x=>x.classList.toggle('active',x.dataset.name===n));};g.appendChild(b);});
+}
+
+function buildGReg(){
+  const g=document.getElementById('galpao-grid-reg');g.innerHTML='';
+  GALPOES.forEach(gp=>{
+    const aves=avesReais[gp.id]??gp.cap;
+    const lote=lotesC.find(l=>l.galpao_id===gp.id&&l.status==='ativo');
+    const sem=lote?calcSem(lote.nascimento):null;
+    const semStr=sem!==null?sem+' sem.':'';    const semCls=sem>=90?'semana-alerta':sem>=85?'semana-aviso':'semana-ok';
+    const b=document.createElement('button');b.className='galpao-card';b.dataset.id=gp.id;
+    b.innerHTML='<div class="g-name">'+gp.nome+'</div>'+(lote?'<div class="g-lote">'+( lote.raca||'Lote ativo')+'</div>':'<div class="g-lote lote-vazio">Sem lote</div>')+'<div class="g-aves">'+aves.toLocaleString('pt-BR')+' galinhas</div>'+(semStr?'<div class="g-semanas '+semCls+'">'+semStr+'</div>':'')+'';
+    b.onclick=e=>{selGalpao=gp.id;document.querySelectorAll('.galpao-card').forEach(x=>x.classList.toggle('active',x.dataset.id===gp.id));updateRest();};
+    g.appendChild(b);
+  });
+}
+
+function buildSilos(){
+  const w=document.getElementById('silo-rows');
+  GALPOES.forEach(g=>{const r=document.createElement('div');r.className='silo-row';r.innerHTML='<input type="checkbox" class="silo-check" id="sc_'+g.id+'"><label class="silo-label" for="sc_'+g.id+'">'+g.nome+'</label><div class="silo-kg"><input class="field-input" type="number" id="sk_'+g.id+'" placeholder="kg" min="0" step="0.5"></div>';w.appendChild(r);});
+}
+function buildTratos(){
+  const w=document.getElementById('trato-rows');
+  ['1 trato (manha)','2 trato (tarde)'].forEach((l,i)=>{const r=document.createElement('div');r.className='trato-row';r.innerHTML='<span class="trato-label">'+l+'</span><label class="toggle-wrap"><input type="checkbox" id="tr_'+i+'"><span class="toggle-track"></span></label>';w.appendChild(r);});
+}
+
+function renderGTab(){
+  const list=document.getElementById('galpoes-list-view');
+  list.innerHTML=GALPOES.map(g=>{
+    const aves=avesReais[g.id]??g.cap;
+    const lote=lotesC.find(l=>l.galpao_id===g.id&&l.status==='ativo');
+    const sem=lote?calcSem(lote.nascimento):null;
+    const semCls=sem>=90?'critico':sem>=85?'aviso':'ok';
+    return '<div class="lote-ficha"><div class="lote-header"><div class="lote-titulo">'+g.nome+'</div>'+(lote?'<span class="lote-status ativo">Lote ativo</span>':'<span class="lote-status encerrado">Sem lote</span>')+'</div>'+(lote?''+(sem!==null?'<div class="lote-semanas-badge '+semCls+'">'+sem+' semanas de vida</div>':'')+'<div class="lote-info-grid"><div class="lote-info-item"><div class="lote-info-label">Raca</div><div class="lote-info-value">'+( lote.raca||'Nao informada')+'</div></div><div class="lote-info-item"><div class="lote-info-label">Galinhas</div><div class="lote-info-value">'+aves.toLocaleString('pt-BR')+'</div></div><div class="lote-info-item"><div class="lote-info-label">Nascimento</div><div class="lote-info-value">'+fmtD(lote.nascimento)+'</div></div><div class="lote-info-item"><div class="lote-info-label">Chegada</div><div class="lote-info-value">'+fmtD(lote.data_chegada)+'</div></div><div class="lote-info-item"><div class="lote-info-label">Responsavel</div><div class="lote-info-value">'+( lote.responsavel_atual||'Nao definido')+'</div></div></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="g-btn g-btn-lote" onclick="abrirLote(\''+g.id+'\')">Ver ficha completa</button><button class="g-btn g-btn-edit" onclick="abrirEncerrar('+lote.id+')">Encerrar lote</button></div>':'<div style="padding:8px 0;font-size:13px;color:var(--muted)">Nenhum lote ativo.</div><button class="g-btn g-btn-lote" onclick="abrirModalLote(\''+g.id+'\')">+ Criar lote</button>')+'</div>';
+  }).join('');
+}
+
+function abrirLote(gid){
+  viewGalpaoId=gid;
+  document.getElementById('galpoes-list-view').style.display='none';
+  document.getElementById('lote-detail-view').style.display='block';
+  renderDetail(gid);
+}
+function voltarG(){document.getElementById('lote-detail-view').style.display='none';document.getElementById('galpoes-list-view').style.display='block';viewGalpaoId=null;}
+
+function renderDetail(gid){
+  const g=GALPOES.find(x=>x.id===gid);
+  const lote=lotesC.find(l=>l.galpao_id===gid&&l.status==='ativo');
+  const arq=lotesC.filter(l=>l.galpao_id===gid&&l.status==='encerrado');
+  const aves=avesReais[gid]??g.cap;
+  const docs=lote?docsC.filter(d=>d.lote_id===lote.id):[];
+  const resps=lote?respsC.filter(r=>r.lote_id===lote.id).sort((a,b)=>new Date(b.data_inicio)-new Date(a.data_inicio)):[];
+  const sem=lote?calcSem(lote.nascimento):null;
+  const semCls=sem>=90?'critico':sem>=85?'aviso':'ok';
+  const d=document.getElementById('lote-detail-view');
+  let html='<button class="back-btn" onclick="voltarG()">← Voltar</button>'
+    +'<div style="font-size:18px;font-weight:600;margin-bottom:16px">'+g.nome+'</div>';
+  if(lote){
+    html+='<div class="lote-ficha">'
+      +'<div class="lote-header"><div class="lote-titulo">'+(lote.raca||'Lote ativo')+'</div><span class="lote-status ativo">ativo</span></div>'
+      +(sem!==null?'<div class="lote-semanas-badge '+semCls+'">'+sem+' semanas de vida</div>':'')
+      +'<div class="lote-info-grid">'
+      +'<div class="lote-info-item"><div class="lote-info-label">Raca</div><div class="lote-info-value">'+(lote.raca||'Nao informada')+'</div></div>'
+      +'<div class="lote-info-item"><div class="lote-info-label">Galinhas hoje</div><div class="lote-info-value">'+aves.toLocaleString('pt-BR')+'</div></div>'
+      +'<div class="lote-info-item"><div class="lote-info-label">Chegada</div><div class="lote-info-value">'+fmtD(lote.data_chegada)+'</div></div>'
+      +'<div class="lote-info-item"><div class="lote-info-label">Nascimento</div><div class="lote-info-value">'+fmtD(lote.nascimento)+'</div></div>'
+      +'<div class="lote-info-item"><div class="lote-info-label">Aves iniciais</div><div class="lote-info-value">'+(lote.aves_iniciais||'Nao informado')+'</div></div>'
+      +'<div class="lote-info-item"><div class="lote-info-label">Responsavel</div><div class="lote-info-value">'+(lote.responsavel_atual||'Nao definido')+'</div></div>'
+      +'</div>'
+      +(lote.obs?'<div style="font-size:12px;color:var(--muted);font-family:var(--mono);margin-bottom:12px">'+lote.obs+'</div>':'')
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
+      +'<button class="g-btn g-btn-lote" onclick="abrirFichaMensal(viewGalpaoId,'+lote.id+')">Ficha mensal</button>'
+      +'<button class="g-btn g-btn-edit" onclick="abrirModalLoteEd('+lote.id+')">Editar</button>'
+      +'<button class="g-btn g-btn-edit" onclick="abrirModalResp('+lote.id+')">Trocar responsavel</button>'
+      +'<button class="g-btn" style="background:var(--red-pale);color:var(--red)" onclick="abrirEncerrar('+lote.id+')">Encerrar lote</button>'
+      +'</div></div>';
+    // Responsaveis
+    html+='<div class="form-card"><div class="form-card-title"><span class="dot" style="background:#7B5EA7"></span>Historico de responsaveis</div>'
+      +(resps.length?resps.map((r,i)=>'<div class="resp-row"><span class="resp-nome">'+r.responsavel+'</span><span class="resp-data">desde '+fmtD(r.data_inicio)+'</span>'+(i===0?'<span class="resp-atual">atual</span>':'')+'</div>').join(''):'<div style="font-size:13px;color:var(--muted)">Nenhum registro.</div>')
+      +'</div>';
+    // Documentos
+    html+='<div class="form-card"><div class="form-card-title"><span class="dot" style="background:#3A7CA5"></span>Documentos do lote</div>'
+      +(docs.length?docs.map(dd=>'<div class="doc-row"><span class="doc-tipo">'+dd.tipo+'</span><span class="doc-nome">'+dd.nome+'</span>'+(dd.url?'<a class="doc-link" href="'+dd.url+'" target="_blank">abrir</a>':'')+'<button class="doc-del" onclick="delDoc('+dd.id+')">x</button></div>').join(''):'<div style="font-size:13px;color:var(--muted);margin-bottom:12px">Nenhum documento.</div>')
+      +'<button class="add-coleta" style="margin-top:10px" onclick="abrirModalDoc('+lote.id+')">+ Adicionar documento</button>'
+      +'</div>';
+  } else {
+    html+='<div class="form-card"><p style="font-size:13px;color:var(--muted);margin-bottom:14px">Nenhum lote ativo.</p>'
+      +'<button class="submit-btn" onclick="abrirModalLote(viewGalpaoId)">+ Criar lote</button></div>';
+  }
+  if(arq.length){
+    html+='<div class="form-card"><div class="form-card-title"><span class="dot" style="background:var(--muted)"></span>Arquivo - lotes encerrados</div>'
+      +arq.map(l=>'<div class="arquivo-item"><div style="font-weight:600;font-size:13px">'+(l.raca||'Lote')+'</div>'
+        +'<div style="font-size:11px;font-family:var(--mono);color:var(--muted)">Chegada: '+fmtD(l.data_chegada)+' · Encerrado: '+fmtD(l.data_encerramento)+'</div>'
+        +(l.motivo_encerramento?'<div style="font-size:11px;color:var(--muted);margin-top:2px">'+l.motivo_encerramento+'</div>':'')
+        +'</div>').join('')
+      +'</div>';
+  }
+  d.innerHTML=html;
+}
+
+function abrirModalLote(gid){
+  document.getElementById('modal-lote-title').textContent='Novo lote - '+GALPOES.find(g=>g.id===gid).nome;
+  document.getElementById('modal-lote-id').value='';
+  document.getElementById('modal-lote-galpao').value=gid;
+  ['lote-raca','lote-obs'].forEach(id=>{document.getElementById(id).value='';});
+  ['lote-nascimento','lote-chegada'].forEach(id=>{document.getElementById(id).value='';});
+  document.getElementById('lote-responsavel').value='';
+  document.getElementById('lote-aves').value='';
+  document.getElementById('modal-lote').classList.remove('hidden');
+}
+function abrirModalLoteEd(lid){
+  const lote=lotesC.find(l=>l.id===lid);if(!lote)return;
+  document.getElementById('modal-lote-title').textContent='Editar lote';
+  document.getElementById('modal-lote-id').value=lid;
+  document.getElementById('modal-lote-galpao').value=lote.galpao_id;
+  document.getElementById('lote-raca').value=lote.raca||'';  document.getElementById('lote-nascimento').value=lote.nascimento||'';  document.getElementById('lote-chegada').value=lote.data_chegada||'';  document.getElementById('lote-responsavel').value=lote.responsavel_atual||'';  document.getElementById('lote-aves').value=lote.aves_iniciais||'';  document.getElementById('lote-obs').value=lote.obs||'';  document.getElementById('modal-lote').classList.remove('hidden');
+}
+async function salvarLote(){
+  const id=document.getElementById('modal-lote-id').value;
+  const gid=document.getElementById('modal-lote-galpao').value;
+  const raca=document.getElementById('lote-raca').value.trim();
+  const nasc=document.getElementById('lote-nascimento').value;
+  const cheg=document.getElementById('lote-chegada').value;
+  const resp=document.getElementById('lote-responsavel').value;
+  const aves=parseInt(document.getElementById('lote-aves').value||0);
+  const obs=document.getElementById('lote-obs').value;
+  if(!raca){toast('Informe a raca',true);return;}
+  const gNome=(GALPOES.find(g=>g.id===gid)||{}).nome||gid;
+  const payload={galpao_id:gid,galpao_nome:gNome,raca,nascimento:nasc||null,data_chegada:cheg||null,responsavel_atual:resp,aves_iniciais:aves,status:'ativo',obs};
+  let lid;
+  if(id){
+    await supa.patch('lotes?id=eq.'+id,payload);lid=parseInt(id);
+    lotesC=lotesC.map(l=>l.id===lid?{...l,...payload}:l);
+  }else{
+    const res=await supa.post('lotes',payload);
+    if(res===null){return;} // error already shown by supa.query
+    // res may be array with item, or empty array — reload from DB to get id
+    if(res&&res[0]){
+      lid=res[0].id;lotesC.unshift(res[0]);
+    } else {
+      // fallback: reload lotes from DB
+      const fresh=await supa.get('lotes?galpao_id=eq.'+gid+'&status=eq.ativo&order=created_at.desc&limit=1');
+      if(!fresh||!fresh[0]){toast('Erro ao obter lote criado',true);return;}
+      lid=fresh[0].id;lotesC.unshift(fresh[0]);
+    }
+    if(aves>0){avesReais[gid]=aves;LS.set('g_aves',avesReais);const ex=await supa.get('galpoes?galpao_id=eq.'+gid);if(ex&&ex.length)await supa.patch('galpoes?galpao_id=eq.'+gid,{aves_atuais:aves});else await supa.post('galpoes',{galpao_id:gid,aves_atuais:aves});}
+    if(resp){const rr=await supa.post('lote_responsaveis',{lote_id:lid,responsavel:resp,data_inicio:cheg||new Date().toISOString().slice(0,10)});if(rr&&rr[0])respsC.unshift(rr[0]);}
+  }
+  LS.set('g_lotes',lotesC);LS.set('g_resps',respsC);
+  closeModal('modal-lote');toast('Lote salvo!');
+  buildGReg();renderGTab();renderAlerts();
+  if(viewGalpaoId)renderDetail(viewGalpaoId);
+}
+function abrirEncerrar(lid){editLoteId=lid;document.getElementById('encerrar-data').value=new Date().toISOString().slice(0,10);document.getElementById('encerrar-motivo').value='';document.getElementById('modal-encerrar').classList.remove('hidden');}
+async function confirmarEncerramento(){
+  const data=document.getElementById('encerrar-data').value;
+  const motivo=document.getElementById('encerrar-motivo').value;
+  await supa.patch('lotes?id=eq.'+editLoteId,{status:'encerrado',data_encerramento:data,motivo_encerramento:motivo});
+  lotesC=lotesC.map(l=>l.id===editLoteId?{...l,status:'encerrado',data_encerramento:data,motivo_encerramento:motivo}:l);
+  LS.set('g_lotes',lotesC);closeModal('modal-encerrar');toast('Lote encerrado e arquivado');
+  buildGReg();renderGTab();renderAlerts();if(viewGalpaoId)renderDetail(viewGalpaoId);
+}
+function abrirModalResp(lid){document.getElementById('modal-resp-lote-id').value=lid;document.getElementById('resp-novo').value='';document.getElementById('resp-data').value=new Date().toISOString().slice(0,10);document.getElementById('modal-resp').classList.remove('hidden');}
+async function salvarResponsavel(){
+  const lid=parseInt(document.getElementById('modal-resp-lote-id').value);
+  const resp=document.getElementById('resp-novo').value;
+  const data=document.getElementById('resp-data').value;
+  if(!resp){toast('Selecione um responsavel',true);return;}
+  await supa.patch('lotes?id=eq.'+lid,{responsavel_atual:resp});
+  const rr=await supa.post('lote_responsaveis',{lote_id:lid,responsavel:resp,data_inicio:data});
+  lotesC=lotesC.map(l=>l.id===lid?{...l,responsavel_atual:resp}:l);
+  if(rr&&rr[0])respsC.unshift(rr[0]);
+  LS.set('g_lotes',lotesC);LS.set('g_resps',respsC);
+  closeModal('modal-resp');toast('Responsavel atualizado');buildGReg();if(viewGalpaoId)renderDetail(viewGalpaoId);
+}
+function abrirModalDoc(lid){document.getElementById('modal-doc-lote-id').value=lid;['doc-nome','doc-url','doc-obs'].forEach(id=>document.getElementById(id).value='');document.getElementById('doc-tipo').value='GTA';document.getElementById('modal-doc').classList.remove('hidden');}
+async function salvarDoc(){
+  const lid=parseInt(document.getElementById('modal-doc-lote-id').value);
+  const tipo=document.getElementById('doc-tipo').value;
+  const nome=document.getElementById('doc-nome').value.trim();
+  const url=document.getElementById('doc-url').value.trim();
+  const obs=document.getElementById('doc-obs').value.trim();
+  if(!nome){toast('Informe o nome do documento',true);return;}
+  const res=await supa.post('lote_documentos',{lote_id:lid,tipo,nome,url:url||null,obs:obs||null});
+  if(res&&res[0]){docsC.unshift(res[0]);LS.set('g_docs',docsC);}
+  closeModal('modal-doc');toast('Documento adicionado');if(viewGalpaoId)renderDetail(viewGalpaoId);
+}
+async function delDoc(did){
+  if(!confirm('Remover documento?'))return;
+  await supa.del('lote_documentos?id=eq.'+did);
+  docsC=docsC.filter(d=>d.id!==did);LS.set('g_docs',docsC);if(viewGalpaoId)renderDetail(viewGalpaoId);
+}
+
+function addColeta(){
+  coletaCnt++;const id='col_'+coletaCnt;const now=new Date();
+  const t=now.getHours().toString().padStart(2,'0')+ ':'+now.getMinutes().toString().padStart(2,'0');
+  const w=document.getElementById('coletas-wrap');const r=document.createElement('div');r.className='coleta-row';
+  r.innerHTML='<div class="coleta-label">Coleta '+coletaCnt+'<br><span style="font-size:10px;font-family:var(--mono);color:var(--muted)">'+t+'</span></div><div class="num-input-wrap"><button class="num-btn" onclick="stepC(\''+id+'\',-1)">-</button><input class="num-val" id="'+id+'" type="number" value="0" min="0" oninput="updOvos()"><button class="num-btn" onclick="stepC(\''+id+'\',1)">+</button></div><div class="coleta-calc" id="cc_'+id+'">= 0 ovos</div>';
+  w.appendChild(r);coletas.push({id,time:t});
+}
+function stepC(id,d){const e=document.getElementById(id);e.value=Math.max(0,parseInt(e.value||0)+d);updOvos();}
+function updOvos(){
+  let t=0;coletas.forEach(c=>{const v=parseInt(document.getElementById(c.id)?.value||0);t+=v;const cc=document.getElementById('cc_'+c.id);if(cc)cc.textContent='= '+(v*PENTE).toLocaleString('pt-BR')+' ovos';});
+  document.getElementById('total-pentes').textContent=t.toLocaleString('pt-BR')+' pentes';
+  document.getElementById('total-ovos-calc').textContent='= '+(t*PENTE).toLocaleString('pt-BR')+' ovos';
+}
+function stepNum(id,d){const e=document.getElementById(id);e.value=Math.max(0,parseInt(e.value||0)+d);if(id==='mortes')updateRest();}
+function updateRest(){if(!selGalpao){document.getElementById('restantes-display').textContent='-';return;}const a=avesReais[selGalpao]??0;const m=parseInt(document.getElementById('mortes').value||0);document.getElementById('restantes-display').textContent=(a-m).toLocaleString('pt-BR');}
+
+function openModal(id){document.getElementById(id).classList.remove('hidden');}
+function closeModal(id){document.getElementById(id).classList.add('hidden');}
+function openModalAves(gid,e){if(e)e.stopPropagation();editGalpaoId=gid;const g=GALPOES.find(x=>x.id===gid);document.getElementById('modal-aves-title').textContent='Galinhas - '+g.nome;document.getElementById('modal-aves-input').value=avesReais[gid]??g.cap;openModal('modal-aves');}
+async function saveAves(){
+  const val=parseInt(document.getElementById('modal-aves-input').value||0);if(!editGalpaoId)return;
+  avesReais[editGalpaoId]=val;LS.set('g_aves',avesReais);buildGReg();updateRest();
+  if(isOnline){const ex=await supa.get('galpoes?galpao_id=eq.'+editGalpaoId);if(ex&&ex.length)await supa.patch('galpoes?galpao_id=eq.'+editGalpaoId,{aves_atuais:val});else await supa.post('galpoes',{galpao_id:editGalpaoId,aves_atuais:val});}
+  toast('Quantidade atualizada');closeModal('modal-aves');
+}
+['modal-aves','modal-lote','modal-doc','modal-encerrar','modal-resp','modal-usuario','modal-edit-reg','modal-produto-detail'].forEach(id=>{document.getElementById(id).onclick=function(e){if(e.target===this)closeModal(id);};});
+
+async function salvar(){
+  if(!selGalpao){toast('Selecione o galpao',true);return;}
+  const btn=document.getElementById('submit-btn');btn.disabled=true;btn.textContent='Salvando...';
+  const tp=coletas.reduce((s,c)=>s+parseInt(document.getElementById(c.id)?.value||0),0);
+  const to=tp*PENTE;
+  const cd=coletas.map(c=>({horario:c.time,pentes:parseInt(document.getElementById(c.id)?.value||0),ovos:parseInt(document.getElementById(c.id)?.value||0)*PENTE}));
+  const gp=GALPOES.find(g=>g.id===selGalpao);
+  const a=avesReais[selGalpao]??0;const m=parseInt(document.getElementById('mortes').value||0);const ar=a-m;
+  const tp2=a>0?parseFloat((to/a*100).toFixed(1)):0;
+  const loteAtivo=lotesC.find(l=>l.galpao_id===selGalpao&&l.status==='ativo');
+  const silos=[];
+  const tratos=[];
+  const now=new Date();
+  const dataInput=document.getElementById('data-registro-input').value;
+  const dataObj=dataInput?new Date(dataInput+'T12:00:00'):now;
+  const dataReg=dataObj.toLocaleDateString('pt-BR');
+  const rec={id:Date.now(),created_at:now.toISOString(),data_registro:dataReg,horario:now.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}),colaborador:document.getElementById('sel-colaborador')?.value||'Nao informado',galpao_id:selGalpao,galpao_nome:gp.nome,lote_id:loteAtivo?loteAtivo.id:null,aves_no_dia:a,mortes:m,aves_restantes:ar,causa_morte:document.getElementById('causa').value,coletas:JSON.stringify(cd),total_pentes:tp,total_ovos:to,taxa_postura:tp2,silos:JSON.stringify(silos),tratos:JSON.stringify(tratos),obs:document.getElementById('obs_geral').value};
+  if(m>0){avesReais[selGalpao]=ar;LS.set('g_aves',avesReais);if(isOnline){const ex=await supa.get('galpoes?galpao_id=eq.'+selGalpao);if(ex&&ex.length)await supa.patch('galpoes?galpao_id=eq.'+selGalpao,{aves_atuais:ar});else await supa.post('galpoes',{galpao_id:selGalpao,aves_atuais:ar});}buildGReg();}
+  let saved=false;if(isOnline){const r=await supa.post('registros',rec);saved=r!==null;}
+  if(!saved){pendQ.push(rec);LS.set('g_pend',pendQ);setSS('offline');}
+  histCache.unshift(rec);if(histCache.length>200)histCache=histCache.slice(0,200);LS.set('g_hist',histCache);
+  toast(saved?'Registro salvo!':'Salvo - sera sincronizado');
+
+  // Auto-upsert into ficha mensal
+  if(isOnline && loteAtivo && tp>0){
+    const dParts=dataReg.split('/');
+    const diaN=parseInt(dParts[0]), mesN=parseInt(dParts[1]), anoN=parseInt(dParts[2]);
+    const c1=cd[0]?cd[0].pentes:0, c2=cd[1]?cd[1].pentes:0, c3=cd[2]?cd[2].pentes:0;
+    const fichaPayload={lote_id:loteAtivo.id,galpao_id:selGalpao,ano:anoN,mes:mesN,dia:diaN,coleta1:c1,coleta2:c2,coleta3:c3,total_pentes:tp,total_ovos:to,mortes:m};
+    await supa.query('POST','fichas_mensais?on_conflict=lote_id,ano,mes,dia',fichaPayload,{'Prefer':'resolution=merge-duplicates'});
+  }
+
+  const savedGalpaoId=selGalpao;
+  btn.disabled=false;btn.textContent='Salvar registro';
+  // Reset state without touching DOM (panel will be replaced)
+  selGalpao=null;coletas=[];coletaCnt=0;
+  // Navigate to historico
+  window._histTab=savedGalpaoId;
+  window._posturaSubTab='historico';
+  renderPosturaTab('historico');
+}
+function resetForm(){
+  selGalpao=null;
+  document.querySelectorAll('.galpao-card').forEach(b=>b.classList.remove('active'));
+  const fmortes=document.getElementById('mortes');if(fmortes)fmortes.value=0;
+  const frest=document.getElementById('restantes-display');if(frest)frest.textContent='-';
+  const fcausa=document.getElementById('causa');if(fcausa)fcausa.value='';
+  const fobs=document.getElementById('obs_geral');if(fobs)fobs.value='';
+  const fwrap=document.getElementById('coletas-wrap');if(fwrap)fwrap.innerHTML='';coletas=[];coletaCnt=0;
+  if(document.getElementById('coletas-wrap'))addColeta();
+  if(document.getElementById('total-pentes'))updOvos();
+  const fdate=document.getElementById('data-registro-input');if(fdate)fdate.value=new Date().toISOString().slice(0,10);
+}
+
+function renderDash(){
+  const today=new Date().toLocaleDateString('pt-BR');const tr=histCache.filter(r=>r.data_registro===today);
+  const ta=Object.values(avesReais).reduce((a,b)=>a+b,0);document.getElementById('kpi-total-aves').textContent=ta.toLocaleString('pt-BR');
+  const oh=tr.reduce((s,r)=>s+(r.total_ovos||0),0);const ph=tr.reduce((s,r)=>s+(r.total_pentes||0),0);
+  document.getElementById('kpi-ovos-hoje').textContent=oh.toLocaleString('pt-BR');document.getElementById('kpi-ovos-pentes').textContent=ph+' pentes';
+  document.getElementById('kpi-mortes-hoje').textContent=tr.reduce((s,r)=>s+(r.mortes||0),0);
+  document.getElementById('kpi-postura-media').textContent=(ta>0?((oh/ta)*100).toFixed(1):0)+'%';
+  const bw=document.getElementById('postura-bars');bw.innerHTML='';
+  GALPOES.forEach(g=>{const o=tr.filter(r=>r.galpao_id===g.id).reduce((s,r)=>s+(r.total_ovos||0),0);const a=avesReais[g.id]||1;const p=Math.min(100,(o/a*100)).toFixed(1);bw.innerHTML+='<div class="postura-bar-wrap"><div class="postura-bar-label"><span style="color:var(--text)">'+g.nome+'</span><span style="color:var(--green);font-weight:500">'+p+'%</span></div><div class="bar-track"><div class="bar-fill" style="width:'+p+'%"></div></div></div>';});
+  const aw=document.getElementById('aves-por-galpao');aw.innerHTML='';
+  GALPOES.forEach(g=>{const a=avesReais[g.id]??g.cap;aw.innerHTML+='<div class="postura-bar-wrap"><div class="postura-bar-label"><span style="color:var(--text)">'+g.nome+'</span><span style="color:var(--text)">'+a.toLocaleString('pt-BR')+'</span></div><div class="bar-track"><div class="bar-fill" style="width:'+(a/5000*100).toFixed(0)+'%;background:var(--blue)"></div></div></div>';});
+  renderChart();
+}
+function renderChart(){
+  const labels=[];const ds=GALPOES.map(g=>({label:g.nome,data:[],gid:g.id}));
+  for(let i=6;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);const s=d.toLocaleDateString('pt-BR');labels.push(s.slice(0,5));GALPOES.forEach((g,gi)=>{const recs=histCache.filter(r=>r.data_registro===s&&r.galpao_id===g.id);ds[gi].data.push(parseFloat((recs.reduce((x,r)=>x+(r.total_ovos||0),0)/(avesReais[g.id]||1)*100).toFixed(1)));});}
+  const colors=['#52B788','#3A7CA5','#E76F51','#7B5EA7'];const ctx=document.getElementById('chart-postura').getContext('2d');
+  if(chartInst)chartInst.destroy();
+  chartInst=new Chart(ctx,{type:'line',data:{labels,datasets:ds.map((d,i)=>({label:d.label,data:d.data,borderColor:colors[i],backgroundColor:colors[i]+'22',borderWidth:2,pointRadius:3,tension:.3,fill:false}))},options:{responsive:true,plugins:{legend:{position:'bottom',labels:{font:{size:11},boxWidth:12}}},scales:{y:{min:0,max:100,ticks:{callback:v=>v+'%',font:{size:11}},grid:{color:'rgba(0,0,0,0.06)'}},x:{ticks:{font:{size:10}},grid:{display:false}}}}});
+}
+function renderHist(){
+  const list=document.getElementById('historico-list');
+  if(!histCache.length&&!pendQ.length){list.innerHTML='<div class="history-empty">Nenhum registro ainda.</div>';return;}
+  // Sub-tabs: Todos + each galpao
+  const tabs=[{id:'todos',nome:'Todos'},...GALPOES.map(g=>({id:g.id,nome:g.nome.replace('Galpao ','G')}))];
+  const activeHTab=window._histTab||'todos';
+  let html='<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:14px">';
+  tabs.forEach(t=>{
+    const active=activeHTab===t.id;
+    html+='<button onclick="setHistTab(\''+t.id+'\')" style="padding:6px 10px;font-size:11px;font-family:var(--mono);border:1.5px solid '+(active?'var(--green)':'var(--border)')+';background:'+(active?'var(--green-pale)':'var(--card)')+';color:'+(active?'var(--green)':'var(--muted)')+';border-radius:8px;cursor:pointer">'+t.nome+'</button>';
+  });
+  html+='</div>';
+
+  // Filter records
+  const recs=activeHTab==='todos'?[...histCache]:histCache.filter(r=>r.galpao_id===activeHTab);
+
+  if(pendQ.length) html+='<div style="text-align:center;padding:6px 0 10px;font-size:12px;color:var(--amber);font-family:var(--mono)">'+pendQ.length+' registro(s) aguardando sincronizacao</div>';
+
+  if(!recs.length){list.innerHTML=html+'<div class="history-empty">Sem registros para este galpao.</div>';return;}
+
+  // Monthly table view for single galpao
+  if(activeHTab!=='todos'){
+    html+=buildHistMensal(activeHTab,recs);
+  } else {
+    // All: group by date
+    const sorted=[...recs].sort((a,b)=>parseDateBR(b.data_registro)-parseDateBR(a.data_registro));
+    const byDate={};
+    sorted.slice(0,120).forEach(r=>{const k=r.data_registro;if(!byDate[k])byDate[k]=[];byDate[k].push(r);});
+    Object.keys(byDate).forEach(date=>{
+      html+='<div style="font-size:11px;font-family:var(--mono);color:var(--muted);padding:10px 0 6px;letter-spacing:.06em;text-transform:uppercase">'+date+'</div>';
+      byDate[date].forEach(r=>{
+        const s=typeof r.silos==='string'?JSON.parse(r.silos||'[]'):(r.silos||[]);
+        html+='<div class="history-item"><div class="history-header"><div class="history-galpao">'+r.galpao_nome+'</div><div class="history-time">'+r.horario+'</div></div><div class="history-tags"><span class="tag tag-ovos">'+r.total_pentes+' pentes ('+r.taxa_postura+'%)</span>'+(r.mortes>0?'<span class="tag tag-morte">'+r.mortes+' mortes</span>':'')+(s.length>0?'<span class="tag tag-racao">silo: '+s.map(x=>(x.galpao_nome||'').split(' ')[0]).join(', ')+'</span>':'')+'<span class="tag tag-collab">'+r.colaborador+'</span>'
+      +'<button onclick="event.stopPropagation();abrirEditRegistro('+r.id+')" style="font-size:10px;font-family:var(--mono);background:var(--blue-pale);color:var(--blue);border:none;border-radius:4px;padding:2px 8px;cursor:pointer">editar</button>'
+      +'</div></div>';
+      });
+    });
+  }
+  list.innerHTML=html;
+}
+
+function setHistTab(tab){window._histTab=tab;renderHist();}
+
+function buildHistMensal(gid,recs){
+  const g=GALPOES.find(x=>x.id===gid);
+  const lote=lotesC.find(l=>l.galpao_id===gid&&l.status==='ativo');
+  // Group by year-month
+  const byMonth={};
+  recs.forEach(r=>{
+    const parts=r.data_registro?r.data_registro.split('/'):[];
+    if(parts.length!==3)return;
+    const key=parts[2]+'-'+parts[1].padStart(2,'0');
+    if(!byMonth[key])byMonth[key]=[];
+    byMonth[key].push(r);
+  });
+  const months=Object.keys(byMonth).sort().reverse();
+  if(!months.length)return'<div class="history-empty">Sem registros.</div>';
+  const activeMonth=window['_hm_'+gid]||months[0];
+  const MESES_PT=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  let html='<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px">';
+  months.forEach(m=>{
+    const[y,mo]=m.split('-');const lbl=MESES_PT[parseInt(mo)-1]+'/'+y.slice(2);
+    const active=m===activeMonth;
+    html+='<button onclick="setHistMes(\''+gid+'\',\''+m+'\')" style="padding:5px 9px;font-size:11px;font-family:var(--mono);border:1.5px solid '+(active?'var(--green)':'var(--border)')+';background:'+(active?'var(--green-pale)':'var(--card)')+';color:'+(active?'var(--green)':'var(--muted)')+';border-radius:6px;cursor:pointer">'+lbl+'</button>';
+  });
+  html+='</div>';
+
+  const [year,mon]=activeMonth.split('-');
+  const daysInMonth=new Date(parseInt(year),parseInt(mon),0).getDate();
+  const recsMonth=byMonth[activeMonth]||[];
+  const byDay={};
+  recsMonth.forEach(r=>{
+    const d=parseInt(r.data_registro.split('/')[0]);
+    if(!byDay[d])byDay[d]={pentes:0,ovos:0,mortes:0};
+    byDay[d].pentes+=(r.total_pentes||0);
+    byDay[d].ovos+=(r.total_ovos||0);
+    byDay[d].mortes+=(r.mortes||0);
+  });
+
+  const aves=avesReais[gid]||1;
+  let totPentes=0,totOvos=0,totMortes=0,diasComDados=0;
+
+  html+='<div class="ficha-table-wrap"><table class="ficha-table"><thead><tr>';
+  html+='<th>Dia</th><th>Pentes</th><th>Ovos</th><th>Mortes</th><th>Postura%</th><th></th></tr></thead><tbody>';
+  for(let d=1;d<=daysInMonth;d++){
+    const r=byDay[d];
+    const now=new Date();
+    const isFuture=new Date(parseInt(year),parseInt(mon)-1,d)>now;
+    if(isFuture){html+='<tr class="futuro"><td>'+d+'</td><td>-</td><td>-</td><td>-</td><td>-</td></tr>';continue;}
+    if(r){
+      const pct=(r.ovos/aves*100).toFixed(1);
+      const pctColor=parseFloat(pct)>=80?'var(--green)':parseFloat(pct)>=60?'var(--amber)':'var(--red)';
+      // Find the registro id for this day
+      const dayRec=histCache.find(x=>x.galpao_id===gid&&x.data_registro===String(d).padStart(2,'0')+'/'+String(parseInt(activeMonth.split('-')[1])).padStart(2,'0')+'/'+activeMonth.split('-')[0]);
+      const editBtn=dayRec?'<button onclick="event.stopPropagation();abrirEditRegistro('+dayRec.id+')" style="font-size:10px;font-family:var(--mono);background:var(--blue-pale);color:var(--blue);border:none;border-radius:4px;padding:2px 6px;cursor:pointer">editar</button>':'';
+      html+='<tr><td>'+d+'</td><td>'+r.pentes+'</td><td>'+(r.ovos).toLocaleString('pt-BR')+'</td><td style="color:'+(r.mortes>0?'var(--amber)':'var(--text)')+'">'+r.mortes+'</td><td style="color:'+pctColor+';font-weight:600">'+pct+'%</td><td style="border-bottom:1px solid var(--border);padding:2px 4px">'+editBtn+'</td></tr>';
+      totPentes+=r.pentes;totOvos+=r.ovos;totMortes+=r.mortes;diasComDados++;
+    } else {
+      html+='<tr><td>'+d+'</td><td style="color:var(--border)">-</td><td style="color:var(--border)">-</td><td style="color:var(--border)">-</td><td style="color:var(--border)">-</td></tr>';
+    }
+  }
+  const mediaPostura=diasComDados>0?(totOvos/diasComDados/aves*100).toFixed(1):'0';
+  html+='</tbody><tfoot><tr class="ficha-total-row"><td>Total</td><td>'+totPentes+'</td><td>'+totOvos.toLocaleString('pt-BR')+'</td><td>'+totMortes+'</td><td>'+mediaPostura+'%</td></tr></tfoot></table></div>';
+
+  // Summary cards
+  html+='<div class="ficha-resumo" style="margin-top:10px">';
+  html+='<div class="ficha-resumo-item"><div class="ficha-resumo-label">Total pentes</div><div class="ficha-resumo-value">'+totPentes+'</div></div>';
+  html+='<div class="ficha-resumo-item"><div class="ficha-resumo-label">Total ovos</div><div class="ficha-resumo-value">'+totOvos.toLocaleString('pt-BR')+'</div></div>';
+  html+='<div class="ficha-resumo-item"><div class="ficha-resumo-label">Postura media</div><div class="ficha-resumo-value" style="color:var(--green)">'+mediaPostura+'%</div></div>';
+  html+='</div>';
+  return html;
+}
+
+function setHistMes(gid,mes){window['_hm_'+gid]=mes;renderHist();}
+function parseDateBR(d){if(!d)return new Date(0);const p=d.split('/');return p.length===3?new Date(p[2],p[1]-1,p[0]):new Date(d);}
+// =============================================
+// USUARIOS
+// =============================================
+let usuariosC=LS.get('g_usuarios',[]);
+const NIVEL_LABEL={1:'Administrador',2:'Supervisor',3:'Colaborador'};
+const NIVEL_COLOR={1:'var(--red-pale)',2:'var(--amber-pale)',3:'var(--green-pale)'};
+const NIVEL_TEXT={1:'var(--red)',2:'var(--amber)',3:'var(--green)'};
+function renderUsuarios(){
+  const list=document.getElementById('usuarios-list');
+  if(!usuariosC.length){list.innerHTML='<div class="history-empty">Nenhum usuario cadastrado.</div>';return;}
+  list.innerHTML=usuariosC.map(u=>'<div class="history-item" style="display:flex;align-items:center;gap:12px"><div style="width:40px;height:40px;border-radius:50%;background:'+NIVEL_COLOR[u.nivel]+';color:'+NIVEL_TEXT[u.nivel]+';display:flex;align-items:center;justify-content:center;font-weight:600;font-size:15px;flex-shrink:0">'+u.nome[0]+'</div><div style="flex:1"><div style="font-weight:600;font-size:14px">'+u.nome+'</div><div style="font-size:11px;font-family:var(--mono);margin-top:2px"><span style="background:'+NIVEL_COLOR[u.nivel]+';color:'+NIVEL_TEXT[u.nivel]+';border-radius:4px;padding:2px 7px">Nivel '+u.nivel+' - '+NIVEL_LABEL[u.nivel]+'</span></div></div><div style="display:flex;gap:6px"><button class="g-btn g-btn-edit" onclick="editarUsuario('+u.id+')">Editar</button><button class="g-btn" style="background:var(--red-pale);color:var(--red)" onclick="deletarUsuario('+u.id+')">Remover</button></div></div>').join('');
+}
+function abrirModalUsuario(){document.getElementById('modal-usuario-title').textContent='Novo usuario';document.getElementById('modal-usuario-id').value='';document.getElementById('usuario-nome').value='';document.getElementById('usuario-nivel').value='3';document.getElementById('modal-usuario').classList.remove('hidden');}
+function editarUsuario(uid){const u=usuariosC.find(x=>x.id===uid);if(!u)return;document.getElementById('modal-usuario-title').textContent='Editar usuario';document.getElementById('modal-usuario-id').value=uid;document.getElementById('usuario-nome').value=u.nome;document.getElementById('usuario-nivel').value=u.nivel;document.getElementById('modal-usuario').classList.remove('hidden');}
+async function salvarUsuario(){
+  const id=document.getElementById('modal-usuario-id').value;
+  const nome=document.getElementById('usuario-nome').value.trim();
+  const nivel=parseInt(document.getElementById('usuario-nivel').value);
+  if(!nome){toast('Informe o nome',true);return;}
+  if(id){await supa.patch('usuarios?id=eq.'+id,{nome,nivel});usuariosC=usuariosC.map(u=>u.id===parseInt(id)?{...u,nome,nivel}:u);}
+  else{const res=await supa.post('usuarios',{nome,nivel});if(res&&res[0])usuariosC.push(res[0]);else{const fr=await supa.get('usuarios?order=created_at.desc&limit=1');if(fr&&fr[0])usuariosC.push(fr[0]);}}
+  LS.set('g_usuarios',usuariosC);closeModal('modal-usuario');toast('Usuario salvo!');renderUsuarios();buildColabSelect();
+}
+async function deletarUsuario(uid){if(!confirm('Remover usuario?'))return;await supa.del('usuarios?id=eq.'+uid);usuariosC=usuariosC.filter(u=>u.id!==uid);LS.set('g_usuarios',usuariosC);renderUsuarios();toast('Usuario removido');}
+function buildColabSelect(){
+  const sel=document.getElementById('sel-colaborador');if(!sel)return;
+  sel.innerHTML='<option value="">Selecione o colaborador...</option>';
+  usuariosC.forEach(u=>{const o=document.createElement('option');o.value=u.nome;o.textContent=u.nome+' (N'+u.nivel+')';sel.appendChild(o);});
+}
+
+// =============================================
+// FABRICA DE RACOES
+// =============================================
+const PRODUTOS_RACAO=['Soja','Milho','Farinha de carne','Calcario','Premix','Metionina','Toxin','Corante','Farelo de trigo','Sal','Probiotico'];
+const FORMULA_POSTURA={'Soja':210,'Milho':650,'Farinha de carne':50,'Calcario':100,'Premix':1,'Metionina':1,'Toxin':0.5,'Corante':0.04,'Farelo de trigo':0,'Sal':3,'Probiotico':0.3};
+const FORMULA_CRESCIMENTO={};
+let racaoCache=[];
+function renderRacao(){
+  const el=document.getElementById('tab-racao');if(!el)return;
+  const rt=window._racaoTab||'registrar';
+  el.innerHTML='';
+  const tabRow=document.createElement('div');tabRow.style.cssText='display:flex;gap:4px;margin-bottom:16px';
+  [['registrar','Registrar'],['historico','Historico'],['formula','Formula']].forEach(([id,label])=>{
+    const btn=document.createElement('button');
+    btn.style.cssText='flex:1;padding:8px;font-size:11px;border-radius:10px;border:none;cursor:pointer;font-family:var(--font);font-weight:500;background:'+(rt===id?'var(--card)':'var(--border)')+';color:'+(rt===id?'var(--green)':'var(--muted)')+(rt===id?';box-shadow:var(--shadow)':'');
+    btn.textContent=label;btn.onclick=()=>setRacaoTab(id);tabRow.appendChild(btn);
+  });
+  el.appendChild(tabRow);
+  ['registrar','historico','formula'].forEach(id=>{const d=document.createElement('div');d.id='rpanel-'+id;d.style.display=rt===id?'block':'none';el.appendChild(d);});
+  if(rt==='registrar')renderRacaoForm();
+  if(rt==='historico')renderRacaoHist();
+  if(rt==='formula')renderRacaoFormula();
+}
+function setRacaoTab(tab){window._racaoTab=tab;renderRacao();}
+function renderRacaoForm(){
+  const el=document.getElementById('rpanel-registrar');if(!el)return;
+  el.innerHTML='<div class="form-card"><div class="form-card-title"><span class="dot" style="background:#52B788"></span>Nova fabricacao</div><div class="field-group"><div class="field-label">Tipo de racao</div><select class="field-input" id="r-tipo" onchange="atualizaPreviewEstoque()"><option value="Postura">Postura</option><option value="Crescimento">Crescimento</option></select></div><div class="field-row"><div class="field-group"><div class="field-label">Data de fabricacao</div><input class="field-input" id="r-data" type="date" value="'+new Date().toISOString().slice(0,10)+'"></div><div class="field-group"><div class="field-label">Num. de misturas</div><input class="field-input" id="r-misturas" type="number" min="1" value="1" oninput="calcPesoTotal()"></div></div><div class="field-group"><div class="field-label">Peso total (kg)</div><div style="font-size:22px;font-weight:600;font-family:var(--mono);color:var(--green);padding:6px 0" id="r-peso-display">1.000 kg</div><div style="font-size:11px;color:var(--muted);font-family:var(--mono)">1 mistura = 1.000 kg</div></div><div class="field-group"><div class="field-label">Galpao de destino</div><select class="field-input" id="r-galpao"><option value="">Selecione...</option>'+GALPOES.map(g=>'<option value="'+g.id+'">'+g.nome+'</option>').join('')+'</select></div><div class="trato-row" style="padding:12px 0"><span class="trato-label" style="font-size:13px">Com corante</span><label class="toggle-wrap"><input type="checkbox" id="r-corante" checked onchange="atualizaPreviewEstoque()"><span class="toggle-track"></span></label></div><div class="field-group"><div class="field-label">Observacoes</div><textarea class="field-input" id="r-obs" placeholder="Opcional"></textarea></div><div id="r-preview-estoque" style="margin:12px 0"></div><button class="submit-btn" onclick="salvarRacao()">Salvar fabricacao</button></div>';
+  atualizaPreviewEstoque();
+}
+function calcPesoTotal(){const m=parseInt(document.getElementById('r-misturas')?.value||1);const el=document.getElementById('r-peso-display');if(el)el.textContent=(m*1000).toLocaleString('pt-BR')+' kg';atualizaPreviewEstoque();}
+function atualizaPreviewEstoque(){
+  const el=document.getElementById('r-preview-estoque');if(!el)return;
+  const tipo=document.getElementById('r-tipo')?.value||'Postura';
+  const misturas=parseInt(document.getElementById('r-misturas')?.value||1);
+  const comCorante=document.getElementById('r-corante')?.checked!==false;
+  const formula=tipo==='Postura'?FORMULA_POSTURA:FORMULA_CRESCIMENTO;
+  if(!Object.keys(formula).length){el.innerHTML='<div style="font-size:12px;color:var(--muted);font-family:var(--mono);padding:8px;background:var(--bg);border-radius:8px">Formula de crescimento sera configurada em breve.</div>';return;}
+  let rows='';let alerta=false;
+  Object.entries(formula).forEach(([nome,q])=>{
+    if(nome==='Corante'&&!comCorante)return;if(q===0)return;
+    const qt=q*misturas;const prod=produtosC.find(p=>p.descricao===nome);
+    const est=prod?parseFloat(prod.estoque_atual||0):null;
+    const ok=est===null||est>=qt;if(!ok)alerta=true;
+    const cor=est===null?'var(--muted)':ok?'var(--green)':'var(--red)';
+    rows+='<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px;font-family:var(--mono)"><span>'+nome+'</span><span style="color:'+cor+'">'+(qt%1===0?qt:qt.toFixed(2))+'kg'+(est!==null?' <span style="color:var(--muted);font-size:10px">(est: '+est+')</span>':'')+'</span></div>';
+  });
+  el.innerHTML='<div style="background:var(--bg);border-radius:10px;padding:12px;margin-bottom:4px"><div style="font-size:11px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Deducao do estoque</div>'+rows+(alerta?'<div style="font-size:11px;color:var(--red);margin-top:8px;font-family:var(--mono)">Estoque insuficiente para alguns produtos</div>':'')+'</div>';
+}
+async function salvarRacao(){
+  const tipo=document.getElementById('r-tipo').value;const data=document.getElementById('r-data').value;
+  const misturas=parseInt(document.getElementById('r-misturas').value||1);const peso=misturas*1000;
+  const gidDest=document.getElementById('r-galpao').value;
+  const gNomeDest=gidDest?(GALPOES.find(g=>g.id===gidDest)||{}).nome||'':'';
+  const valor=null;
+  const obs=document.getElementById('r-obs').value;
+  const comCorante=document.getElementById('r-corante')?.checked!==false;
+  if(!data){toast('Informe a data',true);return;}
+  const res=await supa.post('fabricacao_racao',{tipo,data_fabricacao:data,num_misturas:misturas,peso_total_kg:peso,galpao_destino_id:gidDest||null,galpao_destino_nome:gNomeDest||null,valor_mistura:valor,com_corante:comCorante,obs:obs||null});
+  if(res===null)return;
+  const fabId=res&&res[0]?res[0].id:null;
+  if(res&&res[0])racaoCache.unshift(res[0]);
+  const formula=tipo==='Postura'?FORMULA_POSTURA:FORMULA_CRESCIMENTO;
+  for(const[nome,q]of Object.entries(formula)){
+    if(nome==='Corante'&&!comCorante)continue;if(q===0)continue;
+    const qt=q*misturas;const prod=produtosC.find(p=>p.descricao===nome);if(!prod)continue;
+    const novoEst=Math.max(0,(parseFloat(prod.estoque_atual)||0)-qt);
+    await supa.patch('produtos?id=eq.'+prod.id,{estoque_atual:novoEst});
+    await supa.post('estoque_movimentos',{produto_id:prod.id,produto_nome:prod.descricao,tipo_movimento:'saida',origem:'fabricacao_racao',origem_id:fabId,quantidade:qt,unidade:'kg'});
+    produtosC=produtosC.map(p=>p.id===prod.id?{...p,estoque_atual:novoEst}:p);
+  }
+  toast('Fabricacao registrada! Estoque deduzido.');renderRacao();
+}
+function renderRacaoHist(){
+  const el=document.getElementById('rpanel-historico');if(!el)return;
+  if(!racaoCache.length){el.innerHTML='<div class="history-empty">Nenhuma fabricacao registrada.</div>';return;}
+  el.innerHTML=racaoCache.map(r=>'<div class="history-item"><div class="history-header"><div class="history-galpao">'+r.tipo+'</div><div class="history-time">'+fmtD(r.data_fabricacao)+'</div></div><div class="history-tags"><span class="tag tag-ovos">'+r.num_misturas+' mistura(s)</span><span class="tag tag-racao">'+(r.peso_total_kg||0).toLocaleString('pt-BR')+' kg</span>'+(r.galpao_destino_nome?'<span class="tag tag-collab">'+r.galpao_destino_nome+'</span>':'')+(r.com_corante===false?'<span class="tag" style="background:var(--bg);color:var(--muted);border:1px solid var(--border)">Sem corante</span>':'<span class="tag" style="background:var(--amber-pale);color:var(--amber)">Com corante</span>')+(r.valor_mistura?'<span class="tag" style="background:var(--green-pale);color:var(--green)">R$ '+r.valor_mistura+'</span>':'')+'</div></div>').join('');
+}
+function renderRacaoFormula(){
+  const el=document.getElementById('rpanel-formula');if(!el)return;
+  let rows='';
+  Object.entries(FORMULA_POSTURA).forEach(([nome,qtd])=>{
+    const prod=produtosC.find(p=>p.descricao===nome);
+    const linked=prod?'<span style="color:var(--green);font-size:10px;font-family:var(--mono)">vinculado</span>':'<span style="color:var(--amber);font-size:10px;font-family:var(--mono)">nao cadastrado</span>';
+    rows+='<div style="display:flex;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)"><div style="width:8px;height:8px;border-radius:50%;background:'+(nome==='Corante'?'var(--amber)':'var(--green-light)')+';margin-right:12px;flex-shrink:0"></div><span style="font-size:13px;flex:1;'+(nome==='Corante'?'color:var(--amber);font-weight:600':'')+'">'+nome+(nome==='Corante'?' (opcional)':'')+'</span><span style="font-size:12px;font-family:var(--mono);color:var(--text);margin-right:10px">'+(qtd>0?qtd+' kg':'-')+'</span>'+linked+'</div>';
+  });
+  el.innerHTML='<div class="form-card"><div class="form-card-title"><span class="dot" style="background:#7B5EA7"></span>Formula - Postura (por mistura)</div><div style="font-size:12px;color:var(--muted);font-family:var(--mono);margin-bottom:12px">Quantidades por mistura (1.000 kg base)</div>'+rows+'</div><div class="form-card" style="background:var(--bg)"><div class="form-card-title"><span class="dot" style="background:var(--muted)"></span>Formula - Crescimento</div><div style="font-size:13px;color:var(--muted)">Formula de crescimento sera configurada futuramente.</div></div>';
+}
+
+// =============================================
+// PRODUTOS & ESTOQUE
+// =============================================
+let produtosC=[],comprasC=[];
+function renderProdutos(){
+  const el=document.getElementById('tab-produtos');if(!el)return;
+  const pt=window._prodTab||'estoque';
+  el.innerHTML='';
+  const tabRow=document.createElement('div');tabRow.style.cssText='display:flex;gap:4px;margin-bottom:16px';
+  [['estoque','Estoque'],['compra','Compras'],['produto','Cadastro']].forEach(([id,label])=>{
+    const btn=document.createElement('button');
+    btn.style.cssText='flex:1;padding:8px;font-size:11px;border-radius:10px;border:none;cursor:pointer;font-family:var(--font);font-weight:500;background:'+(pt===id?'var(--card)':'var(--border)')+';color:'+(pt===id?'var(--green)':'var(--muted)')+(pt===id?';box-shadow:var(--shadow)':'');
+    btn.textContent=label;btn.onclick=()=>setProdTab(id);tabRow.appendChild(btn);
+  });
+  el.appendChild(tabRow);
+  ['estoque','compra','produto'].forEach(id=>{const d=document.createElement('div');d.id='ppanel-'+id;d.style.display=pt===id?'block':'none';el.appendChild(d);});
+  if(pt==='estoque')renderEstoque();
+  if(pt==='compra')renderFormCompra();
+  if(pt==='produto')renderFormProduto();
+}
+function setProdTab(t){window._prodTab=t;renderProdutos();}
+function renderEstoque(){
+  const el=document.getElementById('ppanel-estoque');if(!el)return;
+  if(!produtosC.length){
+    el.innerHTML='<div class="history-empty">Nenhum produto cadastrado.</div>'
+      +'<button class="submit-btn" style="margin-top:12px" onclick="forceSeedProdutos()">Recriar produtos da formula</button>';
+    return;
+  }
+  const grupos={'Insumo racao':'var(--blue)','Insumo producao':'var(--green)'};
+  let html='';
+  Object.entries(grupos).forEach(([tipo,color])=>{
+    const items=produtosC.filter(p=>p.tipo===tipo);if(!items.length)return;
+    html+='<div style="font-size:11px;font-family:var(--mono);color:'+color+';font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin:14px 0 8px">'+tipo+'</div>';
+    items.forEach(p=>{
+      const est=parseFloat(p.estoque_atual)||0;const alertColor=est<=0?'var(--red)':est<10?'var(--amber)':'var(--text)';
+      html+='<div class="history-item" style="margin-bottom:8px;cursor:pointer" onclick="abrirProdutoDetalhe('+p.id+')"><div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px"><div style="font-weight:600;font-size:13px">'+p.descricao+'</div><span style="font-size:10px;font-family:var(--mono);background:'+(tipo==='Insumo racao'?'var(--blue-pale)':'var(--green-pale)')+';color:'+color+';border-radius:4px;padding:2px 6px">'+tipo+'</span></div><div style="display:flex;justify-content:space-between;align-items:center"><div><span style="font-size:18px;font-weight:600;font-family:var(--mono);color:'+alertColor+'">'+est.toLocaleString('pt-BR')+'</span><span style="font-size:12px;color:var(--muted);font-family:var(--mono);margin-left:4px">'+p.unidade+'</span></div><div style="text-align:right"><div style="font-size:12px;font-family:var(--mono);color:var(--muted)">Custo medio</div><div style="font-size:13px;font-weight:600;font-family:var(--mono)">'+(parseFloat(p.custo_medio||0)>0?'R$ '+parseFloat(p.custo_medio).toFixed(2):'—')+'</div></div></div>'+(est<=0?'<div style="font-size:11px;color:var(--red);font-family:var(--mono);margin-top:4px">Estoque zerado</div>':est<10?'<div style="font-size:11px;color:var(--amber);font-family:var(--mono);margin-top:4px">Estoque baixo</div>':'')+'</div>';
+    });
+  });
+  el.innerHTML=html;
+}
+function renderFormCompra(){
+  const el=document.getElementById('ppanel-compra');if(!el)return;
+  const opts=produtosC.map(p=>'<option value="'+p.id+'">'+p.descricao+' ('+p.unidade+')</option>').join('');
+  el.innerHTML='<div class="form-card"><div class="form-card-title"><span class="dot" style="background:#3A7CA5"></span>Registrar compra</div><div class="field-group"><div class="field-label">Produto</div><select class="field-input" id="c-produto" onchange="autoUnidade()"><option value="">Selecione...</option>'+opts+'</select></div><div class="field-row"><div class="field-group"><div class="field-label">Quantidade</div><input class="field-input" id="c-qtd" type="number" min="0" step="0.01" placeholder="0" oninput="calcCustoTotal()"></div><div class="field-group"><div class="field-label">Unidade</div><input class="field-input" id="c-unidade" placeholder="kg, L, un..."></div></div><div class="field-row"><div class="field-group"><div class="field-label">Data transacao</div><input class="field-input" id="c-data" type="date" value="'+new Date().toISOString().slice(0,10)+'"></div><div class="field-group"><div class="field-label">Custo unitario (R$)</div><input class="field-input" id="c-custo-unit" type="number" min="0" step="0.01" placeholder="0.00" oninput="calcCustoTotal()"></div></div><div class="field-group"><div class="field-label">Custos adicionais (R$)</div><input class="field-input" id="c-custos-add" type="number" min="0" step="0.01" placeholder="Frete, taxas..." oninput="calcCustoTotal()"></div><div class="field-group"><div class="field-label">Custo total (R$)</div><div style="font-size:22px;font-weight:600;font-family:var(--mono);color:var(--green);padding:6px 0" id="c-total-display">R$ 0,00</div><div style="font-size:11px;color:var(--muted);font-family:var(--mono)">(custo unit. x qtd) + adicionais</div></div><div class="field-group"><div class="field-label">Observacoes</div><textarea class="field-input" id="c-obs" placeholder="Fornecedor, NF..."></textarea></div><button class="submit-btn" onclick="salvarCompra()">Salvar compra</button></div><div id="compras-lista" style="margin-top:4px"></div>';
+  renderComprasLista();
+}
+function autoUnidade(){const pid=parseInt(document.getElementById('c-produto')?.value);const p=produtosC.find(x=>x.id===pid);if(p)document.getElementById('c-unidade').value=p.unidade;}
+function calcCustoTotal(){const qtd=parseFloat(document.getElementById('c-qtd')?.value||0);const unit=parseFloat(document.getElementById('c-custo-unit')?.value||0);const add=parseFloat(document.getElementById('c-custos-add')?.value||0);const el=document.getElementById('c-total-display');if(el)el.textContent='R$ '+(qtd*unit+add).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});}
+async function salvarCompra(){
+  const pid=parseInt(document.getElementById('c-produto').value);const p=produtosC.find(x=>x.id===pid);if(!p){toast('Selecione um produto',true);return;}
+  const qtd=parseFloat(document.getElementById('c-qtd').value||0);const unidade=document.getElementById('c-unidade').value;
+  const data=document.getElementById('c-data').value;const cuUnit=parseFloat(document.getElementById('c-custo-unit').value||0);
+  const cuAdd=parseFloat(document.getElementById('c-custos-add').value||0);const total=qtd*cuUnit+cuAdd;
+  if(!qtd||!data){toast('Preencha quantidade e data',true);return;}
+  const res=await supa.post('compras',{produto_id:pid,produto_nome:p.descricao,quantidade:qtd,unidade,data_transacao:data,custo_unitario:cuUnit,custos_adicionais:cuAdd,custo_total:total,obs:document.getElementById('c-obs').value});
+  if(res===null)return;const cid=res&&res[0]?res[0].id:null;
+  await supa.post('estoque_movimentos',{produto_id:pid,produto_nome:p.descricao,tipo_movimento:'entrada',origem:'compra',origem_id:cid,quantidade:qtd,unidade});
+  const novoEst=(parseFloat(p.estoque_atual)||0)+qtd;const novoCusto=((parseFloat(p.custo_medio)||0)*(parseFloat(p.estoque_atual)||0)+total)/(novoEst||1);
+  await supa.patch('produtos?id=eq.'+pid,{estoque_atual:novoEst,custo_medio:parseFloat(novoCusto.toFixed(4))});
+  produtosC=produtosC.map(x=>x.id===pid?{...x,estoque_atual:novoEst,custo_medio:novoCusto}:x);
+  if(comprasC&&res&&res[0])comprasC.unshift(res[0]);toast('Compra registrada!');renderFormCompra();
+}
+function renderComprasLista(){const el=document.getElementById('compras-lista');if(!el||!comprasC.length)return;el.innerHTML='<div style="font-size:11px;font-family:var(--mono);color:var(--muted);padding:10px 0 6px;text-transform:uppercase;letter-spacing:.06em">Ultimas compras</div>'+comprasC.slice(0,20).map(c=>'<div class="history-item" style="margin-bottom:8px"><div class="history-header"><div class="history-galpao">'+c.produto_nome+'</div><div class="history-time">'+fmtD(c.data_transacao)+'</div></div><div class="history-tags"><span class="tag tag-racao">'+c.quantidade+' '+c.unidade+'</span><span class="tag" style="background:var(--green-pale);color:var(--green)">R$ '+parseFloat(c.custo_total||0).toFixed(2)+'</span></div></div>').join('');}
+function renderFormProduto(){
+  const el=document.getElementById('ppanel-produto');if(!el)return;
+  const lista=produtosC.length?produtosC.map(p=>'<div class="history-item" style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><div style="flex:1"><div style="font-weight:600;font-size:13px">'+p.descricao+'</div><div style="font-size:11px;font-family:var(--mono);color:var(--muted)">'+p.unidade+' - '+p.tipo+'</div></div><button class="g-btn g-btn-edit" onclick="editarProduto('+p.id+')">Editar</button></div>').join(''):'<div style="font-size:13px;color:var(--muted);margin-bottom:14px">Nenhum produto ainda.</div>';
+  el.innerHTML='<div class="form-card"><div class="form-card-title"><span class="dot" style="background:#7B5EA7"></span>Adicionar produto</div><input type="hidden" id="p-id"><div class="field-group"><div class="field-label">Descricao</div><input class="field-input" id="p-desc" placeholder="Nome do produto"></div><div class="field-row"><div class="field-group"><div class="field-label">Unidade</div><input class="field-input" id="p-unidade" placeholder="kg, L, un, sc..."></div><div class="field-group"><div class="field-label">Tipo</div><select class="field-input" id="p-tipo"><option value="Insumo racao">Insumo racao</option><option value="Insumo producao">Insumo producao</option></select></div></div><div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-bottom:12px">Custo medio calculado automaticamente pelas compras.</div><button class="submit-btn" onclick="salvarProduto()">Salvar produto</button></div><div>'+lista+'</div>';
+}
+function editarProduto(pid){const p=produtosC.find(x=>x.id===pid);if(!p)return;document.getElementById('p-id').value=pid;document.getElementById('p-desc').value=p.descricao;document.getElementById('p-unidade').value=p.unidade;document.getElementById('p-tipo').value=p.tipo;}
+async function salvarProduto(){
+  const id=document.getElementById('p-id').value;const desc=document.getElementById('p-desc').value.trim();const unidade=document.getElementById('p-unidade').value.trim();const tipo=document.getElementById('p-tipo').value;
+  if(!desc||!unidade){toast('Preencha descricao e unidade',true);return;}
+  if(id){await supa.patch('produtos?id=eq.'+id,{descricao:desc,unidade,tipo});produtosC=produtosC.map(p=>p.id===parseInt(id)?{...p,descricao:desc,unidade,tipo}:p);}
+  else{const res=await supa.post('produtos',{descricao:desc,unidade,tipo,custo_medio:0,estoque_atual:0});if(res===null)return;if(res&&res[0])produtosC.push(res[0]);else{const fr=await supa.get('produtos?order=created_at.desc&limit=1');if(fr&&fr[0])produtosC.push(fr[0]);}}
+  document.getElementById('p-id').value='';document.getElementById('p-desc').value='';document.getElementById('p-unidade').value='';
+  toast('Produto salvo!');renderProdutos();
+}
+async function loadProdutos(){
+  const[prods,comps]=await Promise.all([supa.get('produtos?order=tipo.asc,descricao.asc'),supa.get('compras?order=created_at.desc&limit=50')]);
+  if(prods!==null)produtosC=prods;if(comps!==null)comprasC=comps;
+}
+
+function setTab(tab){
+  const tabs=['postura','usuarios','racao','produtos','financeiro'];
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',tabs[i]===tab));
+  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+  document.getElementById('tab-'+tab).classList.add('active');
+  if(tab==='postura')renderPosturaTab(window._posturaSubTab||'registrar');
+  if(tab==='usuarios')renderUsuarios();
+  if(tab==='racao')renderRacao();
+  if(tab==='produtos')renderProdutos();
+  if(tab==='financeiro')renderFinanceiro();
+}
+
+// =============================================
+// POSTURA SUPERTAB
+// =============================================
+const POSTURA_SUBTABS=[['registrar','Registrar'],['historico','Historico'],['galpoes','Galpoes'],['dashboard','Dashboard']];
+
+function renderPosturaTab(sub){
+  window._posturaSubTab=sub;
+  // Build subtab buttons
+  const tabRow=document.getElementById('postura-subtabs');
+  if(tabRow){
+    tabRow.innerHTML='';
+    POSTURA_SUBTABS.forEach(([id,label])=>{
+      const btn=document.createElement('button');
+      btn.style.cssText='flex:1;padding:8px;font-size:12px;border-radius:10px;border:none;cursor:pointer;font-family:var(--font);font-weight:500;background:'+(sub===id?'var(--card)':'var(--border)')+';color:'+(sub===id?'var(--green)':'var(--muted)')+(sub===id?';box-shadow:var(--shadow)':'');
+      btn.textContent=label;
+      btn.onclick=()=>renderPosturaTab(id);
+      tabRow.appendChild(btn);
+    });
+  }
+  // Render subpanel
+  const panel=document.getElementById('postura-subpanel');
+  if(!panel)return;
+  panel.innerHTML='';
+  if(sub==='registrar')renderRegistrar(panel);
+  if(sub==='historico'){panel.innerHTML='<div id="historico-list"></div>';renderHist();}
+  if(sub==='galpoes'){panel.innerHTML='<div id="galpoes-list-view"></div><div id="lote-detail-view" style="display:none"></div>';voltarG();renderGTab();}
+  if(sub==='dashboard'){renderDashInto(panel);}
+}
+
+function renderRegistrar(panel){
+  panel.innerHTML=`
+    <div class="section-label">Colaborador <span class="badge badge-req">obrigatorio</span></div>
+    <select class="field-input" id="sel-colaborador" style="margin-bottom:18px"><option value="">Selecione o colaborador...</option></select>
+    <div class="section-label">Galpao <span class="badge badge-req">obrigatorio</span></div>
+    <div class="galpao-grid" id="galpao-grid-reg"></div>
     <div class="form-card">
       <div class="form-card-title"><span class="dot" style="background:#52B788"></span>Coleta de ovos</div>
       <div id="coletas-wrap"></div>
@@ -187,682 +1134,410 @@ textarea.field-input{resize:none;height:68px;font-size:13px}
         </div>
       </div>
     </div>
-
     <div class="form-card">
       <div class="form-card-title"><span class="dot" style="background:#E76F51"></span>Mortalidade</div>
       <div class="field-row">
         <div class="field-group">
           <div class="field-label">Mortes hoje</div>
           <div class="num-input-wrap">
-            <button class="num-btn" onclick="stepNum('mortes',-1)">−</button>
-            <input class="num-val" id="mortes" type="number" value="0" min="0" oninput="updateRestantes()">
+            <button class="num-btn" onclick="stepNum('mortes',-1)">-</button>
+            <input class="num-val" id="mortes" type="number" value="0" min="0" oninput="updateRest()">
             <button class="num-btn" onclick="stepNum('mortes',1)">+</button>
           </div>
         </div>
         <div class="field-group">
           <div class="field-label">Galinhas restantes</div>
-          <div style="font-size:22px;font-weight:600;font-family:var(--mono);color:var(--text);padding-top:6px" id="restantes-display">—</div>
+          <div style="font-size:22px;font-weight:600;font-family:var(--mono);color:var(--text);padding-top:6px" id="restantes-display">-</div>
         </div>
       </div>
       <div class="field-group" style="margin-top:10px">
         <div class="field-label">Causa (opcional)</div>
-        <textarea class="field-input" id="causa" placeholder="Ex: Doença respiratória, calor excessivo..."></textarea>
+        <textarea class="field-input" id="causa" placeholder="Ex: Doenca respiratoria..."></textarea>
       </div>
     </div>
-
     <div class="form-card">
-      <div class="form-card-title"><span class="dot" style="background:#3A7CA5"></span>Ração — Distribuição para silos</div>
-      <div id="silo-rows"></div>
+      <div class="form-card-title"><span class="dot" style="background:#B5838D"></span>Observacoes gerais</div>
+      <textarea class="field-input" id="obs_geral" placeholder="Qualquer ocorrencia do dia..."></textarea>
     </div>
-
     <div class="form-card">
-      <div class="form-card-title"><span class="dot" style="background:#7B5EA7"></span>Ração — Tratamento (cocho)</div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:12px;font-family:var(--mono)">Marque os tratos realizados hoje</div>
-      <div id="trato-rows"></div>
+      <div class="form-card-title"><span class="dot" style="background:#748CAB"></span>Data do registro</div>
+      <div style="font-size:12px;color:var(--muted);font-family:var(--mono);margin-bottom:8px">Preenchida automaticamente. Altere apenas para registros retroativos.</div>
+      <input class="field-input" id="data-registro-input" type="date" value="${new Date().toISOString().slice(0,10)}">
     </div>
+    <button class="submit-btn" id="submit-btn" onclick="salvar()">Salvar registro</button>`;
+  buildGReg();addColeta();buildColabSelect();
+}
 
-    <div class="form-card">
-      <div class="form-card-title"><span class="dot" style="background:#B5838D"></span>Observações gerais</div>
-      <textarea class="field-input" id="obs_geral" placeholder="Qualquer ocorrência do dia..."></textarea>
-    </div>
-
-    <button class="submit-btn" id="submit-btn" onclick="salvar()">✓ Salvar registro</button>
-  </div>
-
-  <!-- DASHBOARD -->
-  <div class="tab-panel" id="tab-dashboard">
+function renderDashInto(panel){
+  panel.innerHTML=`
     <div class="kpi-grid">
-      <div class="kpi"><div class="kpi-label">Total aves</div><div class="kpi-value" id="kpi-total-aves">—</div><div class="kpi-sub">todos os galpões</div></div>
-      <div class="kpi"><div class="kpi-label">Ovos hoje</div><div class="kpi-value" id="kpi-ovos-hoje">—</div><div class="kpi-sub" id="kpi-ovos-pentes">—</div></div>
-      <div class="kpi"><div class="kpi-label">Mortes hoje</div><div class="kpi-value" id="kpi-mortes-hoje">—</div><div class="kpi-sub">acumulado do dia</div></div>
-      <div class="kpi"><div class="kpi-label">Postura média</div><div class="kpi-value" id="kpi-postura-media">—</div><div class="kpi-sub">todos os galpões</div></div>
+      <div class="kpi"><div class="kpi-label">Total aves</div><div class="kpi-value" id="kpi-total-aves">-</div><div class="kpi-sub">todos os galpoes</div></div>
+      <div class="kpi"><div class="kpi-label">Ovos hoje</div><div class="kpi-value" id="kpi-ovos-hoje">-</div><div class="kpi-sub" id="kpi-ovos-pentes">-</div></div>
+      <div class="kpi"><div class="kpi-label">Mortes hoje</div><div class="kpi-value" id="kpi-mortes-hoje">-</div><div class="kpi-sub">acumulado do dia</div></div>
+      <div class="kpi"><div class="kpi-label">Postura media</div><div class="kpi-value" id="kpi-postura-media">-</div><div class="kpi-sub">todos os galpoes</div></div>
     </div>
-    <div class="dash-card"><h3>Postura por galpão (hoje)</h3><div id="postura-bars"></div></div>
-    <div class="dash-card"><h3>Postura % — últimos 7 dias</h3><canvas id="chart-postura" height="200"></canvas></div>
-    <div class="dash-card"><h3>Galinhas por galpão</h3><div id="aves-por-galpao"></div></div>
-  </div>
-
-  <!-- HISTÓRICO -->
-  <div class="tab-panel" id="tab-historico">
-    <div id="historico-list"></div>
-  </div>
-</div>
-
-<div class="modal-overlay hidden" id="modal-aves">
-  <div class="modal-sheet">
-    <h3 id="modal-title">Editar galinhas</h3>
-    <div class="field-label">Quantidade atual de galinhas</div>
-    <input class="field-input" id="modal-input" type="number" min="0" placeholder="Ex: 3850">
-    <div class="modal-actions">
-      <button class="modal-btn modal-btn-cancel" onclick="closeModal()">Cancelar</button>
-      <button class="modal-btn modal-btn-save" onclick="saveAves()">Salvar</button>
-    </div>
-  </div>
-</div>
-
-<div class="toast" id="toast"></div>
-
-<script>
+    <div class="dash-card"><h3>Postura por galpao (hoje)</h3><div id="postura-bars"></div></div>
+    <div class="dash-card"><h3>Postura % - ultimos 7 dias</h3><canvas id="chart-postura" height="200"></canvas></div>
+    <div class="dash-card"><h3>Galinhas por galpao</h3><div id="aves-por-galpao"></div></div>`;
+  renderDash();
+}
 // =============================================
-// SUPABASE CONFIG
-// =============================================
-const SUPA_URL = 'https://xxjdjtydpbmtikdaxobv.supabase.co';
-const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh4amRqdHlkcGJtdGlrZGF4b2J2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3OTY4NzMsImV4cCI6MjA5NTM3Mjg3M30.FwchD8BtKBhK3lHs3eHyFIuij4f_nHJtPqwAGnSgS74';
+const PRODUTOS_VENDA=['Ovos tipo Jumbo','Ovos tipo Extra','Ovos tipo A','Ovos tipo B','Ovos tipo C','Ovos Sujos','Ovos trincados'];
+let vendasC=[],vendasItensC=[],vendasPagamentosC=[];
 
-const supa = {
-  async query(method, path, body) {
-    try {
-      const res = await fetch(SUPA_URL + '/rest/v1/' + path, {
-        method,
-        headers: {
-          'apikey': SUPA_KEY,
-          'Authorization': 'Bearer ' + SUPA_KEY,
-          'Content-Type': 'application/json',
-          'Prefer': method === 'POST' ? 'return=representation' : ''
-        },
-        body: body ? JSON.stringify(body) : undefined
-      });
-      if (!res.ok) {
-        const err = await res.text();
-        console.error('Supabase error:', err);
-        return null;
-      }
-      const text = await res.text();
-      return text ? JSON.parse(text) : [];
-    } catch(e) {
-      console.error('Fetch error:', e);
-      return null;
-    }
-  },
-  get: (path) => supa.query('GET', path),
-  post: (path, body) => supa.query('POST', path, body),
-  patch: (path, body) => supa.query('PATCH', path, body),
-};
-
-// =============================================
-// CONFIG
-// =============================================
-const GALPOES_CONFIG = [
-  { id:'g1', nome:'Galpão 1',     capacidade:4000 },
-  { id:'g2', nome:'Galpão 2',     capacidade:4500 },
-  { id:'g3', nome:'Galpão 3',     capacidade:4000 },
-  { id:'pb', nome:'Pedra Bonita', capacidade:5000 },
-];
-const COLABORADORES = ['Lena','Lene','Diego','Gil'];
-const PENTE = 30;
-
-// =============================================
-// STATE
-// =============================================
-function loadLocal(key, def) { try { return JSON.parse(localStorage.getItem(key)) ?? def; } catch { return def; } }
-function saveLocal(key, val) { localStorage.setItem(key, JSON.stringify(val)); }
-
-let avesReais = loadLocal('granja_aves', { g1:4000, g2:4500, g3:4000, pb:5000 });
-let historyCache = loadLocal('granja_history_cache', []);
-let pendingQueue = loadLocal('granja_pending', []);
-let isOnline = navigator.onLine;
-
-let selectedCollab = null;
-let selectedGalpao = null;
-let coletas = [];
-let coletaCount = 0;
-let editingGalpaoId = null;
-let chartInstance = null;
-
-// =============================================
-// CONNECTIVITY
-// =============================================
-function setSyncStatus(state) {
-  const dot = document.getElementById('sync-dot');
-  const label = document.getElementById('sync-label');
-  const banner = document.getElementById('offline-banner');
-  if (state === 'online') {
-    dot.className = 'sync-dot';
-    label.textContent = 'sincronizado';
-    banner.classList.remove('show');
-  } else if (state === 'offline') {
-    dot.className = 'sync-dot offline';
-    label.textContent = 'sem conexão';
-    banner.classList.add('show');
-  } else if (state === 'syncing') {
-    dot.className = 'sync-dot syncing';
-    label.textContent = 'sincronizando...';
-  }
+async function loadVendas(){
+  const[v,vi,vp]=await Promise.all([
+    supa.get('vendas?order=data_venda.desc&limit=100'),
+    supa.get('venda_itens?order=id.asc'),
+    supa.get('venda_pagamentos?order=created_at.desc'),
+  ]);
+  if(v!==null)vendasC=v;
+  if(vi!==null)vendasItensC=vi;
+  if(vp!==null)vendasPagamentosC=vp;
 }
 
-window.addEventListener('online', () => { isOnline = true; setSyncStatus('syncing'); flushPending(); });
-window.addEventListener('offline', () => { isOnline = false; setSyncStatus('offline'); });
-
-async function flushPending() {
-  if (!pendingQueue.length) { setSyncStatus('online'); return; }
-  const toFlush = [...pendingQueue];
-  let success = 0;
-  for (const record of toFlush) {
-    const res = await supa.post('registros', record);
-    if (res !== null) {
-      pendingQueue = pendingQueue.filter(p => p.id !== record.id);
-      success++;
-    }
-  }
-  saveLocal('granja_pending', pendingQueue);
-  if (pendingQueue.length === 0) {
-    setSyncStatus('online');
-    if (success > 0) showToast(`✓ ${success} registro(s) sincronizado(s)`);
-  } else {
-    setSyncStatus('offline');
-  }
-}
-
-// =============================================
-// SETUP TABLES (cria tabelas via SQL se não existirem)
-// =============================================
-async function setupTables() {
-  // Tenta buscar da tabela — se der erro 404/42P01, a tabela não existe
-  const test = await supa.get('registros?limit=1');
-  if (test === null) {
-    // Tabela não existe — mostra instrução
-    console.warn('Tabela "registros" não encontrada. Crie via SQL Editor no Supabase.');
-    setSyncStatus('offline');
-    showToast('⚠ Configure o banco — veja instruções', true);
-    return false;
-  }
-  // Carrega aves reais do banco
-  const avesDb = await supa.get('galpoes?select=*');
-  if (avesDb && avesDb.length > 0) {
-    avesDb.forEach(g => { avesReais[g.galpao_id] = g.aves_atuais; });
-    saveLocal('granja_aves', avesReais);
-    buildGalpoes();
-  }
-  setSyncStatus('online');
-  return true;
-}
-
-// =============================================
-// INIT
-// =============================================
-async function init() {
-  const now = new Date();
-  const h = now.getHours();
-  document.getElementById('header-greeting').textContent =
-    h < 12 ? 'Bom dia 👋' : h < 18 ? 'Boa tarde 👋' : 'Boa noite 👋';
-  document.getElementById('hdate').textContent =
-    now.toLocaleDateString('pt-BR', { weekday:'short', day:'2-digit', month:'short' });
-
-  buildCollabs();
-  buildGalpoes();
-  buildSilos();
-  buildTratos();
-  addColeta();
-
-  if (!isOnline) {
-    setSyncStatus('offline');
-  } else {
-    setSyncStatus('syncing');
-    await setupTables();
-    await flushPending();
-    await loadHistory();
-  }
-
-  // Sempre atualiza a UI com o que foi carregado (cache local ou banco)
-  renderHistory();
-  renderDashboard();
-
-  // Se online, recarrega aves reais do banco e atualiza UI
-  if (isOnline) {
-    const avesDb = await supa.get('galpoes?select=*');
-    if (avesDb && avesDb.length > 0) {
-      avesDb.forEach(g => { avesReais[g.galpao_id] = g.aves_atuais; });
-      saveLocal('granja_aves', avesReais);
-      buildGalpoes();
-      renderDashboard();
-    }
-  }
-}
-
-// =============================================
-// BUILD UI
-// =============================================
-function buildCollabs() {
-  const grid = document.getElementById('collab-grid');
-  COLABORADORES.forEach(name => {
-    const btn = document.createElement('button');
-    btn.className = 'collab-btn';
-    btn.dataset.name = name;
-    btn.innerHTML = `<div class="avatar">${name[0]}</div><span>${name}</span>`;
-    btn.onclick = () => {
-      selectedCollab = name;
-      document.querySelectorAll('.collab-btn').forEach(b => b.classList.toggle('active', b.dataset.name === name));
-    };
-    grid.appendChild(btn);
+function renderFinanceiro(){
+  const el=document.getElementById('tab-financeiro');if(!el)return;
+  const ft=window._finTab||'registrar';
+  // Build subtabs
+  el.innerHTML='<div id="fin-tabs" style="display:flex;gap:4px;margin-bottom:16px"></div>'
+    +'<div id="fpanel-registrar"></div>'
+    +'<div id="fpanel-vendas"></div>';
+  // Render subtab buttons
+  const tabEl=document.getElementById('fin-tabs');
+  [['registrar','Registrar Venda'],['vendas','Vendas']].forEach(([id,label])=>{
+    const btn=document.createElement('button');
+    btn.style.cssText='flex:1;padding:8px;font-size:11px;border-radius:10px;border:none;cursor:pointer;font-family:var(--font);font-weight:500';
+    btn.style.background=ft===id?'var(--card)':'var(--border)';
+    btn.style.color=ft===id?'var(--green)':'var(--muted)';
+    if(ft===id)btn.style.boxShadow='var(--shadow)';
+    btn.textContent=label;
+    btn.onclick=()=>setFinTab(id);
+    tabEl.appendChild(btn);
   });
+  document.getElementById('fpanel-registrar').style.display=ft==='registrar'?'block':'none';
+  document.getElementById('fpanel-vendas').style.display=ft==='vendas'?'block':'none';
+  if(ft==='registrar')renderFormVenda();
+  if(ft==='vendas')renderVendasLista();
 }
 
-function buildGalpoes() {
-  const grid = document.getElementById('galpao-grid');
-  grid.innerHTML = '';
-  GALPOES_CONFIG.forEach(g => {
-    const aves = avesReais[g.id] ?? g.capacidade;
-    const btn = document.createElement('button');
-    btn.className = 'galpao-btn';
-    btn.dataset.id = g.id;
-    btn.innerHTML = `
-      <div class="g-name">${g.nome}</div>
-      <div class="g-aves-row">
-        <span class="g-aves">${aves.toLocaleString('pt-BR')} galinhas</span>
-        <span class="g-edit" onclick="openModal('${g.id}',event)">editar</span>
-      </div>`;
-    btn.onclick = (e) => {
-      if (e.target.classList.contains('g-edit')) return;
-      selectedGalpao = g.id;
-      document.querySelectorAll('.galpao-btn').forEach(b => b.classList.toggle('active', b.dataset.id === g.id));
-      updateRestantes();
-    };
-    grid.appendChild(btn);
-  });
+function setFinTab(t){window._finTab=t;renderFinanceiro();}
+
+function renderFormVenda(){
+  const el=document.getElementById('fpanel-registrar');if(!el)return;
+  el.innerHTML='';
+  const card=document.createElement('div');card.className='form-card';
+  card.innerHTML='<div class="form-card-title"><span class="dot" style="background:#52B788"></span>Nova venda</div>'
+    +'<div class="field-row">'
+    +'<div class="field-group"><div class="field-label">Cliente</div><input class="field-input" id="v-cliente" placeholder="Nome do cliente"></div>'
+    +'<div class="field-group"><div class="field-label">Numero da venda</div><input class="field-input" id="v-numero" placeholder="Ex: 001/2025"></div>'
+    +'</div>'
+    +'<div class="field-group"><div class="field-label">Data da venda</div><input class="field-input" id="v-data" type="date" value="'+new Date().toISOString().slice(0,10)+'"></div>'
+    +'<div class="field-group"><div class="field-label">Observacoes</div><textarea class="field-input" id="v-obs" placeholder="Opcional"></textarea></div>';
+  el.appendChild(card);
+
+  // Products table card - dynamic rows
+  const tableCard=document.createElement('div');tableCard.className='form-card';tableCard.style.padding='0';
+  tableCard.innerHTML='<div style="padding:14px 18px 10px"><div class="form-card-title" style="margin-bottom:0"><span class="dot" style="background:#3A7CA5"></span>Produtos</div></div>';
+  const wrap=document.createElement('div');wrap.className='ficha-table-wrap';
+  const table=document.createElement('table');table.id='v-table';table.className='ficha-table';table.style.minWidth='360px';
+  table.innerHTML='<thead><tr><th style="text-align:left;padding-left:8px">Produto</th><th>Qtd</th><th>Vl.Unit</th><th>Desc.Unit</th><th>Total</th><th></th></tr></thead>';
+  const tbody=document.createElement('tbody');tbody.id='v-tbody';
+  table.appendChild(tbody);
+  const tfoot=document.createElement('tfoot');
+  tfoot.innerHTML='<tr class="ficha-total-row"><td colspan="4" style="text-align:right;padding-right:12px">Total da venda</td><td class="ficha-total-cell" id="v-total-display" style="padding:0 6px;font-size:15px">R$ 0,00</td><td></td></tr>';
+  table.appendChild(tfoot);
+  wrap.appendChild(table);tableCard.appendChild(wrap);
+
+  // Add product button
+  const addBtn=document.createElement('button');
+  addBtn.className='add-coleta';addBtn.style.cssText='margin:10px 18px 14px;width:calc(100% - 36px)';
+  addBtn.textContent='+ Adicionar produto';addBtn.onclick=abrirSeletorProdutoVenda;
+  tableCard.appendChild(addBtn);
+  el.appendChild(tableCard);
+
+  const btn=document.createElement('button');btn.className='submit-btn';btn.style.marginTop='12px';btn.textContent='Salvar venda';btn.onclick=salvarVenda;
+  el.appendChild(btn);
+  window._vendaRows=[];
 }
 
-function buildSilos() {
-  const wrap = document.getElementById('silo-rows');
-  GALPOES_CONFIG.forEach(g => {
-    const row = document.createElement('div');
-    row.className = 'silo-row';
-    row.innerHTML = `
-      <input type="checkbox" class="silo-check" id="silo_chk_${g.id}">
-      <label class="silo-label" for="silo_chk_${g.id}">${g.nome}</label>
-      <div class="silo-kg"><input class="field-input" type="number" id="silo_kg_${g.id}" placeholder="kg" min="0" step="0.5"></div>`;
-    wrap.appendChild(row);
-  });
-}
-
-function buildTratos() {
-  const wrap = document.getElementById('trato-rows');
-  ['1º trato (manhã)','2º trato (tarde)'].forEach((label, i) => {
-    const row = document.createElement('div');
-    row.className = 'trato-row';
-    row.innerHTML = `
-      <span class="trato-label">${label}</span>
-      <label class="toggle-wrap">
-        <input type="checkbox" id="trato_${i}">
-        <span class="toggle-track"></span>
-      </label>`;
-    wrap.appendChild(row);
-  });
-}
-
-// =============================================
-// COLETAS
-// =============================================
-function addColeta() {
-  coletaCount++;
-  const id = 'col_' + coletaCount;
-  const now = new Date();
-  const t = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
-  const wrap = document.getElementById('coletas-wrap');
-  const row = document.createElement('div');
-  row.className = 'coleta-row';
-  row.innerHTML = `
-    <div class="coleta-label">Coleta ${coletaCount}<br><span style="font-size:10px;font-family:var(--mono);color:var(--muted)">${t}</span></div>
-    <div class="num-input-wrap">
-      <button class="num-btn" onclick="stepColeta('${id}',-1)">−</button>
-      <input class="num-val" id="${id}" type="number" value="0" min="0" oninput="updateOvosSummary()">
-      <button class="num-btn" onclick="stepColeta('${id}',1)">+</button>
-    </div>
-    <div class="coleta-calc" id="calc_${id}">= 0 ovos</div>`;
-  wrap.appendChild(row);
-  coletas.push({ id, time: t });
-}
-
-function stepColeta(id, delta) {
-  const el = document.getElementById(id);
-  el.value = Math.max(0, parseInt(el.value||0) + delta);
-  updateOvosSummary();
-}
-
-function updateOvosSummary() {
-  let total = 0;
-  coletas.forEach(c => {
-    const v = parseInt(document.getElementById(c.id)?.value||0);
-    total += v;
-    const calc = document.getElementById('calc_'+c.id);
-    if (calc) calc.textContent = `= ${(v*PENTE).toLocaleString('pt-BR')} ovos`;
-  });
-  document.getElementById('total-pentes').textContent = total.toLocaleString('pt-BR') + ' pentes';
-  document.getElementById('total-ovos-calc').textContent = '= ' + (total*PENTE).toLocaleString('pt-BR') + ' ovos';
-}
-
-function stepNum(id, delta) {
-  const el = document.getElementById(id);
-  el.value = Math.max(0, parseInt(el.value||0) + delta);
-  if (id === 'mortes') updateRestantes();
-}
-
-function updateRestantes() {
-  if (!selectedGalpao) { document.getElementById('restantes-display').textContent = '—'; return; }
-  const aves = avesReais[selectedGalpao] ?? 0;
-  const mortes = parseInt(document.getElementById('mortes').value||0);
-  document.getElementById('restantes-display').textContent = (aves-mortes).toLocaleString('pt-BR');
-}
-
-// =============================================
-// MODAL AVES
-// =============================================
-function openModal(galpaoId, e) {
-  e.stopPropagation();
-  editingGalpaoId = galpaoId;
-  const g = GALPOES_CONFIG.find(x => x.id === galpaoId);
-  document.getElementById('modal-title').textContent = 'Galinhas — ' + g.nome;
-  document.getElementById('modal-input').value = avesReais[galpaoId] ?? g.capacidade;
-  document.getElementById('modal-aves').classList.remove('hidden');
-}
-function closeModal() { document.getElementById('modal-aves').classList.add('hidden'); editingGalpaoId = null; }
-async function saveAves() {
-  const val = parseInt(document.getElementById('modal-input').value||0);
-  if (!editingGalpaoId) return;
-  avesReais[editingGalpaoId] = val;
-  saveLocal('granja_aves', avesReais);
-  buildGalpoes();
-  updateRestantes();
-  // Salvar no banco
-  if (isOnline) {
-    const existing = await supa.get(`galpoes?galpao_id=eq.${editingGalpaoId}`);
-    if (existing && existing.length > 0) {
-      await supa.patch(`galpoes?galpao_id=eq.${editingGalpaoId}`, { aves_atuais: val });
-    } else {
-      await supa.post('galpoes', { galpao_id: editingGalpaoId, aves_atuais: val });
-    }
-  }
-  showToast('✓ Quantidade atualizada');
-  closeModal();
-}
-document.getElementById('modal-aves').onclick = function(e) { if (e.target === this) closeModal(); };
-
-// =============================================
-// SALVAR REGISTRO
-// =============================================
-async function salvar() {
-  if (!selectedGalpao) { showToast('⚠ Selecione o galpão', true); return; }
-
-  const btn = document.getElementById('submit-btn');
-  btn.disabled = true;
-  btn.textContent = 'Salvando...';
-
-  const totalPentes = coletas.reduce((s,c) => s + parseInt(document.getElementById(c.id)?.value||0), 0);
-  const totalOvos = totalPentes * PENTE;
-  const coletasData = coletas.map(c => ({
-    horario: c.time,
-    pentes: parseInt(document.getElementById(c.id)?.value||0),
-    ovos: parseInt(document.getElementById(c.id)?.value||0) * PENTE,
-  }));
-
-  const galpao = GALPOES_CONFIG.find(g => g.id === selectedGalpao);
-  const aves = avesReais[selectedGalpao] ?? 0;
-  const mortes = parseInt(document.getElementById('mortes').value||0);
-  const avesRestantes = aves - mortes;
-  const taxaPostura = aves > 0 ? parseFloat((totalOvos/aves*100).toFixed(1)) : 0;
-
-  const silos = GALPOES_CONFIG.map(g => ({
-    galpao_id: g.id,
-    galpao_nome: g.nome,
-    recebeu: document.getElementById('silo_chk_'+g.id)?.checked||false,
-    kg: parseFloat(document.getElementById('silo_kg_'+g.id)?.value||0),
-  })).filter(s => s.recebeu || s.kg > 0);
-
-  const tratos = [
-    { label:'1º trato (manhã)', feito: document.getElementById('trato_0')?.checked||false },
-    { label:'2º trato (tarde)', feito: document.getElementById('trato_1')?.checked||false },
-  ];
-
-  const now = new Date();
-  const record = {
-    id: Date.now(),
-    created_at: now.toISOString(),
-    data_registro: now.toLocaleDateString('pt-BR'),
-    horario: now.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}),
-    colaborador: selectedCollab || 'Não informado',
-    galpao_id: selectedGalpao,
-    galpao_nome: galpao.nome,
-    aves_no_dia: aves,
-    mortes,
-    aves_restantes: avesRestantes,
-    causa_morte: document.getElementById('causa').value,
-    coletas: JSON.stringify(coletasData),
-    total_pentes: totalPentes,
-    total_ovos: totalOvos,
-    taxa_postura: taxaPostura,
-    silos: JSON.stringify(silos),
-    tratos: JSON.stringify(tratos),
-    obs: document.getElementById('obs_geral').value,
+function abrirSeletorProdutoVenda(){
+  const existing=(window._vendaRows||[]).map(r=>r.produto);
+  const available=PRODUTOS_VENDA.filter(p=>!existing.includes(p));
+  if(!available.length){toast('Todos os produtos ja foram adicionados');return;}
+  // Show as a simple select in a mini modal approach - use a select overlay
+  const sel=document.createElement('select');
+  sel.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:200;padding:12px;border-radius:10px;border:2px solid var(--green);font-size:15px;font-family:var(--font);background:var(--card);min-width:220px';
+  sel.innerHTML='<option value="">Selecione o produto...</option>'+available.map(p=>'<option>'+p+'</option>').join('');
+  const overlay=document.createElement('div');overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.3);z-index:199';
+  overlay.onclick=()=>{document.body.removeChild(sel);document.body.removeChild(overlay);};
+  sel.onchange=function(){
+    if(!this.value)return;
+    adicionarLinhaVenda(this.value);
+    document.body.removeChild(sel);document.body.removeChild(overlay);
   };
-
-  // Atualiza aves localmente
-  if (mortes > 0) {
-    avesReais[selectedGalpao] = avesRestantes;
-    saveLocal('granja_aves', avesReais);
-    if (isOnline) {
-      const existing = await supa.get(`galpoes?galpao_id=eq.${selectedGalpao}`);
-      if (existing && existing.length > 0) {
-        await supa.patch(`galpoes?galpao_id=eq.${selectedGalpao}`, { aves_atuais: avesRestantes });
-      } else {
-        await supa.post('galpoes', { galpao_id: selectedGalpao, aves_atuais: avesRestantes });
-      }
-    }
-    buildGalpoes();
-  }
-
-  // Salva no banco ou na fila offline
-  let saved = false;
-  if (isOnline) {
-    const res = await supa.post('registros', record);
-    saved = res !== null;
-  }
-  if (!saved) {
-    pendingQueue.push(record);
-    saveLocal('granja_pending', pendingQueue);
-    setSyncStatus('offline');
-  }
-
-  // Cache local sempre
-  historyCache.unshift(record);
-  if (historyCache.length > 100) historyCache = historyCache.slice(0, 100);
-  saveLocal('granja_history_cache', historyCache);
-
-  showToast(saved ? '✓ Registro salvo!' : '✓ Salvo — será sincronizado');
-  resetForm();
-  renderDashboard();
-  renderHistory();
-
-  btn.disabled = false;
-  btn.textContent = '✓ Salvar registro';
+  document.body.appendChild(overlay);document.body.appendChild(sel);
 }
 
-function resetForm() {
-  selectedGalpao = null;
-  document.querySelectorAll('.galpao-btn').forEach(b => b.classList.remove('active'));
-  document.getElementById('mortes').value = 0;
-  document.getElementById('restantes-display').textContent = '—';
-  document.getElementById('causa').value = '';
-  document.getElementById('obs_geral').value = '';
-  document.getElementById('coletas-wrap').innerHTML = '';
-  coletas = []; coletaCount = 0;
-  addColeta();
-  updateOvosSummary();
-  GALPOES_CONFIG.forEach(g => {
-    const chk = document.getElementById('silo_chk_'+g.id);
-    const kg = document.getElementById('silo_kg_'+g.id);
-    if (chk) chk.checked = false;
-    if (kg) kg.value = '';
+function adicionarLinhaVenda(produto){
+  if(!window._vendaRows)window._vendaRows=[];
+  const i=window._vendaRows.length;
+  window._vendaRows.push({produto});
+  const tbody=document.getElementById('v-tbody');if(!tbody)return;
+  const tr=document.createElement('tr');tr.id='vrow_'+i;
+  const tdNome=document.createElement('td');tdNome.style.cssText='font-size:12px;font-family:var(--mono);padding:6px 8px;border-bottom:1px solid var(--border);text-align:left';tdNome.textContent=produto;
+  const makeNumTd=(id)=>{const td=document.createElement('td');td.style.cssText='border-bottom:1px solid var(--border);padding:2px';const inp=document.createElement('input');inp.className='ficha-input';inp.type='number';inp.min='0';inp.step='0.01';inp.id=id;inp.placeholder='0';inp.oninput=()=>calcItemVenda(i);td.appendChild(inp);return td;};
+  const tdFin=document.createElement('td');tdFin.id='vfin_'+i;tdFin.className='ficha-total-cell';tdFin.style.cssText='border-bottom:1px solid var(--border);padding:0 6px';tdFin.textContent='—';
+  const tdDel=document.createElement('td');tdDel.style.cssText='border-bottom:1px solid var(--border);padding:0 4px';
+  const delBtn=document.createElement('button');delBtn.style.cssText='background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:0 4px';delBtn.textContent='×';
+  delBtn.onclick=()=>{tr.remove();window._vendaRows.splice(i,1);calcTotalVenda();};
+  tdDel.appendChild(delBtn);
+  tr.appendChild(tdNome);tr.appendChild(makeNumTd('vqtd_'+i));tr.appendChild(makeNumTd('vunit_'+i));tr.appendChild(makeNumTd('vdesc_'+i));tr.appendChild(tdFin);tr.appendChild(tdDel);
+  tbody.appendChild(tr);
+}
+
+function calcItemVenda(i){
+  const qtd=parseFloat(document.getElementById('vqtd_'+i)?.value||0);
+  const unit=parseFloat(document.getElementById('vunit_'+i)?.value||0);
+  const desc=parseFloat(document.getElementById('vdesc_'+i)?.value||0);
+  const fin=qtd*(unit-desc);
+  const el=document.getElementById('vfin_'+i);
+  if(el)el.textContent=fin>0?'R$ '+fin.toLocaleString('pt-BR',{minimumFractionDigits:2}):'—';
+  calcTotalVenda();
+}
+function calcTotalVenda(){
+  let total=0;
+  (window._vendaRows||[]).forEach((_,i)=>{
+    const qtd=parseFloat(document.getElementById('vqtd_'+i)?.value||0);
+    const unit=parseFloat(document.getElementById('vunit_'+i)?.value||0);
+    const desc=parseFloat(document.getElementById('vdesc_'+i)?.value||0);
+    total+=qtd*(unit-desc);
   });
-  if (document.getElementById('trato_0')) document.getElementById('trato_0').checked = false;
-  if (document.getElementById('trato_1')) document.getElementById('trato_1').checked = false;
+  const el=document.getElementById('v-total-display');
+  if(el)el.textContent='R$ '+total.toLocaleString('pt-BR',{minimumFractionDigits:2});
+}
+
+async function salvarVenda(){
+  const cliente=document.getElementById('v-cliente').value.trim();
+  const numero=document.getElementById('v-numero').value.trim();
+  const data=document.getElementById('v-data').value;
+  const obs=document.getElementById('v-obs').value;
+  if(!data){toast('Informe a data',true);return;}
+  const itens=[];let totalVenda=0;
+  (window._vendaRows||[]).forEach((row,i)=>{
+    const qtd=parseFloat(document.getElementById('vqtd_'+i)?.value||0);
+    if(!qtd)return;
+    const unit=parseFloat(document.getElementById('vunit_'+i)?.value||0);
+    const desc=parseFloat(document.getElementById('vdesc_'+i)?.value||0);
+    const fin=qtd*(unit-desc);totalVenda+=fin;
+    itens.push({produto:row.produto,quantidade:qtd,valor_unitario:unit,desconto_unitario:desc,valor_final:fin});
+  });
+  if(!itens.length){toast('Adicione ao menos um produto',true);return;}
+  const vRes=await supa.post('vendas',{cliente,data_venda:data,numero_venda:numero,obs,valor_total:totalVenda,valor_pago:0,status_pagamento:'nao_pago'});
+  if(vRes===null)return;
+  const vid=vRes&&vRes[0]?vRes[0].id:null;
+  if(vRes&&vRes[0])vendasC.unshift(vRes[0]);
+  if(vid){for(const item of itens){const ir=await supa.post('venda_itens',{venda_id:vid,...item});if(ir&&ir[0])vendasItensC.push(ir[0]);}}
+  toast('Venda registrada!');
+  window._finTab='vendas';renderFinanceiro();
+}
+
+function renderVendasLista(){
+  const el=document.getElementById('fpanel-vendas');if(!el)return;
+  if(!vendasC.length){el.innerHTML='<div class="history-empty">Nenhuma venda registrada.</div>';return;}
+  const stCfg={
+    nao_pago:{border:'var(--red)',bg:'var(--red-pale)',color:'var(--red)',label:'Nao pago'},
+    parcial:{border:'var(--amber)',bg:'var(--amber-pale)',color:'var(--amber)',label:'Parcial'},
+    pago:{border:'var(--green)',bg:'var(--green-pale)',color:'var(--green)',label:'Pago'},
+  };
+  el.innerHTML='';
+  vendasC.forEach(v=>{
+    const s=stCfg[v.status_pagamento]||stCfg.nao_pago;
+    const div=document.createElement('div');div.className='history-item';
+    div.style.cssText='cursor:pointer;border-left:4px solid '+s.border;
+    div.innerHTML='<div class="history-header">'
+      +'<div><div class="history-galpao">'+(v.cliente||'Cliente nao informado')+'</div>'
+      +(v.numero_venda?'<div style="font-size:11px;font-family:var(--mono);color:var(--muted)">Venda #'+v.numero_venda+'</div>':'')
+      +'</div>'
+      +'<div style="text-align:right"><div class="history-time">'+fmtD(v.data_venda)+'</div>'
+      +'<span style="font-size:10px;font-family:var(--mono);background:'+s.bg+';color:'+s.color+';border-radius:4px;padding:2px 6px">'+s.label+'</span>'
+      +'</div></div>'
+      +'<div style="display:flex;justify-content:space-between;margin-top:8px">'
+      +'<span style="font-size:13px;font-family:var(--mono);color:var(--muted)">Total: <strong style="color:var(--text)">R$ '+parseFloat(v.valor_total||0).toLocaleString('pt-BR',{minimumFractionDigits:2})+'</strong></span>'
+      +(v.valor_pago>0?'<span style="font-size:12px;font-family:var(--mono);color:var(--green)">Pago: R$ '+parseFloat(v.valor_pago||0).toLocaleString('pt-BR',{minimumFractionDigits:2})+'</span>':'')
+      +'</div>';
+    div.onclick=()=>abrirVenda(v.id);
+    el.appendChild(div);
+  });
+}
+
+function abrirVenda(vid){
+  const v=vendasC.find(x=>x.id===vid);if(!v)return;
+  const itens=vendasItensC.filter(i=>i.venda_id===vid);
+  const pags=vendasPagamentosC.filter(p=>p.venda_id===vid);
+  const stCfg={nao_pago:{bg:'var(--red-pale)',color:'var(--red)',label:'Nao pago'},parcial:{bg:'var(--amber-pale)',color:'var(--amber)',label:'Parcialmente pago'},pago:{bg:'var(--green-pale)',color:'var(--green)',label:'Pago'}};
+  const s=stCfg[v.status_pagamento]||stCfg.nao_pago;
+  const saldo=parseFloat(v.valor_total||0)-parseFloat(v.valor_pago||0);
+  const el=document.getElementById('fpanel-vendas');
+  el.innerHTML='';
+
+  const backBtn=document.createElement('button');backBtn.className='back-btn';backBtn.textContent='← Voltar';backBtn.onclick=()=>setFinTab('vendas');
+  el.appendChild(backBtn);
+
+  // Info card
+  const info=document.createElement('div');info.className='form-card';
+  info.innerHTML='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">'
+    +'<div><div style="font-size:16px;font-weight:600">'+(v.cliente||'Cliente nao informado')+'</div>'
+    +(v.numero_venda?'<div style="font-size:12px;font-family:var(--mono);color:var(--muted)">Venda #'+v.numero_venda+'</div>':'')
+    +'<div style="font-size:12px;font-family:var(--mono);color:var(--muted)">'+fmtD(v.data_venda)+'</div></div>'
+    +'<span style="font-size:11px;font-family:var(--mono);background:'+s.bg+';color:'+s.color+';border-radius:6px;padding:4px 10px">'+s.label+'</span>'
+    +'</div>'
+    +(v.obs?'<div style="font-size:12px;color:var(--muted);margin-bottom:12px">'+v.obs+'</div>':'')
+    +'<div style="font-size:11px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Itens</div>'
+    +itens.map(i=>'<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">'
+      +'<span>'+i.produto+'</span>'
+      +'<span style="font-family:var(--mono)">'+i.quantidade+'x R$ '+parseFloat(i.valor_unitario||0).toFixed(2)+(i.desconto_unitario>0?' (-R$ '+parseFloat(i.desconto_unitario).toFixed(2)+')':'')+'</span>'
+      +'<span style="font-weight:600;font-family:var(--mono)">R$ '+parseFloat(i.valor_final||0).toLocaleString('pt-BR',{minimumFractionDigits:2})+'</span>'
+      +'</div>').join('')
+    +'<div style="display:flex;justify-content:space-between;padding:10px 0;font-weight:600;font-size:14px;font-family:var(--mono)">'
+    +'<span>Total</span><span>R$ '+parseFloat(v.valor_total||0).toLocaleString('pt-BR',{minimumFractionDigits:2})+'</span></div>';
+  el.appendChild(info);
+
+  // Payments card
+  const pagCard=document.createElement('div');pagCard.className='form-card';
+  pagCard.innerHTML='<div class="form-card-title"><span class="dot" style="background:#52B788"></span>Pagamentos</div>'
+    +(pags.length?pags.map(p=>'<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px">'
+      +'<div><div style="font-weight:500">'+fmtD(p.data_pagamento)+'</div>'+(p.obs?'<div style="font-size:11px;font-family:var(--mono);color:var(--muted)">'+p.obs+'</div>':'')+'</div>'
+      +'<span style="font-family:var(--mono);font-weight:600;color:var(--green)">R$ '+parseFloat(p.valor||0).toLocaleString('pt-BR',{minimumFractionDigits:2})+'</span>'
+      +'</div>').join(''):'<div style="font-size:13px;color:var(--muted);margin-bottom:12px">Nenhum pagamento registrado.</div>')
+    +'<div style="background:var(--bg);border-radius:10px;padding:12px;margin:12px 0">'
+    +'<div style="display:flex;justify-content:space-between;font-size:13px;font-family:var(--mono);margin-bottom:4px"><span>Total pago</span><span style="color:var(--green)">R$ '+parseFloat(v.valor_pago||0).toLocaleString('pt-BR',{minimumFractionDigits:2})+'</span></div>'
+    +'<div style="display:flex;justify-content:space-between;font-size:13px;font-family:var(--mono)"><span>Saldo devedor</span><span style="color:'+(saldo>0?'var(--red)':'var(--green)')+'">R$ '+saldo.toLocaleString('pt-BR',{minimumFractionDigits:2})+'</span></div>'
+    +'</div>'
+    +'<div style="font-size:11px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Registrar pagamento</div>'
+    +'<div class="field-row">'
+    +'<div class="field-group"><div class="field-label">Valor (R$)</div><input class="field-input" id="pag-valor" type="number" min="0" step="0.01" placeholder="0,00"></div>'
+    +'<div class="field-group"><div class="field-label">Data</div><input class="field-input" id="pag-data" type="date" value="'+new Date().toISOString().slice(0,10)+'"></div>'
+    +'</div>'
+    +'<div class="field-group"><div class="field-label">Observacao</div><input class="field-input" id="pag-obs" placeholder="Opcional"></div>';
+  const pagBtn=document.createElement('button');pagBtn.className='submit-btn';pagBtn.style.marginTop='8px';pagBtn.textContent='Confirmar pagamento';
+  pagBtn.onclick=()=>registrarPagamento(vid,v.valor_total,v.valor_pago);
+  pagCard.appendChild(pagBtn);
+  el.appendChild(pagCard);
+}
+
+async function registrarPagamento(vid,totalVenda,valorJaPago){
+  const valor=parseFloat(document.getElementById('pag-valor')?.value||0);
+  const data=document.getElementById('pag-data')?.value;
+  const obs=document.getElementById('pag-obs')?.value;
+  if(!valor||!data){toast('Informe valor e data',true);return;}
+  const saldoAtual=parseFloat(totalVenda||0)-parseFloat(valorJaPago||0);
+  if(valor>saldoAtual+0.01){toast('Valor excede o saldo devedor (R$ '+saldoAtual.toFixed(2)+')',true);return;}
+  const res=await supa.post('venda_pagamentos',{venda_id:vid,valor,data_pagamento:data,obs:obs||null});
+  if(res===null)return;
+  if(res&&res[0])vendasPagamentosC.unshift(res[0]);
+  const novoPago=parseFloat(valorJaPago||0)+valor;
+  const novoStatus=novoPago>=totalVenda?'pago':novoPago>0?'parcial':'nao_pago';
+  await supa.patch('vendas?id=eq.'+vid,{valor_pago:novoPago,status_pagamento:novoStatus});
+  vendasC=vendasC.map(v=>v.id===vid?{...v,valor_pago:novoPago,status_pagamento:novoStatus}:v);
+  toast('Pagamento registrado!');
+  abrirVenda(vid);
 }
 
 // =============================================
-// CARREGAR HISTÓRICO DO BANCO
+// EDITAR REGISTRO
 // =============================================
-async function loadHistory() {
-  const data = await supa.get('registros?order=created_at.desc&limit=100');
-  if (data !== null) {
-    historyCache = data;
-    saveLocal('granja_history_cache', historyCache);
-    renderHistory();
-    renderDashboard();
+function abrirEditRegistro(rid){
+  const r=histCache.find(x=>x.id===rid);if(!r)return;
+  document.getElementById('edit-reg-id').value=rid;
+  document.getElementById('edit-reg-pentes').value=r.total_pentes||0;
+  document.getElementById('edit-reg-mortes').value=r.mortes||0;
+  const calc=document.getElementById('edit-reg-ovos-calc');
+  if(calc)calc.textContent='= '+((r.total_pentes||0)*30).toLocaleString('pt-BR')+' ovos';
+  document.getElementById('edit-reg-pentes').oninput=function(){
+    const el=document.getElementById('edit-reg-ovos-calc');
+    if(el)el.textContent='= '+(parseInt(this.value||0)*30).toLocaleString('pt-BR')+' ovos';
+  };
+  document.getElementById('modal-edit-reg').classList.remove('hidden');
+}
+async function salvarEdicaoRegistro(){
+  const rid=parseInt(document.getElementById('edit-reg-id').value);
+  const pentes=parseInt(document.getElementById('edit-reg-pentes').value||0);
+  const mortes=parseInt(document.getElementById('edit-reg-mortes').value||0);
+  const ovos=pentes*30;
+  const r=histCache.find(x=>x.id===rid);if(!r)return;
+  const aves=avesReais[r.galpao_id]||1;
+  const taxa=parseFloat((ovos/aves*100).toFixed(1));
+  await supa.patch('registros?id=eq.'+rid,{total_pentes:pentes,total_ovos:ovos,taxa_postura:taxa,mortes,editado_em:new Date().toISOString()});
+  histCache=histCache.map(x=>x.id===rid?{...x,total_pentes:pentes,total_ovos:ovos,taxa_postura:taxa,mortes}:x);
+  LS.set('g_hist',histCache);
+  closeModal('modal-edit-reg');
+  toast('Registro atualizado!');
+  renderHist();
+}
+
+// =============================================
+// DETALHE PRODUTO ESTOQUE
+// =============================================
+async function abrirProdutoDetalhe(pid){
+  const p=produtosC.find(x=>x.id===pid);if(!p)return;
+  document.getElementById('mpd-title').textContent=p.descricao;
+  const el=document.getElementById('mpd-body');
+  el.innerHTML='<div style="text-align:center;padding:16px;font-family:var(--mono);font-size:13px;color:var(--muted)">Carregando...</div>';
+  document.getElementById('modal-produto-detail').classList.remove('hidden');
+  const [movs,comps]=await Promise.all([
+    supa.get('estoque_movimentos?produto_id=eq.'+pid+'&order=created_at.desc&limit=50'),
+    supa.get('compras?produto_id=eq.'+pid+'&order=data_transacao.desc&limit=20'),
+  ]);
+  const est=parseFloat(p.estoque_atual||0);
+  let html='<div style="background:var(--bg);border-radius:10px;padding:12px;margin-bottom:14px;display:flex;justify-content:space-between">'
+    +'<div><div style="font-size:11px;font-family:var(--mono);color:var(--muted)">Estoque atual</div>'
+    +'<div style="font-size:22px;font-weight:600;font-family:var(--mono);color:'+(est<=0?'var(--red)':est<10?'var(--amber)':'var(--text)')+'">'+est.toLocaleString('pt-BR')+' '+p.unidade+'</div></div>'
+    +'<div style="text-align:right"><div style="font-size:11px;font-family:var(--mono);color:var(--muted)">Custo medio</div>'
+    +'<div style="font-size:16px;font-weight:600;font-family:var(--mono)">'+(parseFloat(p.custo_medio||0)>0?'R$ '+parseFloat(p.custo_medio).toFixed(2):'—')+'</div></div>'
+    +'</div>';
+  if(comps&&comps.length){
+    html+='<div style="font-size:11px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Historico de compras</div>';
+    comps.forEach(co=>{html+='<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);font-size:13px"><div><div style="font-weight:500">'+fmtD(co.data_transacao)+'</div><div style="font-size:11px;font-family:var(--mono);color:var(--muted)">'+co.quantidade+' '+co.unidade+' @ R$ '+parseFloat(co.custo_unitario||0).toFixed(2)+'</div></div><span style="font-family:var(--mono);font-weight:600;color:var(--green)">R$ '+parseFloat(co.custo_total||0).toFixed(2)+'</span></div>';});
   }
-}
-
-// =============================================
-// DASHBOARD
-// =============================================
-function renderDashboard() {
-  const today = new Date().toLocaleDateString('pt-BR');
-  const todayRecs = historyCache.filter(r => r.data_registro === today);
-
-  const totalAves = Object.values(avesReais).reduce((a,b) => a+b, 0);
-  document.getElementById('kpi-total-aves').textContent = totalAves.toLocaleString('pt-BR');
-
-  const ovosHoje = todayRecs.reduce((s,r) => s + (r.total_ovos||0), 0);
-  const pentesHoje = todayRecs.reduce((s,r) => s + (r.total_pentes||0), 0);
-  document.getElementById('kpi-ovos-hoje').textContent = ovosHoje.toLocaleString('pt-BR');
-  document.getElementById('kpi-ovos-pentes').textContent = pentesHoje + ' pentes';
-
-  const mortesHoje = todayRecs.reduce((s,r) => s + (r.mortes||0), 0);
-  document.getElementById('kpi-mortes-hoje').textContent = mortesHoje;
-
-  const posturaMedia = totalAves > 0 ? ((ovosHoje/totalAves)*100).toFixed(1) : 0;
-  document.getElementById('kpi-postura-media').textContent = posturaMedia + '%';
-
-  const barsWrap = document.getElementById('postura-bars');
-  barsWrap.innerHTML = '';
-  GALPOES_CONFIG.forEach(g => {
-    const recs = todayRecs.filter(r => r.galpao_id === g.id);
-    const ovos = recs.reduce((s,r) => s+(r.total_ovos||0), 0);
-    const aves = avesReais[g.id]||1;
-    const pct = Math.min(100,(ovos/aves*100)).toFixed(1);
-    barsWrap.innerHTML += `
-      <div class="postura-bar-wrap">
-        <div class="postura-bar-label"><span style="color:var(--text)">${g.nome}</span><span style="color:var(--green);font-weight:500">${pct}%</span></div>
-        <div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>
-      </div>`;
-  });
-
-  const avesWrap = document.getElementById('aves-por-galpao');
-  avesWrap.innerHTML = '';
-  GALPOES_CONFIG.forEach(g => {
-    const aves = avesReais[g.id]??g.capacidade;
-    avesWrap.innerHTML += `
-      <div class="postura-bar-wrap">
-        <div class="postura-bar-label"><span style="color:var(--text)">${g.nome}</span><span style="color:var(--text)">${aves.toLocaleString('pt-BR')}</span></div>
-        <div class="bar-track"><div class="bar-fill" style="width:${(aves/5000*100).toFixed(0)}%;background:var(--blue)"></div></div>
-      </div>`;
-  });
-
-  renderChart();
-}
-
-function renderChart() {
-  const labels = [];
-  const datasets = GALPOES_CONFIG.map(g => ({ label:g.nome, data:[], gid:g.id }));
-  for (let i=6;i>=0;i--) {
-    const d = new Date(); d.setDate(d.getDate()-i);
-    const dStr = d.toLocaleDateString('pt-BR');
-    labels.push(dStr.slice(0,5));
-    GALPOES_CONFIG.forEach((g,gi) => {
-      const recs = historyCache.filter(r => r.data_registro === dStr && r.galpao_id === g.id);
-      const ovos = recs.reduce((s,r) => s+(r.total_ovos||0), 0);
-      const aves = avesReais[g.id]||1;
-      datasets[gi].data.push(parseFloat((ovos/aves*100).toFixed(1)));
+  if(movs&&movs.length){
+    html+='<div style="font-size:11px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:12px 0 8px">Movimentacoes</div>';
+    movs.forEach(mv=>{
+      const isEntrada=mv.tipo_movimento==='entrada';
+      html+='<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:12px;font-family:var(--mono)"><span style="color:var(--muted)">'+fmtD(mv.created_at?mv.created_at.slice(0,10):null)+' · '+(mv.origem||'')+'</span><span style="color:'+(isEntrada?'var(--green)':'var(--amber)')+'">'+(isEntrada?'+':'-')+mv.quantidade+' kg</span></div>';
     });
   }
-  const colors = ['#52B788','#3A7CA5','#E76F51','#7B5EA7'];
-  const ctx = document.getElementById('chart-postura').getContext('2d');
-  if (chartInstance) chartInstance.destroy();
-  chartInstance = new Chart(ctx, {
-    type:'line',
-    data:{
-      labels,
-      datasets: datasets.map((ds,i) => ({
-        label:ds.label, data:ds.data,
-        borderColor:colors[i], backgroundColor:colors[i]+'22',
-        borderWidth:2, pointRadius:3, tension:0.3, fill:false
-      }))
-    },
-    options:{
-      responsive:true,
-      plugins:{ legend:{ position:'bottom', labels:{ font:{size:11}, boxWidth:12 } } },
-      scales:{
-        y:{ min:0, max:100, ticks:{ callback:v=>v+'%', font:{size:11} }, grid:{color:'rgba(0,0,0,0.06)'} },
-        x:{ ticks:{ font:{size:10} }, grid:{ display:false } }
-      }
+  el.innerHTML=html;
+}
+
+// Auto-seed produtos da formula se ainda nao existirem
+async function forceSeedProdutos(){
+  toast('Criando produtos...');
+  produtosC=[];
+  for(const nome of Object.keys(FORMULA_POSTURA)){
+    const res=await supa.post('produtos',{descricao:nome,unidade:'kg',tipo:'Insumo racao',custo_medio:0,estoque_atual:0});
+    if(res&&res[0])produtosC.push(res[0]);
+    else if(res&&Array.isArray(res)&&res.length===0){
+      // already exists, fetch it
+      const existing=await supa.get('produtos?descricao=eq.'+encodeURIComponent(nome));
+      if(existing&&existing[0])produtosC.push(existing[0]);
     }
-  });
-}
-
-// =============================================
-// HISTÓRICO
-// =============================================
-function renderHistory() {
-  const list = document.getElementById('historico-list');
-  const pending = pendingQueue.length;
-  const combined = [...historyCache];
-  if (!combined.length && !pending) {
-    list.innerHTML = '<div class="history-empty">Nenhum registro ainda.<br>Comece pela aba "Registrar".</div>';
-    return;
   }
-  const pendingHtml = pending ? `<div style="text-align:center;padding:8px 0 12px;font-size:12px;color:var(--amber);font-family:var(--mono)">⏳ ${pending} registro(s) aguardando sincronização</div>` : '';
-  list.innerHTML = pendingHtml + combined.slice(0,50).map(r => {
-    const silos = typeof r.silos === 'string' ? JSON.parse(r.silos||'[]') : (r.silos||[]);
-    return `
-    <div class="history-item">
-      <div class="history-header">
-        <div class="history-galpao">${r.galpao_nome}</div>
-        <div class="history-time">${r.data_registro} ${r.horario}</div>
-      </div>
-      <div class="history-tags">
-        <span class="tag tag-ovos">🥚 ${r.total_pentes} pentes (${r.taxa_postura}%)</span>
-        ${r.mortes>0?`<span class="tag tag-morte">☠ ${r.mortes} mortes</span>`:''}
-        ${silos.length>0?`<span class="tag tag-racao">🌾 silo: ${silos.map(s=>s.galpao_nome.split(' ')[0]).join(', ')}</span>`:''}
-        <span class="tag tag-collab">👤 ${r.colaborador}</span>
-      </div>
-    </div>`}).join('');
+  LS.set('g_produtos_cache',produtosC);
+  toast('Produtos criados: '+produtosC.length);
+  renderProdutos();
 }
 
-// =============================================
-// TABS / TOAST
-// =============================================
-function setTab(tab) {
-  const tabs = ['registrar','dashboard','historico'];
-  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', tabs[i]===tab));
-  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-  document.getElementById('tab-'+tab).classList.add('active');
-  if (tab==='dashboard') renderDashboard();
-  if (tab==='historico') renderHistory();
-}
-
-function showToast(msg, warn=false) {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.style.background = warn ? '#E76F51' : '#2D6A4F';
-  t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2800);
+async function seedProdutosRacao(){
+  // Always check — seed missing products regardless of current cache state
+  const nomes=Object.keys(FORMULA_POSTURA);
+  for(const nome of nomes){
+    const existe=produtosC.find(p=>p.descricao===nome||p.descricao.toLowerCase()===nome.toLowerCase());
+    if(!existe){
+      const res=await supa.post('produtos',{descricao:nome,unidade:'kg',tipo:'Insumo racao',custo_medio:0,estoque_atual:0});
+      if(res&&res[0]){produtosC.push(res[0]);LS.set('g_pend_prods',1);}
+    }
+  }
 }
 
 init();
