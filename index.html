@@ -444,8 +444,8 @@ async function init(){
   const unameEl=document.getElementById('header-username');
   if(unameEl&&currentUser){unameEl.textContent=currentUser.adm?'ADM':currentUser.nome||'';}
   document.getElementById('hdate').textContent=now.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'short'});
-  buildGReg();addColeta();
-  document.getElementById('data-registro-input').value=new Date().toISOString().slice(0,10);
+  // DOM-dependent calls moved to renderRegistrar()
+  // date field set in renderRegistrar template
   if(!isOnline){
     setSS('offline');
     buildTabsForUser();
@@ -523,7 +523,7 @@ function buildCollabs(){
 }
 
 function buildGReg(){
-  const g=document.getElementById('galpao-grid-reg');g.innerHTML='';
+  const g=document.getElementById('galpao-grid-reg');if(!g)return;g.innerHTML='';
   GALPOES.forEach(gp=>{
     const aves=avesReais[gp.id]??gp.cap;
     const lote=lotesC.find(l=>l.galpao_id===gp.id&&l.status==='ativo');
@@ -1464,7 +1464,7 @@ function renderRegistrar(panel){
       <input class="field-input" id="data-registro-input" type="date" value="${new Date().toISOString().slice(0,10)}">
     </div>
     <button class="submit-btn" id="submit-btn" onclick="salvar()">Salvar registro</button>`;
-  buildGReg();addColeta();
+  addColeta();
 }
 
 function renderDashInto(panel){
