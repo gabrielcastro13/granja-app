@@ -435,7 +435,7 @@ async function init(){
   const unameEl=document.getElementById('header-username');
   if(unameEl&&currentUser){unameEl.textContent=currentUser.adm?'ADM':currentUser.nome||'';}
   document.getElementById('hdate').textContent=now.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'short'});
-  buildGReg();addColeta();buildColabSelect();
+  buildGReg();addColeta();
   document.getElementById('data-registro-input').value=new Date().toISOString().slice(0,10);
   if(!isOnline){
     setSS('offline');
@@ -486,7 +486,6 @@ async function loadAll(){
   if(vends!==null)vendasC=vends;
   if(vitens!==null)vendasItensC=vitens;
   if(vpags!==null)vendasPagamentosC=vpags;
-  buildColabSelect();
   setSS('online');
   buildTabsForUser();
   await seedProdutosRacao();
@@ -743,7 +742,7 @@ async function salvar(){
   const dataInput=document.getElementById('data-registro-input').value;
   const dataObj=dataInput?new Date(dataInput+'T12:00:00'):now;
   const dataReg=dataObj.toLocaleDateString('pt-BR');
-  const rec={id:Date.now(),created_at:now.toISOString(),data_registro:dataReg,horario:now.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}),colaborador:document.getElementById('sel-colaborador')?.value||'Nao informado',galpao_id:selGalpao,galpao_nome:gp.nome,lote_id:loteAtivo?loteAtivo.id:null,aves_no_dia:a,mortes:m,aves_restantes:ar,causa_morte:document.getElementById('causa').value,coletas:JSON.stringify(cd),total_pentes:tp,total_ovos:to,taxa_postura:tp2,silos:JSON.stringify(silos),tratos:JSON.stringify(tratos),obs:document.getElementById('obs_geral').value};
+  const rec={id:Date.now(),created_at:now.toISOString(),data_registro:dataReg,horario:now.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}),colaborador:currentUser?(currentUser.adm?'ADM':currentUser.nome||'Nao informado'):'Nao informado',galpao_id:selGalpao,galpao_nome:gp.nome,lote_id:loteAtivo?loteAtivo.id:null,aves_no_dia:a,mortes:m,aves_restantes:ar,causa_morte:document.getElementById('causa').value,coletas:JSON.stringify(cd),total_pentes:tp,total_ovos:to,taxa_postura:tp2,silos:JSON.stringify(silos),tratos:JSON.stringify(tratos),obs:document.getElementById('obs_geral').value};
   if(m>0){avesReais[selGalpao]=ar;LS.set('g_aves',avesReais);if(isOnline){const ex=await supa.get('galpoes?galpao_id=eq.'+selGalpao);if(ex&&ex.length)await supa.patch('galpoes?galpao_id=eq.'+selGalpao,{aves_atuais:ar});else await supa.post('galpoes',{galpao_id:selGalpao,aves_atuais:ar});}buildGReg();}
   let saved=false;if(isOnline){const r=await supa.post('registros',rec);saved=r!==null;}
   if(!saved){pendQ.push(rec);LS.set('g_pend',pendQ);setSS('offline');}
@@ -1048,11 +1047,7 @@ async function salvarUsuario(){
   LS.set('g_usuarios',usuariosC);closeModal('modal-usuario');toast('Usuario salvo!');renderUsuarios();buildColabSelect();
 }
 async function deletarUsuario(uid){if(!confirm('Remover usuario?'))return;await supa.del('usuarios?id=eq.'+uid);usuariosC=usuariosC.filter(u=>u.id!==uid);LS.set('g_usuarios',usuariosC);renderUsuarios();toast('Usuario removido');}
-function buildColabSelect(){
-  const sel=document.getElementById('sel-colaborador');if(!sel)return;
-  sel.innerHTML='<option value="">Selecione o colaborador...</option>';
-  usuariosC.forEach(u=>{const o=document.createElement('option');o.value=u.nome;o.textContent=u.nome+' (N'+u.nivel+')';sel.appendChild(o);});
-}
+function buildColabSelect(){} // colaborador now uses logged-in user
 
 // =============================================
 // FABRICA DE RACOES
@@ -1410,8 +1405,7 @@ function renderPosturaTab(sub){
 
 function renderRegistrar(panel){
   panel.innerHTML=`
-    <div class="section-label">Colaborador <span class="badge badge-req">obrigatorio</span></div>
-    <select class="field-input" id="sel-colaborador" style="margin-bottom:18px"><option value="">Selecione o colaborador...</option></select>
+
     <div class="section-label">Galpao <span class="badge badge-req">obrigatorio</span></div>
     <div class="galpao-grid" id="galpao-grid-reg"></div>
     <div class="form-card">
@@ -1457,7 +1451,7 @@ function renderRegistrar(panel){
       <input class="field-input" id="data-registro-input" type="date" value="${new Date().toISOString().slice(0,10)}">
     </div>
     <button class="submit-btn" id="submit-btn" onclick="salvar()">Salvar registro</button>`;
-  buildGReg();addColeta();buildColabSelect();
+  buildGReg();addColeta();
 }
 
 function renderDashInto(panel){
