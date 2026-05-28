@@ -379,17 +379,26 @@ const supa={
   async query(method,path,body,extraHeaders){
     try{
       const headers={'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Content-Type':'application/json','Prefer':method==='POST'?'return=representation':'',...(extraHeaders||{})};
-      const res=await fetch(SUPA_URL+'/rest/v1/'+path,{method,headers,body:body?JSON.stringify(body):undefined});
+      const controller=new AbortController();
+      const timeout=setTimeout(()=>controller.abort(),10000); // 10s timeout
+      let res;
+      try{
+        res=await fetch(SUPA_URL+'/rest/v1/'+path,{method,headers,body:body?JSON.stringify(body):undefined,signal:controller.signal});
+      }finally{clearTimeout(timeout);}
       const text=await res.text();
       if(!res.ok){
         let msg=text;
         try{const j=JSON.parse(text);msg=j.message||j.hint||j.details||text;}catch(e){}
         console.error('Supabase error ['+method+' '+path+']:',msg);
-        toast('Erro Supabase: '+msg.slice(0,80),true);
+        if(!msg.includes('does not exist'))toast('Erro Supabase: '+msg.slice(0,80),true);
         return null;
       }
       return text?JSON.parse(text):[];
-    }catch(e){console.error('Fetch error:',e);return null;}
+    }catch(e){
+      if(e.name==='AbortError')console.error('Timeout:',path);
+      else console.error('Fetch error:',e);
+      return null;
+    }
   },
   get:p=>supa.query('GET',p),
   post:(p,b)=>supa.query('POST',p,b),
@@ -456,7 +465,8 @@ async function init(){
 }
 
 async function loadAll(){
-  const[hist,aves,lotes,docs,resps,usuarios,racao,prods,comps,vends,vitens,vpags,perms,formula_db,clientes_db,forn_db]=await Promise.all([
+  // Core tables (always exist)
+  const[hist,aves,lotes,docs,resps,usuarios,racao,prods,comps,vends,vitens,vpags]=await Promise.all([
     supa.get('registros?order=created_at.desc&limit=200'),
     supa.get('galpoes?select=*'),
     supa.get('lotes?order=created_at.desc'),
@@ -469,6 +479,9 @@ async function loadAll(){
     supa.get('vendas?order=data_venda.desc&limit=100'),
     supa.get('venda_itens?order=id.asc'),
     supa.get('venda_pagamentos?order=created_at.desc'),
+  ]);
+  // Optional tables (may not exist yet)
+  const[perms,formula_db,clientes_db,forn_db]=await Promise.all([
     supa.get('nivel_permissoes?order=nivel.asc'),
     supa.get('formula_racao?tipo=eq.Postura&order=ingrediente.asc'),
     supa.get('clientes?order=nome.asc'),
