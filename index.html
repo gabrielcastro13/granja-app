@@ -285,7 +285,11 @@ select.field-input{cursor:pointer}
       <select class="field-input" id="doc-tipo"><option>GTA</option><option>Nota Fiscal</option><option>Vacina</option><option>Laudo</option><option>Outro</option></select>
     </div>
     <div class="field-group"><div class="field-label">Nome / descricao</div><input class="field-input" id="doc-nome" placeholder="Ex: GTA 2025/001"></div>
-    <div class="field-group"><div class="field-label">Link externo (opcional)</div><input class="field-input" id="doc-url" type="url" placeholder="https://drive.google.com/..."></div>
+    <div class="field-group"><div class="field-label">Arquivo do dispositivo</div>
+      <input type="file" id="doc-file" accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" style="font-family:var(--mono);font-size:12px;padding:8px 0" onchange="previewDocFile(this)">
+      <div id="doc-file-info" style="font-size:11px;font-family:var(--mono);color:var(--green);margin-top:4px"></div>
+    </div>
+    <div class="field-group"><div class="field-label">Ou link externo</div><input class="field-input" id="doc-url" type="url" placeholder="https://drive.google.com/..."></div>
     <div class="field-group"><div class="field-label">Observacao</div><input class="field-input" id="doc-obs" placeholder="Opcional"></div>
     <div class="modal-actions">
       <button class="modal-btn modal-btn-cancel" onclick="closeModal('modal-doc')">Cancelar</button>
@@ -326,7 +330,7 @@ select.field-input{cursor:pointer}
     <div class="field-group"><div class="field-label">Total de pentes</div>
       <div class="num-input-wrap">
         <button class="num-btn" onclick="stepNum('edit-reg-pentes',-1)">-</button>
-        <input class="num-val" id="edit-reg-pentes" type="number" min="0">
+        <input class="num-val" id="edit-reg-pentes" type="number" min="0" oninput="document.getElementById('edit-reg-ovos-calc').textContent='= '+(parseInt(this.value||0)*30).toLocaleString('pt-BR')+' ovos'">
         <button class="num-btn" onclick="stepNum('edit-reg-pentes',1)">+</button>
       </div>
       <div style="font-size:11px;color:var(--green);font-family:var(--mono);margin-top:4px" id="edit-reg-ovos-calc"></div>
@@ -337,6 +341,15 @@ select.field-input{cursor:pointer}
         <input class="num-val" id="edit-reg-mortes" type="number" min="0">
         <button class="num-btn" onclick="stepNum('edit-reg-mortes',1)">+</button>
       </div>
+    </div>
+    <div class="field-group"><div class="field-label">Causa da morte</div>
+      <input class="field-input" id="edit-reg-causa" placeholder="Opcional">
+    </div>
+    <div class="field-group"><div class="field-label">Data do registro</div>
+      <input class="field-input" id="edit-reg-data" type="date">
+    </div>
+    <div class="field-group"><div class="field-label">Observacoes</div>
+      <textarea class="field-input" id="edit-reg-obs" placeholder="Opcional"></textarea>
     </div>
     <div class="modal-actions">
       <button class="modal-btn modal-btn-cancel" onclick="closeModal('modal-edit-reg')">Cancelar</button>
@@ -373,18 +386,24 @@ select.field-input{cursor:pointer}
 </div>
 <div class="toast" id="toast"></div>
 <script>
+function toast(msg,warn=false){
+  const t=document.getElementById('toast');
+  if(!t)return;
+  t.textContent=msg;
+  t.style.background=warn?'#E76F51':'#2D6A4F';
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2800);
+}
+
 const SUPA_URL='https://xxjdjtydpbmtikdaxobv.supabase.co';
 const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh4amRqdHlkcGJtdGlrZGF4b2J2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3OTY4NzMsImV4cCI6MjA5NTM3Mjg3M30.FwchD8BtKBhK3lHs3eHyFIuij4f_nHJtPqwAGnSgS74';
 const supa={
   async query(method,path,body,extraHeaders){
     try{
       const headers={'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Content-Type':'application/json','Prefer':method==='POST'?'return=representation':'',...(extraHeaders||{})};
-      const controller=new AbortController();
-      const timeout=setTimeout(()=>controller.abort(),10000); // 10s timeout
-      let res;
-      try{
-        res=await fetch(SUPA_URL+'/rest/v1/'+path,{method,headers,body:body?JSON.stringify(body):undefined,signal:controller.signal});
-      }finally{clearTimeout(timeout);}
+      const fetchPromise=fetch(SUPA_URL+'/rest/v1/'+path,{method,headers,body:body?JSON.stringify(body):undefined});
+      const timeoutPromise=new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),10000));
+      const res=await Promise.race([fetchPromise,timeoutPromise]);
       const text=await res.text();
       if(!res.ok){
         let msg=text;
@@ -395,8 +414,7 @@ const supa={
       }
       return text?JSON.parse(text):[];
     }catch(e){
-      if(e.name==='AbortError')console.error('Timeout:',path);
-      else console.error('Fetch error:',e);
+      console.error('Fetch error:',e.message||e);
       return null;
     }
   },
@@ -601,7 +619,7 @@ function renderDetail(gid){
       +'</div>';
     // Documentos
     html+='<div class="form-card"><div class="form-card-title"><span class="dot" style="background:#3A7CA5"></span>Documentos do lote</div>'
-      +(docs.length?docs.map(dd=>'<div class="doc-row"><span class="doc-tipo">'+dd.tipo+'</span><span class="doc-nome">'+dd.nome+'</span>'+(dd.url?'<a class="doc-link" href="'+dd.url+'" target="_blank">abrir</a>':'')+'<button class="doc-del" onclick="delDoc('+dd.id+')">x</button></div>').join(''):'<div style="font-size:13px;color:var(--muted);margin-bottom:12px">Nenhum documento.</div>')
+      +(docs.length?docs.map(dd=>'<div class="doc-row"><span class="doc-tipo">'+dd.tipo+'</span><span class="doc-nome">'+dd.nome+'</span>'+(dd.url?(dd.url.startsWith('data:')?'<a class="doc-link" href="'+dd.url+'" download="'+dd.nome+'">baixar</a>':'<a class="doc-link" href="'+dd.url+'" target="_blank">abrir</a>'):'')+'<button class="doc-del" onclick="delDoc('+dd.id+')">x</button></div>').join(''):'<div style="font-size:13px;color:var(--muted);margin-bottom:12px">Nenhum documento.</div>')
       +'<button class="add-coleta" style="margin-top:10px" onclick="abrirModalDoc('+lote.id+')">+ Adicionar documento</button>'
       +'</div>';
   } else {
@@ -694,16 +712,44 @@ async function salvarResponsavel(){
   LS.set('g_lotes',lotesC);LS.set('g_resps',respsC);
   closeModal('modal-resp');toast('Responsavel atualizado');buildGReg();if(viewGalpaoId)renderDetail(viewGalpaoId);
 }
-function abrirModalDoc(lid){document.getElementById('modal-doc-lote-id').value=lid;['doc-nome','doc-url','doc-obs'].forEach(id=>document.getElementById(id).value='');document.getElementById('doc-tipo').value='GTA';document.getElementById('modal-doc').classList.remove('hidden');}
+function abrirModalDoc(lid){
+  document.getElementById('modal-doc-lote-id').value=lid;
+  ['doc-nome','doc-url','doc-obs'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('doc-tipo').value='GTA';
+  const fi=document.getElementById('doc-file');if(fi)fi.value='';
+  const info=document.getElementById('doc-file-info');if(info)info.textContent='';
+  document.getElementById('modal-doc').classList.remove('hidden');
+}
+function previewDocFile(inp){
+  const f=inp.files[0];
+  const el=document.getElementById('doc-file-info');
+  if(f&&el)el.textContent=f.name+' ('+Math.round(f.size/1024)+' KB)';
+  // Auto-fill nome if empty
+  const nomeEl=document.getElementById('doc-nome');
+  if(f&&nomeEl&&!nomeEl.value)nomeEl.value=f.name;
+}
 async function salvarDoc(){
   const lid=parseInt(document.getElementById('modal-doc-lote-id').value);
   const tipo=document.getElementById('doc-tipo').value;
-  const nome=document.getElementById('doc-nome').value.trim();
-  const url=document.getElementById('doc-url').value.trim();
+  const nome=document.getElementById('doc-nome').value.trim()||document.getElementById('doc-file')?.files[0]?.name||'';
   const obs=document.getElementById('doc-obs').value.trim();
-  if(!nome){toast('Informe o nome do documento',true);return;}
+  if(!nome){toast('Informe o nome ou selecione um arquivo',true);return;}
+  const fileInp=document.getElementById('doc-file');
+  let url=document.getElementById('doc-url').value.trim();
+  if(fileInp&&fileInp.files&&fileInp.files[0]){
+    const file=fileInp.files[0];
+    if(file.size>5*1024*1024){toast('Arquivo muito grande (max 5MB)',true);return;}
+    url=await new Promise((res,rej)=>{
+      const r=new FileReader();r.onload=()=>res(r.result);r.onerror=rej;r.readAsDataURL(file);
+    });
+  }
+  const btn=document.querySelector('#modal-doc .modal-btn-save');
+  if(btn){btn.disabled=true;btn.textContent='Salvando...';}
   const res=await supa.post('lote_documentos',{lote_id:lid,tipo,nome,url:url||null,obs:obs||null});
+  if(btn){btn.disabled=false;btn.textContent='Salvar';}
+  if(res===null){return;} // error shown by supa.query
   if(res&&res[0]){docsC.unshift(res[0]);LS.set('g_docs',docsC);}
+  else{const fr=await supa.get('lote_documentos?lote_id=eq.'+lid+'&order=created_at.desc&limit=1');if(fr&&fr[0])docsC.unshift(fr[0]);}
   closeModal('modal-doc');toast('Documento adicionado');if(viewGalpaoId)renderDetail(viewGalpaoId);
 }
 async function delDoc(did){
@@ -958,7 +1004,8 @@ function renderHist(){
       byDate[date].forEach(r=>{
         const s=typeof r.silos==='string'?JSON.parse(r.silos||'[]'):(r.silos||[]);
         html+='<div class="history-item"><div class="history-header"><div class="history-galpao">'+r.galpao_nome+'</div><div class="history-time">'+r.horario+'</div></div><div class="history-tags"><span class="tag tag-ovos">'+r.total_pentes+' pentes ('+r.taxa_postura+'%)</span>'+(r.mortes>0?'<span class="tag tag-morte">'+r.mortes+' mortes</span>':'')+(s.length>0?'<span class="tag tag-racao">silo: '+s.map(x=>(x.galpao_nome||'').split(' ')[0]).join(', ')+'</span>':'')+'<span class="tag tag-collab">'+r.colaborador+'</span>'
-      +'<button onclick="event.stopPropagation();abrirEditRegistro('+r.id+')" style="font-size:10px;font-family:var(--mono);background:var(--blue-pale);color:var(--blue);border:none;border-radius:4px;padding:2px 8px;cursor:pointer">editar</button>'
+      +'<button onclick="event.stopPropagation();abrirEditRegistro('+r.id+')" style="font-size:10px;font-family:var(--mono);background:var(--blue-pale);color:var(--blue);border:none;border-radius:4px;padding:2px 8px;cursor:pointer;margin-right:3px">editar</button>'
+      +'<button onclick="event.stopPropagation();deletarRegistro('+r.id+')" style="font-size:10px;font-family:var(--mono);background:var(--red-pale);color:var(--red);border:none;border-radius:4px;padding:2px 8px;cursor:pointer">excluir</button>'
       +'</div></div>';
       });
     });
@@ -1019,7 +1066,7 @@ function buildHistMensal(gid,recs){
       const pctColor=parseFloat(pct)>=80?'var(--green)':parseFloat(pct)>=60?'var(--amber)':'var(--red)';
       // Find the registro id for this day
       const dayRec=histCache.find(x=>x.galpao_id===gid&&x.data_registro===String(d).padStart(2,'0')+'/'+String(parseInt(activeMonth.split('-')[1])).padStart(2,'0')+'/'+activeMonth.split('-')[0]);
-      const editBtn=dayRec?'<button onclick="event.stopPropagation();abrirEditRegistro('+dayRec.id+')" style="font-size:10px;font-family:var(--mono);background:var(--blue-pale);color:var(--blue);border:none;border-radius:4px;padding:2px 6px;cursor:pointer">editar</button>':'';
+      const editBtn=dayRec?'<button onclick="event.stopPropagation();abrirEditRegistro('+dayRec.id+')" style="font-size:10px;font-family:var(--mono);background:var(--blue-pale);color:var(--blue);border:none;border-radius:4px;padding:2px 4px;cursor:pointer;margin-right:2px">editar</button><button onclick="event.stopPropagation();deletarRegistro('+dayRec.id+')" style="font-size:10px;font-family:var(--mono);background:var(--red-pale);color:var(--red);border:none;border-radius:4px;padding:2px 4px;cursor:pointer">excluir</button>':'';
       html+='<tr><td>'+d+'</td><td>'+r.pentes+'</td><td>'+(r.ovos).toLocaleString('pt-BR')+'</td><td style="color:'+(r.mortes>0?'var(--amber)':'var(--text)')+'">'+r.mortes+'</td><td style="color:'+pctColor+';font-weight:600">'+pct+'%</td><td style="border-bottom:1px solid var(--border);padding:2px 4px">'+editBtn+'</td></tr>';
       totPentes+=r.pentes;totOvos+=r.ovos;totMortes+=r.mortes;diasComDados++;
     } else {
@@ -1234,16 +1281,17 @@ function renderProdutos(){
   const pt=window._prodTab||'estoque';
   el.innerHTML='';
   const tabRow=document.createElement('div');tabRow.style.cssText='display:flex;gap:4px;margin-bottom:16px';
-  [['estoque','Estoque'],['compra','Compras'],['produto','Cadastro']].forEach(([id,label])=>{
+  [['estoque','Estoque'],['compra','Compras'],['produto','Cadastro'],['lista','Lista']].forEach(([id,label])=>{
     const btn=document.createElement('button');
     btn.style.cssText='flex:1;padding:8px;font-size:11px;border-radius:10px;border:none;cursor:pointer;font-family:var(--font);font-weight:500;background:'+(pt===id?'var(--card)':'var(--border)')+';color:'+(pt===id?'var(--green)':'var(--muted)')+(pt===id?';box-shadow:var(--shadow)':'');
     btn.textContent=label;btn.onclick=()=>setProdTab(id);tabRow.appendChild(btn);
   });
   el.appendChild(tabRow);
-  ['estoque','compra','produto'].forEach(id=>{const d=document.createElement('div');d.id='ppanel-'+id;d.style.display=pt===id?'block':'none';el.appendChild(d);});
+  ['estoque','compra','produto','lista'].forEach(id=>{const d=document.createElement('div');d.id='ppanel-'+id;d.style.display=pt===id?'block':'none';el.appendChild(d);});
   if(pt==='estoque')renderEstoque();
   if(pt==='compra')renderFormCompra();
   if(pt==='produto')renderFormProduto();
+  if(pt==='lista')renderListaProdutos();
 }
 function setProdTab(t){window._prodTab=t;renderProdutos();}
 function renderEstoque(){
@@ -1358,8 +1406,15 @@ async function deletarCompra(cid){
 }
 function renderFormProduto(){
   const el=document.getElementById('ppanel-produto');if(!el)return;
-  const lista=produtosC.length?produtosC.map(p=>'<div class="history-item" style="display:flex;align-items:center;gap:10px;margin-bottom:8px"><div style="flex:1"><div style="font-weight:600;font-size:13px">'+p.descricao+'</div><div style="font-size:11px;font-family:var(--mono);color:var(--muted)">'+p.unidade+' - '+p.tipo+'</div></div><button class="g-btn g-btn-edit" onclick="editarProduto('+p.id+')">Editar</button></div>').join(''):'<div style="font-size:13px;color:var(--muted);margin-bottom:14px">Nenhum produto ainda.</div>';
-  el.innerHTML='<div class="form-card"><div class="form-card-title"><span class="dot" style="background:#7B5EA7"></span>Adicionar produto</div><input type="hidden" id="p-id"><div class="field-group"><div class="field-label">Descricao</div><input class="field-input" id="p-desc" placeholder="Nome do produto"></div><div class="field-row"><div class="field-group"><div class="field-label">Unidade</div><input class="field-input" id="p-unidade" placeholder="kg, L, un, sc..."></div><div class="field-group"><div class="field-label">Tipo</div><select class="field-input" id="p-tipo"><option value="Insumo racao">Insumo racao</option><option value="Insumo producao">Insumo producao</option></select></div></div><div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-bottom:12px">Custo medio calculado automaticamente pelas compras.</div><button class="submit-btn" onclick="salvarProduto()">Salvar produto</button></div><div>'+lista+'</div>';
+  el.innerHTML='<div class="form-card">'
+    +'<div class="form-card-title"><span class="dot" style="background:#7B5EA7"></span>Adicionar produto</div>'
+    +'<input type="hidden" id="p-id">'
+    +'<div class="field-group"><div class="field-label">Descricao</div><input class="field-input" id="p-desc" placeholder="Nome do produto"></div>'
+    +'<div class="field-row"><div class="field-group"><div class="field-label">Unidade</div><input class="field-input" id="p-unidade" placeholder="kg, L, un, sc..."></div>'
+    +'<div class="field-group"><div class="field-label">Tipo</div><select class="field-input" id="p-tipo"><option value="Insumo racao">Insumo racao</option><option value="Insumo producao">Insumo producao</option></select></div></div>'
+    +'<div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-bottom:12px">Custo medio calculado automaticamente pelas compras.</div>'
+    +'<button class="submit-btn" onclick="salvarProduto()">Salvar produto</button>'
+    +'</div>';
 }
 function editarProduto(pid){const p=produtosC.find(x=>x.id===pid);if(!p)return;document.getElementById('p-id').value=pid;document.getElementById('p-desc').value=p.descricao;document.getElementById('p-unidade').value=p.unidade;document.getElementById('p-tipo').value=p.tipo;}
 async function salvarProduto(){
@@ -1418,7 +1473,6 @@ function renderPosturaTab(sub){
 
 function renderRegistrar(panel){
   panel.innerHTML=`
-
     <div class="section-label">Galpao <span class="badge badge-req">obrigatorio</span></div>
     <div class="galpao-grid" id="galpao-grid-reg"></div>
     <div class="form-card">
@@ -1464,6 +1518,29 @@ function renderRegistrar(panel){
       <input class="field-input" id="data-registro-input" type="date" value="${new Date().toISOString().slice(0,10)}">
     </div>
     <button class="submit-btn" id="submit-btn" onclick="salvar()">Salvar registro</button>`;
+
+  // Build galpao buttons via DOM (avoid onclick string quoting issues)
+  const grid=document.getElementById('galpao-grid-reg');
+  GALPOES.forEach(g=>{
+    const lote=lotesC.find(l=>l.galpao_id===g.id&&l.status==='ativo');
+    const aves=avesReais[g.id]??g.cap;
+    const sem=lote?calcSem(lote.nascimento):null;
+    const semCls=sem>=90?'critico':sem>=85?'aviso':'ok';
+    const card=document.createElement('div');
+    card.className='galpao-card';
+    card.id='gc_'+g.id;
+    card.innerHTML='<div class="gc-nome">'+g.nome+'</div>'
+      +(lote?'<div class="gc-lote">'+lote.raca+'</div>':'<div class="gc-lote" style="color:var(--muted)">Sem lote</div>')
+      +'<div class="gc-aves">'+aves.toLocaleString('pt-BR')+' aves</div>'
+      +(sem!==null?'<div class="lote-semanas-badge '+semCls+'" style="font-size:10px;padding:2px 6px;margin-top:4px">'+sem+'sem</div>':'');
+    card.onclick=()=>{
+      selGalpao=g.id;
+      document.querySelectorAll('.galpao-card').forEach(x=>x.classList.remove('active'));
+      card.classList.add('active');
+      updateRest();
+    };
+    grid.appendChild(card);
+  });
   addColeta();
 }
 
@@ -1775,28 +1852,33 @@ function abrirEditRegistro(rid){
   document.getElementById('edit-reg-id').value=rid;
   document.getElementById('edit-reg-pentes').value=r.total_pentes||0;
   document.getElementById('edit-reg-mortes').value=r.mortes||0;
+  document.getElementById('edit-reg-causa').value=r.causa_morte||'';
+  document.getElementById('edit-reg-obs').value=r.obs||'';
+  // Convert date from dd/mm/yyyy to yyyy-mm-dd
+  const dp=r.data_registro?r.data_registro.split('/'):[];
+  if(dp.length===3)document.getElementById('edit-reg-data').value=dp[2]+'-'+dp[1]+'-'+dp[0];
   const calc=document.getElementById('edit-reg-ovos-calc');
   if(calc)calc.textContent='= '+((r.total_pentes||0)*30).toLocaleString('pt-BR')+' ovos';
-  document.getElementById('edit-reg-pentes').oninput=function(){
-    const el=document.getElementById('edit-reg-ovos-calc');
-    if(el)el.textContent='= '+(parseInt(this.value||0)*30).toLocaleString('pt-BR')+' ovos';
-  };
   document.getElementById('modal-edit-reg').classList.remove('hidden');
 }
 async function salvarEdicaoRegistro(){
   const rid=parseInt(document.getElementById('edit-reg-id').value);
   const pentes=parseInt(document.getElementById('edit-reg-pentes').value||0);
   const mortes=parseInt(document.getElementById('edit-reg-mortes').value||0);
+  const causa=document.getElementById('edit-reg-causa').value;
+  const obs=document.getElementById('edit-reg-obs').value;
+  const dataVal=document.getElementById('edit-reg-data').value;
   const ovos=pentes*30;
   const r=histCache.find(x=>x.id===rid);if(!r)return;
   const aves=avesReais[r.galpao_id]||1;
   const taxa=parseFloat((ovos/aves*100).toFixed(1));
-  await supa.patch('registros?id=eq.'+rid,{total_pentes:pentes,total_ovos:ovos,taxa_postura:taxa,mortes,editado_em:new Date().toISOString()});
-  histCache=histCache.map(x=>x.id===rid?{...x,total_pentes:pentes,total_ovos:ovos,taxa_postura:taxa,mortes}:x);
+  // Convert date yyyy-mm-dd to dd/mm/yyyy
+  let dataReg=r.data_registro;
+  if(dataVal){const dp=dataVal.split('-');dataReg=dp[2]+'/'+dp[1]+'/'+dp[0];}
+  await supa.patch('registros?id=eq.'+rid,{total_pentes:pentes,total_ovos:ovos,taxa_postura:taxa,mortes,causa_morte:causa,obs,data_registro:dataReg,editado_em:new Date().toISOString()});
+  histCache=histCache.map(x=>x.id===rid?{...x,total_pentes:pentes,total_ovos:ovos,taxa_postura:taxa,mortes,causa_morte:causa,obs,data_registro:dataReg}:x);
   LS.set('g_hist',histCache);
-  closeModal('modal-edit-reg');
-  toast('Registro atualizado!');
-  renderHist();
+  closeModal('modal-edit-reg');toast('Registro atualizado!');renderHist();
 }
 
 // =============================================
@@ -1831,6 +1913,45 @@ async function abrirProdutoDetalhe(pid){
     });
   }
   el.innerHTML=html;
+}
+
+function renderListaProdutos(){
+  const el=document.getElementById('ppanel-lista');if(!el)return;
+  if(!produtosC.length){el.innerHTML='<div class="history-empty">Nenhum produto cadastrado.</div>';return;}
+  const grupos={'Insumo racao':'var(--blue)','Insumo producao':'var(--green)'};
+  let html='';
+  Object.entries(grupos).forEach(([tipo,color])=>{
+    const items=produtosC.filter(p=>p.tipo===tipo);if(!items.length)return;
+    html+='<div style="font-size:11px;font-family:var(--mono);color:'+color+';font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin:14px 0 8px">'+tipo+'</div>';
+    items.forEach(p=>{
+      html+='<div class="history-item" style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'
+        +'<div style="flex:1"><div style="font-weight:600;font-size:13px">'+p.descricao+'</div>'
+        +'<div style="font-size:11px;font-family:var(--mono);color:var(--muted)">'+p.unidade+' · '+p.tipo+'</div></div>'
+        +'<button class="g-btn g-btn-edit" onclick="editarProdutoFromLista('+p.id+')">Editar</button>'
+        +'<button class="g-btn" style="background:var(--red-pale);color:var(--red)" onclick="deletarProduto('+p.id+')">Remover</button>'
+        +'</div>';
+    });
+  });
+  el.innerHTML=html;
+}
+function editarProdutoFromLista(pid){
+  window._prodTab='produto';renderProdutos();
+  setTimeout(()=>editarProduto(pid),50);
+}
+async function deletarProduto(pid){
+  if(!confirm('Remover produto? Isso nao apaga o historico de compras.'))return;
+  await supa.del('produtos?id=eq.'+pid);
+  produtosC=produtosC.filter(x=>x.id!==pid);
+  toast('Produto removido');renderListaProdutos();
+}
+
+async function deletarRegistro(rid){
+  if(!confirm('Excluir este registro permanentemente?'))return;
+  await supa.del('registros?id=eq.'+rid);
+  histCache=histCache.filter(x=>x.id!==rid);
+  LS.set('g_hist',histCache);
+  toast('Registro excluido');
+  renderHist();
 }
 
 // Auto-seed produtos da formula se ainda nao existirem
