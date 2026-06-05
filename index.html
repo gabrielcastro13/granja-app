@@ -789,9 +789,14 @@ function closeModal(id){document.getElementById(id).classList.add('hidden');}
 function openModalAves(gid,e){if(e)e.stopPropagation();editGalpaoId=gid;const g=GALPOES.find(x=>x.id===gid);document.getElementById('modal-aves-title').textContent='Galinhas - '+g.nome;document.getElementById('modal-aves-input').value=avesReais[gid]??g.cap;openModal('modal-aves');}
 async function saveAves(){
   const val=parseInt(document.getElementById('modal-aves-input').value||0);if(!editGalpaoId)return;
-  avesReais[editGalpaoId]=val;LS.set('g_aves',avesReais);buildGReg();updateRest();
+  avesReais[editGalpaoId]=val;LS.set('g_aves',avesReais);
   if(isOnline){const ex=await supa.get('galpoes?galpao_id=eq.'+editGalpaoId);if(ex&&ex.length)await supa.patch('galpoes?galpao_id=eq.'+editGalpaoId,{aves_atuais:val});else await supa.post('galpoes',{galpao_id:editGalpaoId,aves_atuais:val});}
-  toast('Quantidade atualizada');closeModal('modal-aves');
+  closeModal('modal-aves');
+  toast('Quantidade atualizada');
+  // Refresh current view
+  if(viewGalpaoId)renderDetail(viewGalpaoId);
+  else if(window._posturaSubTab==='galpoes')renderGTab();
+  updateRest();
 }
 ['modal-aves','modal-lote','modal-doc','modal-encerrar','modal-resp','modal-usuario','modal-edit-reg','modal-produto-detail'].forEach(id=>{document.getElementById(id).onclick=function(e){if(e.target===this)closeModal(id);};});
 
@@ -1080,7 +1085,7 @@ function buildHistMensal(gid,recs){
       html+='<tr><td>'+d+'</td><td>'+r.pentes+'</td><td>'+(r.ovos).toLocaleString('pt-BR')+'</td><td style="color:'+(r.mortes>0?'var(--amber)':'var(--text)')+'">'+r.mortes+'</td><td style="color:'+pctColor+';font-weight:600">'+pct+'%</td><td style="border-bottom:1px solid var(--border);padding:2px 4px">'+editBtn+'</td></tr>';
       totPentes+=r.pentes;totOvos+=r.ovos;totMortes+=r.mortes;diasComDados++;
     } else {
-      html+='<tr><td>'+d+'</td><td style="color:var(--border)">-</td><td style="color:var(--border)">-</td><td style="color:var(--border)">-</td><td style="color:var(--border)">-</td></tr>';
+      html+='<tr><td>'+d+'</td><td style="color:var(--border)">-</td><td style="color:var(--border)">-</td><td style="color:var(--border)">-</td><td style="color:var(--border)">-</td><td style="border-bottom:1px solid var(--border);padding:2px 4px"><button onclick="event.stopPropagation();abrirNovoRegistroDia(\''+gid+'\','+d+',\''+activeMonth+'\')" style="font-size:10px;font-family:var(--mono);background:var(--green-pale);color:var(--green);border:none;border-radius:4px;padding:2px 6px;cursor:pointer">+ add</button></td></tr>';
     }
   }
   const mediaPostura=diasComDados>0?(totOvos/diasComDados/aves*100).toFixed(1):'0';
@@ -1937,20 +1942,73 @@ function abrirEditRegistro(rid){
   if(calc)calc.textContent='= '+((r.total_pentes||0)*30).toLocaleString('pt-BR')+' ovos';
   document.getElementById('modal-edit-reg').classList.remove('hidden');
 }
+async function abrirNovoRegistroDia(gid, dia, mesAno){
+  // mesAno format: "yyyy-mm"
+  const [ano, mes] = mesAno.split('-');
+  const dataReg = String(dia).padStart(2,'0')+'/'+String(parseInt(mes)).padStart(2,'0')+'/'+ano;
+  const dataInput = ano+'-'+mes+'-'+String(dia).padStart(2,'0');
+  const lote = lotesC.find(l=>l.galpao_id===gid&&l.status==='ativo');
+  const g = GALPOES.find(x=>x.id===gid);
+  // Use a temporary fake id to signal "new record"
+  document.getElementById('edit-reg-id').value = 'new__'+gid+'__'+dataReg+'__'+(lote?lote.id:'null');
+  document.getElementById('edit-reg-pentes').value = 0;
+  document.getElementById('edit-reg-mortes').value = 0;
+  document.getElementById('edit-reg-causa').value = '';
+  document.getElementById('edit-reg-obs').value = '';
+  document.getElementById('edit-reg-data').value = dataInput;
+  const calc = document.getElementById('edit-reg-ovos-calc');
+  if(calc) calc.textContent = '= 0 ovos';
+  // Change modal title
+  const h3 = document.querySelector('#modal-edit-reg h3');
+  if(h3) h3.textContent = 'Adicionar registro — '+String(dia).padStart(2,'0')+'/'+mes+'/'+ano+(g?' ('+g.nome+')':'');
+  document.getElementById('modal-edit-reg').classList.remove('hidden');
+}
+
 async function salvarEdicaoRegistro(){
-  const rid=parseInt(document.getElementById('edit-reg-id').value);
+  const ridRaw=document.getElementById('edit-reg-id').value;
   const pentes=parseInt(document.getElementById('edit-reg-pentes').value||0);
   const mortes=parseInt(document.getElementById('edit-reg-mortes').value||0);
   const causa=document.getElementById('edit-reg-causa').value;
   const obs=document.getElementById('edit-reg-obs').value;
   const dataVal=document.getElementById('edit-reg-data').value;
   const ovos=pentes*30;
+  // Convert date yyyy-mm-dd to dd/mm/yyyy
+  let dataReg='';
+  if(dataVal){const dp=dataVal.split('-');dataReg=dp[2]+'/'+dp[1]+'/'+dp[0];}
+
+  // New record (no existing registro)
+  if(ridRaw.startsWith('new__')){
+    const parts=ridRaw.split('__'); // new__gid__dataReg__loteId
+    const gid=parts[1];
+    const dr=dataReg||parts[2];
+    const loteId=parts[3]==='null'?null:parseInt(parts[3]);
+    const g=GALPOES.find(x=>x.id===gid);
+    const aves=avesReais[gid]||1;
+    const taxa=parseFloat((ovos/aves*100).toFixed(1));
+    const now=new Date();
+    const newRec={
+      data_registro:dr,
+      horario:now.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}),
+      colaborador:currentUser?(currentUser.adm?'ADM':currentUser.nome||''):'',
+      galpao_id:gid,galpao_nome:g?g.nome:gid,
+      lote_id:loteId,aves_no_dia:aves,mortes,aves_restantes:aves-mortes,
+      causa_morte:causa,total_pentes:pentes,total_ovos:ovos,taxa_postura:taxa,
+      coletas:'[]',silos:'[]',tratos:'[]',obs
+    };
+    const res=await supa.post('registros',newRec);
+    if(res&&res[0]){histCache.unshift(res[0]);LS.set('g_hist',histCache);}
+    // Reset modal title
+    const h3=document.querySelector('#modal-edit-reg h3');if(h3)h3.textContent='Editar registro';
+    closeModal('modal-edit-reg');toast('Registro adicionado!');renderHist();
+    return;
+  }
+
+  // Existing record
+  const rid=parseInt(ridRaw);
   const r=histCache.find(x=>x.id===rid);if(!r)return;
   const aves=avesReais[r.galpao_id]||1;
   const taxa=parseFloat((ovos/aves*100).toFixed(1));
-  // Convert date yyyy-mm-dd to dd/mm/yyyy
-  let dataReg=r.data_registro;
-  if(dataVal){const dp=dataVal.split('-');dataReg=dp[2]+'/'+dp[1]+'/'+dp[0];}
+  if(!dataReg)dataReg=r.data_registro;
   await supa.patch('registros?id=eq.'+rid,{total_pentes:pentes,total_ovos:ovos,taxa_postura:taxa,mortes,causa_morte:causa,obs,data_registro:dataReg,editado_em:new Date().toISOString()});
   histCache=histCache.map(x=>x.id===rid?{...x,total_pentes:pentes,total_ovos:ovos,taxa_postura:taxa,mortes,causa_morte:causa,obs,data_registro:dataReg}:x);
   LS.set('g_hist',histCache);
