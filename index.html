@@ -775,7 +775,14 @@ function updOvos(){
   document.getElementById('total-ovos-calc').textContent='= '+(t*PENTE).toLocaleString('pt-BR')+' ovos';
 }
 function stepNum(id,d){const e=document.getElementById(id);e.value=Math.max(0,parseInt(e.value||0)+d);if(id==='mortes')updateRest();}
-function updateRest(){if(!selGalpao){document.getElementById('restantes-display').textContent='-';return;}const a=avesReais[selGalpao]??0;const m=parseInt(document.getElementById('mortes').value||0);document.getElementById('restantes-display').textContent=(a-m).toLocaleString('pt-BR');}
+function updateRest(){
+  const el=document.getElementById('restantes-display');
+  if(!el)return;
+  if(!selGalpao){el.textContent='-';return;}
+  const a=avesReais[selGalpao]??0;
+  const m=parseInt(document.getElementById('mortes')?.value||0);
+  el.textContent=(a-m).toLocaleString('pt-BR');
+}
 
 function openModal(id){document.getElementById(id).classList.remove('hidden');}
 function closeModal(id){document.getElementById(id).classList.add('hidden');}
