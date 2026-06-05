@@ -600,7 +600,7 @@ function renderDetail(gid){
       +(sem!==null?'<div class="lote-semanas-badge '+semCls+'">'+sem+' semanas de vida</div>':'')
       +'<div class="lote-info-grid">'
       +'<div class="lote-info-item"><div class="lote-info-label">Raca</div><div class="lote-info-value">'+(lote.raca||'Nao informada')+'</div></div>'
-      +'<div class="lote-info-item"><div class="lote-info-label">Galinhas hoje</div><div class="lote-info-value">'+aves.toLocaleString('pt-BR')+'</div></div>'
+      +'<div class="lote-info-item"><div class="lote-info-label">Galinhas hoje</div><div class="lote-info-value" style="display:flex;align-items:center;gap:8px">'+aves.toLocaleString('pt-BR')+'<button class="g-btn" style="font-size:10px;padding:2px 8px" onclick="abrirModalAves(\'' + gid + '\')" >ajustar</button></div></div>'
       +'<div class="lote-info-item"><div class="lote-info-label">Chegada</div><div class="lote-info-value">'+fmtD(lote.data_chegada)+'</div></div>'
       +'<div class="lote-info-item"><div class="lote-info-label">Nascimento</div><div class="lote-info-value">'+fmtD(lote.nascimento)+'</div></div>'
       +'<div class="lote-info-item"><div class="lote-info-label">Aves iniciais</div><div class="lote-info-value">'+(lote.aves_iniciais||'Nao informado')+'</div></div>'
@@ -1162,6 +1162,21 @@ function atualizaPreviewEstoque(){
 }
 async function salvarRacao(){
   const tipo=document.getElementById('r-tipo').value;const data=document.getElementById('r-data').value;
+  // Check if editing existing
+  if(window._editRacaoId){
+    const rid=window._editRacaoId;
+    const misturas=parseInt(document.getElementById('r-misturas').value||1);
+    const peso=misturas*1015.84;
+    const gidDest=document.getElementById('r-galpao').value;
+    const gNomeDest=gidDest?(GALPOES.find(g=>g.id===gidDest)||{}).nome||'':'';
+    const comCorante=document.getElementById('r-corante')?.checked!==false;
+    await supa.patch('fabricacao_racao?id=eq.'+rid,{tipo,data_fabricacao:data,num_misturas:misturas,peso_total_kg:peso,galpao_destino_id:gidDest||null,galpao_destino_nome:gNomeDest||null,com_corante:comCorante});
+    racaoCache=racaoCache.map(x=>x.id===rid?{...x,tipo,data_fabricacao:data,num_misturas:misturas,peso_total_kg:peso,galpao_destino_id:gidDest||null,galpao_destino_nome:gNomeDest||null,com_corante:comCorante}:x);
+    window._editRacaoId=null;
+    toast('Fabricacao atualizada!');
+    setRacaoTab('historico');
+    return;
+  }
   const misturas=parseInt(document.getElementById('r-misturas').value||1);const peso=misturas*1015.84;
   const gidDest=document.getElementById('r-galpao').value;
   const gNomeDest=gidDest?(GALPOES.find(g=>g.id===gidDest)||{}).nome||'':'';
@@ -1216,7 +1231,58 @@ async function salvarRacao(){
 function renderRacaoHist(){
   const el=document.getElementById('rpanel-historico');if(!el)return;
   if(!racaoCache.length){el.innerHTML='<div class="history-empty">Nenhuma fabricacao registrada.</div>';return;}
-  el.innerHTML=racaoCache.map(r=>'<div class="history-item"><div class="history-header"><div class="history-galpao">'+r.tipo+'</div><div class="history-time">'+fmtD(r.data_fabricacao)+'</div></div><div class="history-tags"><span class="tag tag-ovos">'+r.num_misturas+' mistura(s)</span><span class="tag tag-racao">'+(r.peso_total_kg||0).toLocaleString('pt-BR')+' kg</span>'+(r.galpao_destino_nome?'<span class="tag tag-collab">'+r.galpao_destino_nome+'</span>':'')+(r.com_corante===false?'<span class="tag" style="background:var(--bg);color:var(--muted);border:1px solid var(--border)">Sem corante</span>':'<span class="tag" style="background:var(--amber-pale);color:var(--amber)">Com corante</span>')+(r.valor_mistura?'<span class="tag" style="background:var(--green-pale);color:var(--green)">R$ '+parseFloat(r.valor_mistura).toFixed(2)+'/mis</span>':'')+'</div></div>').join('');
+  el.innerHTML='';
+  racaoCache.forEach(r=>{
+    const corTag=r.com_corante===false
+      ?'<span class="tag" style="background:var(--bg);color:var(--muted);border:1px solid var(--border)">Sem corante</span>'
+      :'<span class="tag" style="background:var(--amber-pale);color:var(--amber)">Com corante</span>';
+    const div=document.createElement('div');div.className='history-item';div.style.marginBottom='8px';
+    div.innerHTML='<div class="history-header"><div class="history-galpao">'+r.tipo+'</div><div class="history-time">'+fmtD(r.data_fabricacao)+'</div></div>'
+      +'<div class="history-tags">'
+      +'<span class="tag tag-ovos">'+r.num_misturas+' mistura(s)</span>'
+      +'<span class="tag tag-racao">'+(r.peso_total_kg||0).toLocaleString('pt-BR')+' kg</span>'
+      +(r.galpao_destino_nome?'<span class="tag tag-collab">'+r.galpao_destino_nome+'</span>':'')
+      +corTag
+      +(r.valor_mistura?'<span class="tag" style="background:var(--green-pale);color:var(--green)">R$ '+parseFloat(r.valor_mistura).toFixed(2)+'/mis</span>':'')
+      +'</div>'
+      +'<div style="display:flex;gap:6px;margin-top:6px">'
+      +'<button class="g-btn g-btn-edit" onclick="editarRacao('+r.id+')">Editar</button>'
+      +'<button class="g-btn" style="background:var(--red-pale);color:var(--red)" onclick="deletarRacao('+r.id+')">Excluir</button>'
+      +'</div>';
+    el.appendChild(div);
+  });
+}
+
+function editarRacao(rid){
+  const r=racaoCache.find(x=>x.id===rid);if(!r)return;
+  // Switch to registrar tab and pre-fill fields
+  setRacaoTab('registrar');
+  setTimeout(()=>{
+    const tipo=document.getElementById('r-tipo');
+    const data=document.getElementById('r-data');
+    const misturas=document.getElementById('r-misturas');
+    const galpao=document.getElementById('r-galpao');
+    const corante=document.getElementById('r-corante');
+    if(tipo)tipo.value=r.tipo||'Postura';
+    if(data)data.value=r.data_fabricacao||'';
+    if(misturas){misturas.value=r.num_misturas||1;calcPesoTotal();}
+    if(galpao)galpao.value=r.galpao_destino_id||'';
+    if(corante)corante.checked=r.com_corante!==false;
+    atualizaPreviewEstoque();
+    // Store edit id so salvarRacao knows to PATCH instead of POST
+    window._editRacaoId=rid;
+    const btn=document.querySelector('#rpanel-registrar .submit-btn');
+    if(btn){btn.textContent='Atualizar fabricacao';btn.style.background='var(--amber)';}
+    toast('Editando fabricacao — ajuste e salve');
+  },100);
+}
+
+async function deletarRacao(rid){
+  if(!confirm('Excluir esta fabricacao? O estoque nao sera restaurado automaticamente.'))return;
+  await supa.del('fabricacao_racao?id=eq.'+rid);
+  racaoCache=racaoCache.filter(x=>x.id!==rid);
+  toast('Fabricacao excluida');
+  renderRacaoHist();
 }
 function renderRacaoFormula(){
   const el=document.getElementById('rpanel-formula');if(!el)return;
@@ -1947,10 +2013,19 @@ async function deletarProduto(pid){
 
 async function deletarRegistro(rid){
   if(!confirm('Excluir este registro permanentemente?'))return;
+  const r=histCache.find(x=>x.id===rid);
+  // Restore mortes to galpao count
+  if(r&&r.mortes>0&&r.galpao_id){
+    const aves=avesReais[r.galpao_id]||0;
+    const novoAves=aves+parseInt(r.mortes||0);
+    await supa.patch('galpoes?galpao_id=eq.'+r.galpao_id,{aves_atuais:novoAves});
+    avesReais[r.galpao_id]=novoAves;
+    LS.set('g_aves',avesReais);
+  }
   await supa.del('registros?id=eq.'+rid);
   histCache=histCache.filter(x=>x.id!==rid);
   LS.set('g_hist',histCache);
-  toast('Registro excluido');
+  toast('Registro excluido. Mortes restauradas ao galpao.');
   renderHist();
 }
 
