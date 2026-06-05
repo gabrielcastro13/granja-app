@@ -600,7 +600,7 @@ function renderDetail(gid){
       +(sem!==null?'<div class="lote-semanas-badge '+semCls+'">'+sem+' semanas de vida</div>':'')
       +'<div class="lote-info-grid">'
       +'<div class="lote-info-item"><div class="lote-info-label">Raca</div><div class="lote-info-value">'+(lote.raca||'Nao informada')+'</div></div>'
-      +'<div class="lote-info-item"><div class="lote-info-label">Galinhas hoje</div><div class="lote-info-value" style="display:flex;align-items:center;gap:8px">'+aves.toLocaleString('pt-BR')+'<button class="g-btn" style="font-size:10px;padding:2px 8px" onclick="abrirModalAves(\'' + gid + '\')" >ajustar</button></div></div>'
+      +'<div class="lote-info-item"><div class="lote-info-label">Galinhas hoje</div><div class="lote-info-value" id="aves-val-'+gid+'">'+aves.toLocaleString('pt-BR')+' <button class="g-btn" style="font-size:10px;padding:2px 8px" id="btn-ajustar-'+gid+'">ajustar</button></div></div>'
       +'<div class="lote-info-item"><div class="lote-info-label">Chegada</div><div class="lote-info-value">'+fmtD(lote.data_chegada)+'</div></div>'
       +'<div class="lote-info-item"><div class="lote-info-label">Nascimento</div><div class="lote-info-value">'+fmtD(lote.nascimento)+'</div></div>'
       +'<div class="lote-info-item"><div class="lote-info-label">Aves iniciais</div><div class="lote-info-value">'+(lote.aves_iniciais||'Nao informado')+'</div></div>'
@@ -635,6 +635,9 @@ function renderDetail(gid){
       +'</div>';
   }
   d.innerHTML=html;
+  // Wire ajustar button via DOM (avoids onclick string quoting)
+  const btnAjustar=document.getElementById('btn-ajustar-'+gid);
+  if(btnAjustar)btnAjustar.onclick=()=>openModalAves(gid);
 }
 
 function abrirModalLote(gid){
@@ -2018,7 +2021,13 @@ async function deletarRegistro(rid){
   if(r&&r.mortes>0&&r.galpao_id){
     const aves=avesReais[r.galpao_id]||0;
     const novoAves=aves+parseInt(r.mortes||0);
-    await supa.patch('galpoes?galpao_id=eq.'+r.galpao_id,{aves_atuais:novoAves});
+    // Check if galpao row exists
+    const gRow=await supa.get('galpoes?galpao_id=eq.'+r.galpao_id);
+    if(gRow&&gRow.length>0){
+      await supa.patch('galpoes?galpao_id=eq.'+r.galpao_id,{aves_atuais:novoAves});
+    } else {
+      await supa.post('galpoes',{galpao_id:r.galpao_id,aves_atuais:novoAves});
+    }
     avesReais[r.galpao_id]=novoAves;
     LS.set('g_aves',avesReais);
   }
