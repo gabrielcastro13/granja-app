@@ -1997,6 +1997,14 @@ async function salvarEdicaoRegistro(){
     };
     const res=await supa.post('registros',newRec);
     if(res&&res[0]){histCache.unshift(res[0]);LS.set('g_hist',histCache);}
+    // Update galpao aves if there are mortes
+    if(mortes>0){
+      const novoAves=Math.max(0,aves-mortes);
+      const gRow=await supa.get('galpoes?galpao_id=eq.'+gid);
+      if(gRow&&gRow.length>0)await supa.patch('galpoes?galpao_id=eq.'+gid,{aves_atuais:novoAves});
+      else await supa.post('galpoes',{galpao_id:gid,aves_atuais:novoAves});
+      avesReais[gid]=novoAves;LS.set('g_aves',avesReais);
+    }
     // Reset modal title
     const h3=document.querySelector('#modal-edit-reg h3');if(h3)h3.textContent='Editar registro';
     closeModal('modal-edit-reg');toast('Registro adicionado!');renderHist();
