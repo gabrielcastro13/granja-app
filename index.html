@@ -246,6 +246,7 @@ select.field-input{cursor:pointer}
   <div class="tab-panel" id="tab-produtos"></div>
   <div class="tab-panel" id="tab-financeiro"></div>
   <div class="tab-panel" id="tab-centrocusto"></div>
+  <div class="tab-panel" id="tab-deptopessoal"></div>
 </div>
 <div class="modal-overlay hidden" id="modal-aves">
   <div class="modal-sheet">
@@ -543,13 +544,15 @@ async function loadAll(){
     supa.get('venda_pagamentos?order=created_at.desc'),
   ]);
   // Optional tables (may not exist yet)
-  const[perms,formula_db,clientes_db,forn_db,desp_db,sal_db]=await Promise.all([
+  const[perms,formula_db,clientes_db,forn_db,desp_db,sal_db,proc_db,func_db]=await Promise.all([
     supa.get('nivel_permissoes?order=nivel.asc'),
     supa.get('formula_racao?tipo=eq.Postura&order=ingrediente.asc'),
     supa.get('clientes?order=nome.asc'),
     supa.get('fornecedores?order=nome.asc'),
     supa.get('despesas?order=ano.desc,mes.desc'),
     supa.get('salarios?order=ano.desc,mes.desc'),
+    supa.get('venda_procedencia?order=created_at.desc'),
+    supa.get('funcionarios?order=nome_completo.asc'),
   ]);
   if(hist!==null){histCache=hist;LS.set('g_hist',histCache);}
   if(aves&&aves.length){aves.forEach(g=>{avesReais[g.galpao_id]=g.aves_atuais;});LS.set('g_aves',avesReais);}
@@ -565,9 +568,12 @@ async function loadAll(){
   if(vpags!==null)vendasPagamentosC=vpags;
   if(desp_db)despesasC=desp_db;
   if(sal_db)salariosC=sal_db;
+  if(proc_db)vendaProcedenciaC=proc_db;
+  if(func_db)funcionariosC=func_db;
   setSS('online');
   buildTabsForUser();
   await seedProdutosRacao();
+  await seedProdutosOvos();
   await seedCodigosProdutos();
 }
 
@@ -613,80 +619,134 @@ function buildTratos(){
 }
 
 function renderGTab(){
-  const list=document.getElementById('galpoes-list-view');
-  list.innerHTML=GALPOES.map(g=>{
+  const el=document.getElementById('galpoes-list-view');
+  el.innerHTML='';
+  GALPOES.forEach(g=>{
+    const lotes=lotesC.filter(l=>l.galpao_id===g.id).sort((a,b)=>{
+      // ativo first, then by data_chegada desc
+      if(a.status==='ativo'&&b.status!=='ativo')return -1;
+      if(b.status==='ativo'&&a.status!=='ativo')return 1;
+      return new Date(b.data_chegada)-new Date(a.data_chegada);
+    });
+    const gCard=document.createElement('div');gCard.className='lote-ficha';gCard.style.marginBottom='14px';
     const aves=avesReais[g.id]??g.cap;
-    const lote=lotesC.find(l=>l.galpao_id===g.id&&l.status==='ativo');
-    const sem=lote?calcSem(lote.nascimento):null;
-    const semCls=sem>=90?'critico':sem>=85?'aviso':'ok';
-    return '<div class="lote-ficha"><div class="lote-header"><div class="lote-titulo">'+g.nome+'</div>'+(lote?'<span class="lote-status ativo">Lote ativo</span>':'<span class="lote-status encerrado">Sem lote</span>')+'</div>'+(lote?''+(sem!==null?'<div class="lote-semanas-badge '+semCls+'">'+sem+' semanas de vida</div>':'')+'<div class="lote-info-grid"><div class="lote-info-item"><div class="lote-info-label">Raca</div><div class="lote-info-value">'+( lote.raca||'Nao informada')+'</div></div><div class="lote-info-item"><div class="lote-info-label">Galinhas</div><div class="lote-info-value">'+aves.toLocaleString('pt-BR')+'</div></div><div class="lote-info-item"><div class="lote-info-label">Nascimento</div><div class="lote-info-value">'+fmtD(lote.nascimento)+'</div></div><div class="lote-info-item"><div class="lote-info-label">Chegada</div><div class="lote-info-value">'+fmtD(lote.data_chegada)+'</div></div><div class="lote-info-item"><div class="lote-info-label">Responsavel</div><div class="lote-info-value">'+( lote.responsavel_atual||'Nao definido')+'</div></div></div><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="g-btn g-btn-lote" onclick="abrirLote(\''+g.id+'\')">Ver ficha completa</button><button class="g-btn g-btn-edit" onclick="abrirEncerrar('+lote.id+')">Encerrar lote</button></div>':'<div style="padding:8px 0;font-size:13px;color:var(--muted)">Nenhum lote ativo.</div><button class="g-btn g-btn-lote" onclick="abrirModalLote(\''+g.id+'\')">+ Criar lote</button>')+'</div>';
-  }).join('');
+    gCard.innerHTML='<div class="lote-header"><div class="lote-header-left">'
+      +'<div class="lote-galpao-name">'+g.nome+'</div>'
+      +'<div style="font-size:12px;font-family:var(--mono);color:var(--muted)">'+aves.toLocaleString('pt-BR')+' aves · '+lotes.length+' lote(s)</div>'
+      +'</div></div>';
+    // Lote list
+    const loteList=document.createElement('div');loteList.style.marginTop='10px';
+    if(!lotes.length){
+      loteList.innerHTML='<div style="font-size:13px;color:var(--muted);padding:8px 0">Nenhum lote cadastrado.</div>';
+    } else {
+      lotes.forEach(l=>{
+        const isAtivo=l.status==='ativo';
+        const sem=isAtivo?calcSem(l.nascimento):null;
+        const semCls=sem>=90?'critico':sem>=85?'aviso':'ok';
+        const row=document.createElement('div');
+        row.style.cssText='display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-radius:10px;margin-bottom:6px;background:'+(isAtivo?'var(--green-pale)':'var(--bg)')+';cursor:pointer;border:1.5px solid '+(isAtivo?'var(--green)':'var(--border)');
+        row.innerHTML='<div>'
+          +'<div style="display:flex;align-items:center;gap:8px">'
+          +'<span style="font-family:var(--mono);font-weight:700;font-size:14px;color:'+(isAtivo?'var(--green)':'var(--muted)')+'">'+( l.codigo||l.id)+'</span>'
+          +'<span style="font-size:13px;font-weight:500">'+l.raca+'</span>'
+          +(sem!==null?'<span class="lote-semanas-badge '+semCls+'" style="font-size:10px;padding:2px 6px">'+sem+'sem</span>':'')
+          +'</div>'
+          +'<div style="font-size:11px;font-family:var(--mono);color:var(--muted);margin-top:2px">'
+          +(isAtivo?'Ativo desde ':'Encerrado · ')+fmtD(l.data_chegada)
+          +(l.data_encerramento&&!isAtivo?' → '+fmtD(l.data_encerramento):'')
+          +'</div>'
+          +'</div>'
+          +'<span style="color:'+(isAtivo?'var(--green)':'var(--muted)')+';font-size:18px">›</span>';
+        row.onclick=()=>renderDetail(g.id, l.id);
+        loteList.appendChild(row);
+      });
+    }
+    // Add new lote button
+    const addBtn=document.createElement('button');addBtn.className='g-btn g-btn-edit';
+    addBtn.style.cssText='width:100%;margin-top:6px';addBtn.textContent='+ Novo lote';
+    addBtn.onclick=()=>abrirLote(g.id);loteList.appendChild(addBtn);
+    gCard.appendChild(loteList);
+    el.appendChild(gCard);
+  });
 }
 
 function abrirLote(gid){
-  viewGalpaoId=gid;
-  document.getElementById('galpoes-list-view').style.display='none';
-  document.getElementById('lote-detail-view').style.display='block';
-  renderDetail(gid);
+  // Opens modal to create new lote — not for viewing
+  document.getElementById('modal-lote-galpao').value=gid;
+  ['modal-lote-id','lote-raca','lote-nascimento','lote-chegada','lote-responsavel','lote-obs'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  document.getElementById('lote-aves').value='';
+  document.getElementById('modal-lote').classList.remove('hidden');
 }
-function voltarG(){document.getElementById('lote-detail-view').style.display='none';document.getElementById('galpoes-list-view').style.display='block';viewGalpaoId=null;}
+function voltarG(){document.getElementById('galpao-detail-view').style.display='none';document.getElementById('galpoes-list-view').style.display='block';viewGalpaoId=null;}
 
-function renderDetail(gid){
+function renderDetail(gid, loteId){
   const g=GALPOES.find(x=>x.id===gid);
-  const lote=lotesC.find(l=>l.galpao_id===gid&&l.status==='ativo');
-  const arq=lotesC.filter(l=>l.galpao_id===gid&&l.status==='encerrado');
-  const aves=avesReais[gid]??g.cap;
-  const docs=lote?docsC.filter(d=>d.lote_id===lote.id):[];
-  const resps=lote?respsC.filter(r=>r.lote_id===lote.id).sort((a,b)=>new Date(b.data_inicio)-new Date(a.data_inicio)):[];
-  const sem=lote?calcSem(lote.nascimento):null;
+  // Find the lote by id if provided, else find active
+  const lote=loteId?lotesC.find(l=>l.id===loteId):lotesC.find(l=>l.galpao_id===gid&&l.status==='ativo');
+  if(!lote){return;}
+  const isAtivo=lote.status==='ativo';
+  const aves=avesReais[gid]??g?.cap??0;
+  const sem=calcSem(lote.nascimento);
   const semCls=sem>=90?'critico':sem>=85?'aviso':'ok';
-  const d=document.getElementById('lote-detail-view');
-  let html='<button class="back-btn" onclick="voltarG()">← Voltar</button>'
-    +'<div style="font-size:18px;font-weight:600;margin-bottom:16px">'+g.nome+'</div>';
-  if(lote){
-    html+='<div class="lote-ficha">'
-      +'<div class="lote-header"><div class="lote-titulo">'+(lote.raca||'Lote ativo')+'</div><span class="lote-status ativo">ativo</span></div>'
-      +(sem!==null?'<div class="lote-semanas-badge '+semCls+'">'+sem+' semanas de vida</div>':'')
-      +'<div class="lote-info-grid">'
-      +'<div class="lote-info-item"><div class="lote-info-label">Raca</div><div class="lote-info-value">'+(lote.raca||'Nao informada')+'</div></div>'
-      +'<div class="lote-info-item"><div class="lote-info-label">Galinhas hoje</div><div class="lote-info-value" id="aves-val-'+gid+'">'+aves.toLocaleString('pt-BR')+' <button class="g-btn" style="font-size:10px;padding:2px 8px" id="btn-ajustar-'+gid+'">ajustar</button></div></div>'
-      +'<div class="lote-info-item"><div class="lote-info-label">Chegada</div><div class="lote-info-value">'+fmtD(lote.data_chegada)+'</div></div>'
-      +'<div class="lote-info-item"><div class="lote-info-label">Nascimento</div><div class="lote-info-value">'+fmtD(lote.nascimento)+'</div></div>'
-      +'<div class="lote-info-item"><div class="lote-info-label">Aves iniciais</div><div class="lote-info-value">'+(lote.aves_iniciais||'Nao informado')+'</div></div>'
-      +'<div class="lote-info-item"><div class="lote-info-label">Responsavel</div><div class="lote-info-value">'+(lote.responsavel_atual||'Nao definido')+'</div></div>'
-      +'</div>'
-      +(lote.obs?'<div style="font-size:12px;color:var(--muted);font-family:var(--mono);margin-bottom:12px">'+lote.obs+'</div>':'')
-      +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
-      +'<button class="g-btn g-btn-lote" onclick="abrirFichaMensal(viewGalpaoId,'+lote.id+')">Ficha mensal</button>'
-      +'<button class="g-btn g-btn-edit" onclick="abrirModalLoteEd('+lote.id+')">Editar</button>'
-      +'<button class="g-btn g-btn-edit" onclick="abrirModalResp('+lote.id+')">Trocar responsavel</button>'
-      +'<button class="g-btn" style="background:var(--red-pale);color:var(--red)" onclick="abrirEncerrar('+lote.id+')">Encerrar lote</button>'
-      +'</div></div>';
-    // Responsaveis
-    html+='<div class="form-card"><div class="form-card-title"><span class="dot" style="background:#7B5EA7"></span>Historico de responsaveis</div>'
-      +(resps.length?resps.map((r,i)=>'<div class="resp-row"><span class="resp-nome">'+r.responsavel+'</span><span class="resp-data">desde '+fmtD(r.data_inicio)+'</span>'+(i===0?'<span class="resp-atual">atual</span>':'')+'</div>').join(''):'<div style="font-size:13px;color:var(--muted)">Nenhum registro.</div>')
-      +'</div>';
-    // Documentos
-    html+='<div class="form-card"><div class="form-card-title"><span class="dot" style="background:#3A7CA5"></span>Documentos do lote</div>'
-      +(docs.length?docs.map(dd=>'<div class="doc-row"><span class="doc-tipo">'+dd.tipo+'</span><span class="doc-nome">'+dd.nome+'</span>'+(dd.url?(dd.url.startsWith('data:')?'<a class="doc-link" href="'+dd.url+'" download="'+dd.nome+'">baixar</a>':'<a class="doc-link" href="'+dd.url+'" target="_blank">abrir</a>'):'')+'<button class="doc-del" onclick="delDoc('+dd.id+')">x</button></div>').join(''):'<div style="font-size:13px;color:var(--muted);margin-bottom:12px">Nenhum documento.</div>')
-      +'<button class="add-coleta" style="margin-top:10px" onclick="abrirModalDoc('+lote.id+')">+ Adicionar documento</button>'
-      +'</div>';
+  const docs=docsC.filter(d=>d.lote_id===lote.id);
+  const resps=respsC.filter(r=>r.lote_id===lote.id);
+  viewGalpaoId=gid;
+
+  const d=document.getElementById('galpao-detail-view');d.style.display='block';
+  const list=document.getElementById('galpoes-list-view');list.style.display='none';
+
+  let html='<button class="back-btn" onclick="voltarListaGalpoes()">← Voltar</button>';
+  html+='<h2 style="margin-bottom:4px">'+(g?g.nome:gid)+' <span style="font-family:var(--mono);font-size:16px;color:var(--muted)">'+( lote.codigo||'')+'</span></h2>';
+  html+='<div style="margin-bottom:14px"><span class="lote-status '+(isAtivo?'ativo':'encerrado')+'">'+( isAtivo?'Ativo':'Encerrado')+'</span></div>';
+
+  if(sem!==null&&isAtivo)html+='<div class="lote-semanas-badge '+semCls+'" style="margin-bottom:12px">'+sem+' semanas de vida</div>';
+
+  html+='<div class="lote-info-grid">';
+  html+='<div class="lote-info-item"><div class="lote-info-label">Raca</div><div class="lote-info-value">'+lote.raca+'</div></div>';
+  if(isAtivo)html+='<div class="lote-info-item"><div class="lote-info-label">Galinhas hoje</div><div class="lote-info-value" style="display:flex;align-items:center;gap:8px">'+aves.toLocaleString('pt-BR')+' <button class="g-btn" style="font-size:10px;padding:2px 8px" id="btn-ajustar-'+gid+'">ajustar</button></div></div>';
+  html+='<div class="lote-info-item"><div class="lote-info-label">Chegada</div><div class="lote-info-value">'+fmtD(lote.data_chegada)+'</div></div>';
+  html+='<div class="lote-info-item"><div class="lote-info-label">Nascimento</div><div class="lote-info-value">'+fmtD(lote.nascimento)+'</div></div>';
+  html+='<div class="lote-info-item"><div class="lote-info-label">Aves iniciais</div><div class="lote-info-value">'+( lote.aves_iniciais||'-')+'</div></div>';
+  html+='<div class="lote-info-item"><div class="lote-info-label">Responsavel</div><div class="lote-info-value">'+( lote.responsavel_atual||'-')+'</div></div>';
+  if(!isAtivo&&lote.data_encerramento)html+='<div class="lote-info-item"><div class="lote-info-label">Encerrado em</div><div class="lote-info-value">'+fmtD(lote.data_encerramento)+'</div></div>';
+  if(!isAtivo&&lote.motivo_encerramento)html+='<div class="lote-info-item"><div class="lote-info-label">Motivo</div><div class="lote-info-value">'+lote.motivo_encerramento+'</div></div>';
+  html+='</div>';
+
+  // Historico responsaveis
+  if(resps.length>1){
+    html+='<div class="form-card-title" style="margin-top:14px"><span class="dot" style="background:#748CAB"></span>Responsaveis</div>';
+    html+=resps.map(r=>'<div style="font-size:12px;font-family:var(--mono);padding:4px 0;border-bottom:1px solid var(--border)">'+r.responsavel+' — desde '+fmtD(r.data_inicio)+'</div>').join('');
+  }
+
+  // Documentos
+  html+='<div class="form-card-title" style="margin-top:16px"><span class="dot" style="background:#B5838D"></span>Documentos</div>';
+  if(docs.length){
+    html+=docs.map(dd=>'<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">'
+      +'<div><span class="tag">'+dd.tipo+'</span> '+dd.nome+'</div>'
+      +'<div style="display:flex;gap:6px;align-items:center">'
+      +(dd.url?(dd.url.startsWith('data:')?'<a class="doc-link" href="'+dd.url+'" download="'+dd.nome+'">baixar</a>':'<a class="doc-link" href="'+dd.url+'" target="_blank">abrir</a>'):'')
+      +'<button onclick="excluirDoc('+dd.id+')" style="font-size:10px;background:var(--red-pale);color:var(--red);border:none;border-radius:4px;padding:2px 6px;cursor:pointer">×</button>'
+      +'</div></div>').join('');
   } else {
-    html+='<div class="form-card"><p style="font-size:13px;color:var(--muted);margin-bottom:14px">Nenhum lote ativo.</p>'
-      +'<button class="submit-btn" onclick="abrirModalLote(viewGalpaoId)">+ Criar lote</button></div>';
+    html+='<div style="font-size:13px;color:var(--muted);margin-bottom:8px">Nenhum documento.</div>';
   }
-  if(arq.length){
-    html+='<div class="form-card"><div class="form-card-title"><span class="dot" style="background:var(--muted)"></span>Arquivo - lotes encerrados</div>'
-      +arq.map(l=>'<div class="arquivo-item"><div style="font-weight:600;font-size:13px">'+(l.raca||'Lote')+'</div>'
-        +'<div style="font-size:11px;font-family:var(--mono);color:var(--muted)">Chegada: '+fmtD(l.data_chegada)+' · Encerrado: '+fmtD(l.data_encerramento)+'</div>'
-        +(l.motivo_encerramento?'<div style="font-size:11px;color:var(--muted);margin-top:2px">'+l.motivo_encerramento+'</div>':'')
-        +'</div>').join('')
-      +'</div>';
-  }
+  if(isAtivo)html+='<button class="g-btn g-btn-edit" style="margin-top:8px" onclick="abrirModalDoc('+lote.id+')">+ Adicionar documento</button>';
+
+  // Ações do lote
+  html+='<div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">';
+  if(isAtivo)html+='<button class="g-btn" style="background:var(--red-pale);color:var(--red)" onclick="abrirEncerrar('+lote.id+')">Encerrar lote</button>';
+  html+='<button class="g-btn g-btn-edit" id="btn-ficha-old">Ficha mensal</button>';
+  html+='</div>';
+
   d.innerHTML=html;
-  // Wire ajustar button via DOM (avoids onclick string quoting)
   const btnAjustar=document.getElementById('btn-ajustar-'+gid);
   if(btnAjustar)btnAjustar.onclick=()=>openModalAves(gid);
+  const btnFicha=document.getElementById('btn-ficha-mensal');
+  if(btnFicha)btnFicha.onclick=()=>verFichaMensal(gid,lote.id);
+}
+
+function voltarListaGalpoes(){
+  voltarG();
 }
 
 function abrirModalLote(gid){
@@ -717,12 +777,23 @@ async function salvarLote(){
   const obs=document.getElementById('lote-obs').value;
   if(!raca){toast('Informe a raca',true);return;}
   const gNome=(GALPOES.find(g=>g.id===gid)||{}).nome||gid;
-  const payload={galpao_id:gid,galpao_nome:gNome,raca,nascimento:nasc||null,data_chegada:cheg||null,responsavel_atual:resp,aves_iniciais:aves,status:'ativo',obs};
+  // Generate codigo for new lote
+  let codigo='';
+  if(!id){
+    const prefix=gid==='pb'?'PB':gid.toUpperCase().replace('G','G');
+    const existing=lotesC.filter(l=>l.galpao_id===gid&&l.codigo);
+    let maxSeq=existing.reduce((m,l)=>{const s=parseInt((l.codigo||'').replace(/^[A-Z]+/,''));return s>m?s:m;},0);
+    codigo=prefix+String(maxSeq+1).padStart(3,'0');
+  }
+  const payload={galpao_id:gid,galpao_nome:gNome,raca,nascimento:nasc||null,data_chegada:cheg||null,responsavel_atual:resp,aves_iniciais:aves,status:'ativo',obs,...(codigo?{codigo}:{})};
   let lid;
   if(id){
     await supa.patch('lotes?id=eq.'+id,payload);lid=parseInt(id);
     lotesC=lotesC.map(l=>l.id===lid?{...l,...payload}:l);
   }else{
+    // Enforce: only one active lote per galpao
+    const loteAtivoExist=lotesC.find(l=>l.galpao_id===gid&&l.status==='ativo');
+    if(loteAtivoExist){toast('Ja existe um lote ativo neste galpao. Encerre-o antes de criar um novo.',true);return;}
     const res=await supa.post('lotes',payload);
     if(res===null){return;} // error already shown by supa.query
     // res may be array with item, or empty array — reload from DB to get id
@@ -1014,7 +1085,7 @@ function renderDashChart(){
   recs.forEach(r=>{
     const k=r.data_registro;if(!byDate[k])byDate[k]={ovos:0,aves:0};
     byDate[k].ovos+=(r.total_ovos||0);
-    byDate[k].aves+=(avesReais[r.galpao_id]||0);
+    byDate[k].aves+=(r.aves_restantes||r.aves_no_dia||avesReais[r.galpao_id]||0);
   });
   const dates=Object.keys(byDate).sort((a,b)=>parseDateBR(a)-parseDateBR(b));
   const labels=dates.map(d=>d.slice(0,5));
@@ -1040,16 +1111,31 @@ function renderHist(){
   if(!histCache.length&&!pendQ.length){list.innerHTML='<div class="history-empty">Nenhum registro ainda.</div>';return;}
   // Sub-tabs: Todos + each galpao
   const tabs=[{id:'todos',nome:'Todos'},...GALPOES.map(g=>({id:g.id,nome:g.nome.replace('Galpao ','G')}))];
+  const loteTabs=lotesC.filter(l=>l.status==='ativo').map(l=>({id:'lote_'+l.id,nome:l.codigo||'L'+l.id,lote_id:l.id}));
   const activeHTab=window._histTab||'todos';
   let html='<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:14px">';
   tabs.forEach(t=>{
     const active=activeHTab===t.id;
     html+='<button onclick="setHistTab(\''+t.id+'\')" style="padding:6px 10px;font-size:11px;font-family:var(--mono);border:1.5px solid '+(active?'var(--green)':'var(--border)')+';background:'+(active?'var(--green-pale)':'var(--card)')+';color:'+(active?'var(--green)':'var(--muted)')+';border-radius:8px;cursor:pointer">'+t.nome+'</button>';
   });
+  if(loteTabs.length){
+    html+='<span style="width:1px;background:var(--border);margin:2px 4px"></span>';
+    loteTabs.forEach(t=>{
+      const active=activeHTab===t.id;
+      html+='<button onclick="setHistTab(\''+t.id+'\')" style="padding:6px 10px;font-size:11px;font-family:var(--mono);border:1.5px solid '+(active?'var(--amber)':'var(--border)')+';background:'+(active?'var(--amber-pale)':'var(--card)')+';color:'+(active?'var(--amber)':'var(--muted)')+';border-radius:8px;cursor:pointer">'+t.nome+'</button>';
+    });
+  }
   html+='</div>';
 
   // Filter records
-  const recs=activeHTab==='todos'?[...histCache]:histCache.filter(r=>r.galpao_id===activeHTab);
+  let recs;
+  if(activeHTab==='todos')recs=[...histCache];
+  else if(activeHTab.startsWith('lote_')){
+    const lid=parseInt(activeHTab.replace('lote_',''));
+    recs=histCache.filter(r=>r.lote_id===lid);
+  } else {
+    recs=histCache.filter(r=>r.galpao_id===activeHTab);
+  }
 
   if(pendQ.length) html+='<div style="text-align:center;padding:6px 0 10px;font-size:12px;color:var(--amber);font-family:var(--mono)">'+pendQ.length+' registro(s) aguardando sincronizacao</div>';
 
@@ -1057,7 +1143,8 @@ function renderHist(){
 
   // Monthly table view for single galpao
   if(activeHTab!=='todos'){
-    html+=buildHistMensal(activeHTab,recs);
+    const gidForMensal=activeHTab.startsWith('lote_')?(recs[0]?.galpao_id||''):activeHTab;
+    html+=buildHistMensal(gidForMensal,recs);
   } else {
     // All: group by date
     const sorted=[...recs].sort((a,b)=>parseDateBR(b.data_registro)-parseDateBR(a.data_registro));
@@ -1155,7 +1242,7 @@ function buildHistMensal(gid,recs){
 }
 
 function setHistMes(gid,mes){window['_hm_'+gid]=mes;renderHist();}
-function parseDateBR(d){if(!d)return new Date(0);const p=d.split('/');return p.length===3?new Date(p[2],p[1]-1,p[0]):new Date(d);}
+function parseDateBR(d){if(!d)return new Date(0);const p=d.split('/');if(p.length===3)return new Date(parseInt(p[2]),parseInt(p[1])-1,parseInt(p[0]));const iso=d.split('-');if(iso.length===3)return new Date(parseInt(iso[0]),parseInt(iso[1])-1,parseInt(iso[2]));return new Date(d);}
 // =============================================
 // USUARIOS
 // =============================================
@@ -1183,13 +1270,14 @@ function buildColabSelect(){} // colaborador now uses logged-in user
 // =============================================
 const PRODUTOS_RACAO=['Soja','Milho','Farinha de carne','Calcario','Premix','Metionina','Toxin','Corante','Farelo de trigo','Sal','Probiotico'];
 const FORMULA_POSTURA={'Soja':210,'Milho':650,'Farinha de carne':50,'Calcario':100,'Premix':1,'Metionina':1,'Toxin':0.5,'Corante':0.04,'Farelo de trigo':0,'Sal':3,'Probiotico':0.3};
-const FORMULA_CRESCIMENTO={};
+const FORMULA_CRESCIMENTO={'Milho (Fuba)':650,'Soja':240,'Farelo de trigo':40,'Farinha de carne':50,'Calcario':20,'Premix':1,'Probiotico':0.3,'Sal':3,'Toxin':0.5};
 let racaoCache=[];
 let formulaRacao={};
 let clientesC=[];
 let fornecedoresC=[];
 let despesasC=[];
 let salariosC=[];
+let funcionariosC=[];
 function renderRacao(){
   const el=document.getElementById('tab-racao');if(!el)return;
   const rt=window._racaoTab||'registrar';
@@ -1209,10 +1297,54 @@ function renderRacao(){
 function setRacaoTab(tab){window._racaoTab=tab;renderRacao();}
 function renderRacaoForm(){
   const el=document.getElementById('rpanel-registrar');if(!el)return;
-  el.innerHTML='<div class="form-card"><div class="form-card-title"><span class="dot" style="background:#52B788"></span>Nova fabricacao</div><div class="field-group"><div class="field-label">Tipo de racao</div><select class="field-input" id="r-tipo" onchange="atualizaPreviewEstoque()"><option value="Postura">Postura</option><option value="Crescimento">Crescimento</option></select></div><div class="field-row"><div class="field-group"><div class="field-label">Data de fabricacao</div><input class="field-input" id="r-data" type="date" value="'+new Date().toISOString().slice(0,10)+'"></div><div class="field-group"><div class="field-label">Num. de misturas</div><input class="field-input" id="r-misturas" type="number" min="1" value="1" oninput="calcPesoTotal()"></div></div><div class="field-group"><div class="field-label">Peso total (kg)</div><div style="font-size:22px;font-weight:600;font-family:var(--mono);color:var(--green);padding:6px 0" id="r-peso-display">1.015,84 kg</div><div style="font-size:11px;color:var(--muted);font-family:var(--mono)">1 mistura = 1.015,84 kg (peso real da formula)</div></div><div class="field-group"><div class="field-label">Galpao de destino</div><select class="field-input" id="r-galpao"><option value="">Selecione...</option>'+GALPOES.map(g=>'<option value="'+g.id+'">'+g.nome+'</option>').join('')+'</select></div><div class="trato-row" style="padding:12px 0"><span class="trato-label" style="font-size:13px">Com corante</span><label class="toggle-wrap"><input type="checkbox" id="r-corante" checked onchange="atualizaPreviewEstoque()"><span class="toggle-track"></span></label></div><div class="field-group"><div class="field-label">Observacoes</div><textarea class="field-input" id="r-obs" placeholder="Opcional"></textarea></div><div id="r-preview-estoque" style="margin:12px 0"></div><button class="submit-btn" onclick="salvarRacao()">Salvar fabricacao</button></div>';
+  el.innerHTML='<div class="form-card"><div class="form-card-title"><span class="dot" style="background:#52B788"></span>Nova fabricacao</div><div class="field-group"><div class="field-label">Tipo de racao</div><select class="field-input" id="r-tipo" onchange="onTipoRacaoChange()"><option value="Postura">Postura</option><option value="Crescimento">Crescimento</option></select></div><div class="field-row"><div class="field-group"><div class="field-label">Data de fabricacao</div><input class="field-input" id="r-data" type="date" value="'+new Date().toISOString().slice(0,10)+'"></div><div class="field-group"><div class="field-label">Num. de misturas</div><input class="field-input" id="r-misturas" type="number" min="1" value="1" oninput="calcPesoTotal()"></div></div><div class="field-group"><div class="field-label">Peso total (kg)</div><div style="font-size:22px;font-weight:600;font-family:var(--mono);color:var(--green);padding:6px 0" id="r-peso-display">1.015,84 kg</div><div style="font-size:11px;color:var(--muted);font-family:var(--mono)" id="r-peso-note">1 mistura = 1.015,84 kg (peso real da formula)</div></div><div class="field-group"><div class="field-label">Galpao de destino</div><select class="field-input" id="r-galpao"><option value="">Selecione...</option>'+GALPOES.map(g=>'<option value="'+g.id+'">'+g.nome+'</option>').join('')+'</select></div><div class="trato-row" id="r-corante-wrap" style="padding:12px 0;display:flex"><span class="trato-label" style="font-size:13px">Com corante</span><label class="toggle-wrap"><input type="checkbox" id="r-corante" checked onchange="atualizaPreviewEstoque()"><span class="toggle-track"></span></label></div>'
+    +'<div class="form-card-title" style="margin-top:4px"><span class="dot" style="background:#748CAB"></span>Valor da fabricacao</div>'
+    +'<div style="display:flex;gap:12px;margin-bottom:10px">'
+    +'<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="radio" name="r-valor-modo" value="peps" checked onchange="toggleValorModoRacao()"> Calcular por PEPS (automatico)</label>'
+    +'<label style="display:flex;align-items:center;gap=6px;font-size:13px;cursor:pointer"><input type="radio" name="r-valor-modo" value="manual" onchange="toggleValorModoRacao()"> Informar manualmente</label>'
+    +'</div>'
+    +'<div id="r-valor-manual-wrap" style="display:none">'
+    +'<div class="field-row"><div class="field-group"><div class="field-label">Valor por kg (R$)</div><input class="field-input" id="r-valor-kg" type="number" min="0" step="0.0001" placeholder="0,0000" oninput="calcValorRacaoManual()"></div>'
+    +'<div class="field-group"><div class="field-label">Total da fabricacao</div><div style="font-size:16px;font-weight:600;font-family:var(--mono);color:var(--green);padding-top:8px" id="r-valor-total-display">R$ 0,00</div></div></div>'
+    +'<div id="r-valor-mistura-display" style="font-size:11px;font-family:var(--mono);color:var(--muted);margin-top:2px"></div>'
+    +'<div style="font-size:11px;font-family:var(--mono);color:var(--muted);margin-top:4px">Use para racoes retroativas. Valor/kg × peso total.</div>'
+    +'</div>'
+    +'<div class="field-group"><div class="field-label">Observacoes</div><textarea class="field-input" id="r-obs" placeholder="Opcional"></textarea></div><div id="r-preview-estoque" style="margin:12px 0"></div><button class="submit-btn" onclick="salvarRacao()">Salvar fabricacao</button></div>';
   atualizaPreviewEstoque();
 }
-function calcPesoTotal(){const m=parseInt(document.getElementById('r-misturas')?.value||1);const el=document.getElementById('r-peso-display');if(el)el.textContent=(m*1015.84).toLocaleString('pt-BR',{minimumFractionDigits:2})+' kg';atualizaPreviewEstoque();}
+function calcValorRacaoManual(){
+  const tipo=document.getElementById('r-tipo')?.value||'Postura';
+  const pesoUnit=tipo==='Crescimento'?1004.8:1015.84;
+  const misturas=parseInt(document.getElementById('r-misturas')?.value||1);
+  const pesoTotal=misturas*pesoUnit;
+  const vKg=parseFloat(document.getElementById('r-valor-kg')?.value||0);
+  const total=vKg*pesoTotal;
+  const porMistura=misturas>0?total/misturas:0;
+  const elTotal=document.getElementById('r-valor-total-display');
+  if(elTotal)elTotal.textContent='R$ '+total.toLocaleString('pt-BR',{minimumFractionDigits:2});
+  const elMis=document.getElementById('r-valor-mistura-display');
+  if(elMis)elMis.textContent=misturas>1?'R$ '+porMistura.toLocaleString('pt-BR',{minimumFractionDigits:2})+'/mistura | '+pesoTotal.toFixed(2)+' kg total':''+pesoTotal.toFixed(2)+' kg total';
+}
+
+function toggleValorModoRacao(){
+  const modo=document.querySelector('input[name="r-valor-modo"]:checked')?.value||'peps';
+  const wrap=document.getElementById('r-valor-manual-wrap');
+  if(wrap)wrap.style.display=modo==='manual'?'block':'none';
+}
+
+function onTipoRacaoChange(){calcPesoTotal();}
+function calcPesoTotal(){
+  const m=parseInt(document.getElementById('r-misturas')?.value||1);
+  const tipo=document.getElementById('r-tipo')?.value||'Postura';
+  const pesoUnit=tipo==='Crescimento'?1004.8:1015.84;
+  const el=document.getElementById('r-peso-display');
+  if(el)el.textContent=(m*pesoUnit).toLocaleString('pt-BR',{minimumFractionDigits:2})+' kg';
+  const noteEl=document.getElementById('r-peso-note');
+  if(noteEl)noteEl.textContent='1 mistura = '+pesoUnit.toLocaleString('pt-BR',{minimumFractionDigits:2})+' kg';
+  // Hide corante for crescimento
+  const cw=document.getElementById('r-corante-wrap');if(cw)cw.style.display=tipo==='Crescimento'?'none':'flex';
+  atualizaPreviewEstoque();
+}
 function atualizaPreviewEstoque(){
   const el=document.getElementById('r-preview-estoque');if(!el)return;
   const tipo=document.getElementById('r-tipo')?.value||'Postura';
@@ -1237,7 +1369,8 @@ async function salvarRacao(){
   if(window._editRacaoId){
     const rid=window._editRacaoId;
     const misturas=parseInt(document.getElementById('r-misturas').value||1);
-    const peso=misturas*1015.84;
+    const pesoUnit=tipo==='Crescimento'?1004.8:1015.84;
+  const peso=misturas*pesoUnit;
     const gidDest=document.getElementById('r-galpao').value;
     const gNomeDest=gidDest?(GALPOES.find(g=>g.id===gidDest)||{}).nome||'':'';
     const comCorante=document.getElementById('r-corante')?.checked!==false;
@@ -1248,17 +1381,34 @@ async function salvarRacao(){
     setRacaoTab('historico');
     return;
   }
-  const misturas=parseInt(document.getElementById('r-misturas').value||1);const peso=misturas*1015.84;
+  const misturas=parseInt(document.getElementById('r-misturas').value||1);
+  const pesoUnit2=tipo==='Crescimento'?1004.8:1015.84;
+  const peso=misturas*pesoUnit2;
   const gidDest=document.getElementById('r-galpao').value;
   const gNomeDest=gidDest?(GALPOES.find(g=>g.id===gidDest)||{}).nome||'':'';
-  const valor=null;
+  const valorModo=document.querySelector('input[name="r-valor-modo"]:checked')?.value||'peps';
+  let valorManual=null;
+  if(valorModo==='manual'){
+    const tipo2=tipo;const pesoUnit3=tipo2==='Crescimento'?1004.8:1015.84;
+    const pesoTotal=misturas*pesoUnit3;
+    const vKg=parseFloat(document.getElementById('r-valor-kg')?.value||0);
+    const totalFab=vKg*pesoTotal;
+    valorManual=misturas>0?parseFloat((totalFab/misturas).toFixed(2)):0;
+  }
   const obs=document.getElementById('r-obs').value;
   const comCorante=document.getElementById('r-corante')?.checked!==false;
   if(!data){toast('Informe a data',true);return;}
-  const res=await supa.post('fabricacao_racao',{tipo,data_fabricacao:data,num_misturas:misturas,peso_total_kg:peso,galpao_destino_id:gidDest||null,galpao_destino_nome:gNomeDest||null,valor_mistura:valor,com_corante:comCorante,obs:obs||null});
-  if(res===null)return;
+  const loteDestino=gidDest?lotesC.find(l=>l.galpao_id===gidDest&&l.status==='ativo'):null;
+  const res=await supa.post('fabricacao_racao',{tipo,data_fabricacao:data,num_misturas:misturas,peso_total_kg:peso,galpao_destino_id:gidDest||null,galpao_destino_nome:gNomeDest||null,lote_id:loteDestino?.id||null,valor_mistura:valorManual,com_corante:comCorante,obs:obs||null});
   const fabId=res&&res[0]?res[0].id:null;
   if(res&&res[0])racaoCache.unshift(res[0]);
+  // If manual valor: skip PEPS deduction
+  if(valorModo==='manual'){
+    const custoPorMistura=valorManual||0;
+    if(fabId)await supa.patch('fabricacao_racao?id=eq.'+fabId,{valor_mistura:custoPorMistura});
+    if(res&&res[0])racaoCache[0]={...racaoCache[0],valor_mistura:custoPorMistura};
+    toast('Fabricacao registrada! Valor manual: R$ '+custoPorMistura.toFixed(2)+'/mistura');renderRacao();return;
+  }
   const formula=tipo==='Postura'?(Object.keys(formulaRacao).length?formulaRacao:FORMULA_POSTURA):FORMULA_CRESCIMENTO;
   let custoTotalFab=0;
   for(const[nome,q]of Object.entries(formula)){
@@ -1382,6 +1532,19 @@ function renderRacaoFormula(){
   const totalLine='<div style="display:flex;justify-content:space-between;padding:10px 0;font-family:var(--mono);font-size:12px;font-weight:600;color:var(--green)">'
     +'<span>Total por mistura</span><span>'+totalKg.toFixed(2)+' kg</span></div>';
 
+  // Crescimento formula rows
+  const totalKgC=Object.values(FORMULA_CRESCIMENTO).reduce((a,b)=>a+(parseFloat(b)||0),0);
+  let rowsC='';
+  Object.entries(FORMULA_CRESCIMENTO).forEach(([nome,qtd])=>{
+    rowsC+='<div style="display:flex;align-items:center;padding:10px 0;border-bottom:1px solid var(--border)">'
+      +'<div style="width:8px;height:8px;border-radius:50%;background:var(--amber);margin-right:12px;flex-shrink:0"></div>'
+      +'<span style="font-size:13px;flex:1">'+nome+'</span>'
+      +'<span style="font-size:12px;font-family:var(--mono);color:var(--text);margin-right:10px">'+qtd+' kg</span>'
+      +'</div>';
+  });
+  const totalLineC='<div style="display:flex;justify-content:space-between;padding:10px 0;font-family:var(--mono);font-size:12px;font-weight:600;color:var(--amber)">'
+    +'<span>Total por mistura</span><span>'+totalKgC.toFixed(2)+' kg</span></div>';
+
   el.innerHTML='<div class="form-card">'
     +'<div class="form-card-title"><span class="dot" style="background:#7B5EA7"></span>Formula - Postura (por mistura)</div>'
     +'<div style="font-size:12px;color:var(--muted);font-family:var(--mono);margin-bottom:12px">Quantidades por mistura. Peso total: '+totalKg.toFixed(2)+' kg</div>'
@@ -1391,7 +1554,11 @@ function renderRacaoFormula(){
         +'<button class="g-btn" style="width:100%;margin-top:8px" onclick="window._editFormula=false;renderRacaoFormula()">Cancelar</button>'
       : '<button class="g-btn g-btn-edit" style="width:100%;margin-top:12px" onclick="window._editFormula=true;renderRacaoFormula()">Editar formula</button>')
     +'</div>'
-    +'<div class="form-card" style="background:var(--bg)"><div class="form-card-title"><span class="dot" style="background:var(--muted)"></span>Formula - Crescimento</div><div style="font-size:13px;color:var(--muted)">Formula de crescimento sera configurada futuramente.</div></div>';
+    +'<div class="form-card">'
+    +'<div class="form-card-title"><span class="dot" style="background:var(--amber)"></span>Formula - Crescimento (por mistura)</div>'
+    +'<div style="font-size:12px;color:var(--muted);font-family:var(--mono);margin-bottom:12px">Sem corante. Peso total: '+totalKgC.toFixed(2)+' kg</div>'
+    +rowsC+totalLineC
+    +'</div>';
 }
 
 async function salvarFormula(){
@@ -1609,7 +1776,7 @@ async function loadProdutos(){
 }
 
 function setTab(tab){
-  const tabs=['postura','usuarios','racao','produtos','financeiro','centrocusto'];
+  const tabs=['postura','usuarios','racao','produtos','financeiro','centrocusto','deptopessoal'];
   document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',tabs[i]===tab));
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
   document.getElementById('tab-'+tab).classList.add('active');
@@ -1619,6 +1786,7 @@ function setTab(tab){
   if(tab==='produtos')renderProdutos();
   if(tab==='financeiro')renderFinanceiro();
   if(tab==='centrocusto')renderCentroCusto();
+  if(tab==='deptopessoal')renderDeptoPessoal();
 }
 
 // =============================================
@@ -1646,7 +1814,7 @@ function renderPosturaTab(sub){
   panel.innerHTML='';
   if(sub==='registrar')renderRegistrar(panel);
   if(sub==='historico'){panel.innerHTML='<div id="historico-list"></div>';renderHist();}
-  if(sub==='galpoes'){panel.innerHTML='<div id="galpoes-list-view"></div><div id="lote-detail-view" style="display:none"></div>';voltarG();renderGTab();}
+  if(sub==='galpoes'){panel.innerHTML='<div id="galpoes-list-view"></div><div id="galpao-detail-view" style="display:none"></div>';renderGTab();}
   if(sub==='dashboard'){renderDashInto(panel);}
 }
 
@@ -1758,16 +1926,30 @@ const PRODUTOS_VENDA=['Ovos tipo Jumbo','Ovos tipo Extra','Ovos tipo A','Ovos ti
 const NATUREZA_DIGITO={'Servicos':1,'Insumos racao':2,'Insumos producao':3,'Produto final - Ovo':4};
 const NATUREZA_OPCOES=['Servicos','Insumos racao','Insumos producao','Produto final - Ovo'];
 // Ovos de venda como produtos virtuais (cod 4001-4007)
-const PRODUTOS_OVOS_VENDA=[
-  {id:'ov1',descricao:'Ovos tipo Jumbo',codigo:'4001',natureza:'Produto final - Ovo'},
-  {id:'ov2',descricao:'Ovos tipo Extra',codigo:'4002',natureza:'Produto final - Ovo'},
-  {id:'ov3',descricao:'Ovos tipo A',codigo:'4003',natureza:'Produto final - Ovo'},
-  {id:'ov4',descricao:'Ovos tipo B',codigo:'4004',natureza:'Produto final - Ovo'},
-  {id:'ov5',descricao:'Ovos tipo C',codigo:'4005',natureza:'Produto final - Ovo'},
-  {id:'ov6',descricao:'Ovos Sujos',codigo:'4006',natureza:'Produto final - Ovo'},
-  {id:'ov7',descricao:'Ovos trincados',codigo:'4007',natureza:'Produto final - Ovo'},
+// Ovos virtuais — now backed by produtosC; if not found, use these as fallback
+const PRODUTOS_OVOS_VENDA_DEFAULT=[
+  {id:'ov1',descricao:'Ovo tipo Jumbo',codigo:'4001',natureza:'Produto final - Ovo',unidade:'ovo'},
+  {id:'ov2',descricao:'Ovo tipo Extra',codigo:'4002',natureza:'Produto final - Ovo',unidade:'ovo'},
+  {id:'ov3',descricao:'Ovo tipo A',codigo:'4003',natureza:'Produto final - Ovo',unidade:'ovo'},
+  {id:'ov4',descricao:'Ovo tipo B',codigo:'4004',natureza:'Produto final - Ovo',unidade:'ovo'},
+  {id:'ov5',descricao:'Ovo tipo C',codigo:'4005',natureza:'Produto final - Ovo',unidade:'ovo'},
+  {id:'ov6',descricao:'Ovo Sujo',codigo:'4006',natureza:'Produto final - Ovo',unidade:'ovo'},
+  {id:'ov7',descricao:'Ovo Trincado',codigo:'4007',natureza:'Produto final - Ovo',unidade:'ovo'},
 ];
-let vendasC=[],vendasItensC=[],vendasPagamentosC=[];
+// Unidades de venda para ovos
+const UNIDADES_OVO=[
+  {id:'ovo',label:'Ovo',fator:1},
+  {id:'pente',label:'Pente (30 ovos)',fator:30},
+  {id:'caixa',label:'Caixa (360 ovos)',fator:360},
+];
+// Merge with real products from DB
+function getProdutosOvos(){
+  const fromDB=produtosC.filter(p=>p.natureza==='Produto final - Ovo'||p.codigo?.startsWith('4'));
+  if(fromDB.length)return fromDB;
+  return PRODUTOS_OVOS_VENDA_DEFAULT;
+}
+const PRODUTOS_OVOS_VENDA=PRODUTOS_OVOS_VENDA_DEFAULT;
+let vendasC=[],vendasItensC=[],vendasPagamentosC=[],vendaProcedenciaC=[];
 
 async function loadVendas(){
   const[v,vi,vp]=await Promise.all([
@@ -1830,7 +2012,7 @@ function renderFormVenda(){
   tableCard.innerHTML='<div style="padding:14px 18px 10px"><div class="form-card-title" style="margin-bottom:0"><span class="dot" style="background:#3A7CA5"></span>Produtos</div></div>';
   const wrap=document.createElement('div');wrap.className='ficha-table-wrap';
   const table=document.createElement('table');table.id='v-table';table.className='ficha-table';table.style.minWidth='360px';
-  table.innerHTML='<thead><tr><th style="text-align:left;padding-left:8px">Produto</th><th>Qtd</th><th>Vl.Unit</th><th>Desc.Unit</th><th>Total</th><th></th></tr></thead>';
+  table.innerHTML='<thead><tr><th style="text-align:left;padding-left:8px">Produto</th><th>Qtd</th><th>Vl.Unit</th><th>Desc.Unit</th><th>Total</th><th style="font-size:10px;color:var(--muted)">R$/ovo</th><th></th></tr></thead>';
   const tbody=document.createElement('tbody');tbody.id='v-tbody';
   table.appendChild(tbody);
   const tfoot=document.createElement('tfoot');
@@ -1845,43 +2027,79 @@ function renderFormVenda(){
   tableCard.appendChild(addBtn);
   el.appendChild(tableCard);
 
+  // Procedencia section
+  const procSection=document.createElement('div');procSection.id='v-procedencia-section';procSection.style.marginTop='14px';
+  el.appendChild(procSection);
+
   const btn=document.createElement('button');btn.className='submit-btn';btn.style.marginTop='12px';btn.textContent='Salvar venda';btn.onclick=salvarVenda;
   el.appendChild(btn);
   window._vendaRows=[];
 }
 
 function abrirSeletorProdutoVenda(){
-  const existing=(window._vendaRows||[]).map(r=>r.produto);
-  const available=PRODUTOS_VENDA.filter(p=>!existing.includes(p));
-  if(!available.length){toast('Todos os produtos ja foram adicionados');return;}
-  // Show as a simple select in a mini modal approach - use a select overlay
-  const sel=document.createElement('select');
-  sel.style.cssText='position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:200;padding:12px;border-radius:10px;border:2px solid var(--green);font-size:15px;font-family:var(--font);background:var(--card);min-width:220px';
-  sel.innerHTML='<option value="">Selecione o produto...</option>'+available.map(p=>'<option>'+p+'</option>').join('');
-  const overlay=document.createElement('div');overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.3);z-index:199';
-  overlay.onclick=()=>{document.body.removeChild(sel);document.body.removeChild(overlay);};
-  sel.onchange=function(){
-    if(!this.value)return;
-    adicionarLinhaVenda(this.value);
-    document.body.removeChild(sel);document.body.removeChild(overlay);
-  };
-  document.body.appendChild(overlay);document.body.appendChild(sel);
+  const ovos=produtosC.filter(p=>p.natureza==='Produto final - Ovo'||p.codigo?.startsWith('4'));
+  if(!ovos.length){toast('Nenhum produto de ovo cadastrado',true);return;}
+  // Build modal
+  const overlay=document.createElement('div');overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:199;display:flex;align-items:center;justify-content:center';
+  const box=document.createElement('div');box.style.cssText='background:var(--card);border-radius:16px;padding:20px;min-width:280px;max-width:90vw;box-shadow:var(--shadow)';
+  box.innerHTML='<div style="font-weight:600;font-size:15px;margin-bottom:12px">Selecionar produto</div>';
+  // Product list
+  ovos.forEach(p=>{
+    const row=document.createElement('div');row.style.cssText='padding:10px;border-radius:8px;cursor:pointer;margin-bottom:4px;display:flex;align-items:center;gap:10px;border:1.5px solid var(--border)';
+    row.innerHTML='<span style="font-family:var(--mono);font-size:12px;color:var(--amber)">'+p.codigo+'</span><span style="font-size:13px;font-weight:500">'+p.descricao+'</span>';
+    row.onclick=()=>{
+      document.body.removeChild(overlay);
+      abrirSeletorUnidadeVenda(p);
+    };
+    box.appendChild(row);
+  });
+  const cancelBtn=document.createElement('button');cancelBtn.className='g-btn';cancelBtn.style='width:100%;margin-top:10px';cancelBtn.textContent='Cancelar';
+  cancelBtn.onclick=()=>document.body.removeChild(overlay);
+  box.appendChild(cancelBtn);
+  overlay.appendChild(box);document.body.appendChild(overlay);
 }
 
-function adicionarLinhaVenda(produto){
+function abrirSeletorUnidadeVenda(produto){
+  const overlay=document.createElement('div');overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:199;display:flex;align-items:center;justify-content:center';
+  const box=document.createElement('div');box.style.cssText='background:var(--card);border-radius:16px;padding:20px;min-width:260px;box-shadow:var(--shadow)';
+  box.innerHTML='<div style="font-weight:600;font-size:14px;margin-bottom:4px">'+produto.descricao+'</div>'
+    +'<div style="font-size:12px;color:var(--muted);font-family:var(--mono);margin-bottom:14px">Selecione a unidade de venda</div>';
+  UNIDADES_OVO.forEach(u=>{
+    const btn=document.createElement('button');btn.className='g-btn g-btn-edit';
+    btn.style='width:100%;margin-bottom:8px;text-align:left;padding:10px 14px';
+    btn.innerHTML='<div style="font-weight:600">'+u.label+'</div>'
+      +'<div style="font-size:11px;font-family:var(--mono);color:var(--muted)">1 '+u.id+' = '+u.fator+' ovo(s)</div>';
+    btn.onclick=()=>{
+      document.body.removeChild(overlay);
+      adicionarLinhaVenda(produto.descricao,produto,u);
+    };
+    box.appendChild(btn);
+  });
+  const cancelBtn=document.createElement('button');cancelBtn.className='g-btn';cancelBtn.style='width:100%;margin-top:4px';cancelBtn.textContent='Voltar';
+  cancelBtn.onclick=()=>{document.body.removeChild(overlay);abrirSeletorProdutoVenda();};
+  box.appendChild(cancelBtn);
+  overlay.appendChild(box);document.body.appendChild(overlay);
+}
+
+function adicionarLinhaVenda(nomeProduto,produtoObj,unidadeObj){
   if(!window._vendaRows)window._vendaRows=[];
   const i=window._vendaRows.length;
-  window._vendaRows.push({produto});
+  const unidade=unidadeObj||{id:'ovo',label:'Ovo',fator:1};
+  window._vendaRows.push({produto:nomeProduto+(unidade.id!=='ovo'?' ('+unidade.label+')':' (ovo)'),produtoObj,unidade});
   const tbody=document.getElementById('v-tbody');if(!tbody)return;
   const tr=document.createElement('tr');tr.id='vrow_'+i;
-  const tdNome=document.createElement('td');tdNome.style.cssText='font-size:12px;font-family:var(--mono);padding:6px 8px;border-bottom:1px solid var(--border);text-align:left';tdNome.textContent=produto;
-  const makeNumTd=(id)=>{const td=document.createElement('td');td.style.cssText='border-bottom:1px solid var(--border);padding:2px';const inp=document.createElement('input');inp.className='ficha-input';inp.type='number';inp.min='0';inp.step='0.01';inp.id=id;inp.placeholder='0';inp.oninput=()=>calcItemVenda(i);td.appendChild(inp);return td;};
+  // Nome + unidade
+  const tdNome=document.createElement('td');tdNome.style.cssText='font-size:12px;font-family:var(--mono);padding:6px 8px;border-bottom:1px solid var(--border);text-align:left';
+  tdNome.innerHTML='<div>'+nomeProduto+'</div><div style="font-size:10px;color:var(--muted)">'+unidade.label+'</div>';
+  const makeNumTd=(id,placeholder)=>{const td=document.createElement('td');td.style.cssText='border-bottom:1px solid var(--border);padding:2px';const inp=document.createElement('input');inp.className='ficha-input';inp.type='number';inp.min='0';inp.step='0.01';inp.id=id;inp.placeholder=placeholder||'0';inp.oninput=()=>calcItemVenda(i);td.appendChild(inp);return td;};
   const tdFin=document.createElement('td');tdFin.id='vfin_'+i;tdFin.className='ficha-total-cell';tdFin.style.cssText='border-bottom:1px solid var(--border);padding:0 6px';tdFin.textContent='—';
+  // Custo unit por ovo (calculated)
+  const tdOvoUnit=document.createElement('td');tdOvoUnit.id='vovo_'+i;tdOvoUnit.style.cssText='border-bottom:1px solid var(--border);padding:0 6px;font-size:10px;color:var(--muted);font-family:var(--mono)';tdOvoUnit.textContent='—';
   const tdDel=document.createElement('td');tdDel.style.cssText='border-bottom:1px solid var(--border);padding:0 4px';
   const delBtn=document.createElement('button');delBtn.style.cssText='background:none;border:none;color:var(--muted);cursor:pointer;font-size:16px;padding:0 4px';delBtn.textContent='×';
   delBtn.onclick=()=>{tr.remove();window._vendaRows.splice(i,1);calcTotalVenda();};
   tdDel.appendChild(delBtn);
-  tr.appendChild(tdNome);tr.appendChild(makeNumTd('vqtd_'+i));tr.appendChild(makeNumTd('vunit_'+i));tr.appendChild(makeNumTd('vdesc_'+i));tr.appendChild(tdFin);tr.appendChild(tdDel);
+  tr.appendChild(tdNome);tr.appendChild(makeNumTd('vqtd_'+i,'Qtd'));tr.appendChild(makeNumTd('vunit_'+i,'R$/'+unidade.id));tr.appendChild(makeNumTd('vdesc_'+i,'Desc'));tr.appendChild(tdFin);tr.appendChild(tdOvoUnit);tr.appendChild(tdDel);
   tbody.appendChild(tr);
 }
 
@@ -1892,6 +2110,12 @@ function calcItemVenda(i){
   const fin=qtd*(unit-desc);
   const el=document.getElementById('vfin_'+i);
   if(el)el.textContent=fin>0?'R$ '+fin.toLocaleString('pt-BR',{minimumFractionDigits:2}):'—';
+  // Show cost per ovo
+  const row=window._vendaRows&&window._vendaRows[i];
+  const fator=row?.unidade?.fator||1;
+  const ovoEl=document.getElementById('vovo_'+i);
+  if(ovoEl&&unit>0)ovoEl.textContent='R$ '+(( unit-desc)/fator).toFixed(4)+'/ovo';
+  else if(ovoEl)ovoEl.textContent='—';
   calcTotalVenda();
 }
 function calcTotalVenda(){
@@ -1904,9 +2128,74 @@ function calcTotalVenda(){
   });
   const el=document.getElementById('v-total-display');
   if(el)el.textContent='R$ '+total.toLocaleString('pt-BR',{minimumFractionDigits:2});
+  renderProcedenciaSection();
+}
+
+
+function renderProcedenciaSection(){
+  const sec=document.getElementById('v-procedencia-section');if(!sec)return;
+  const rows=window._vendaRows||[];
+  const lotesAtivos=lotesC.filter(l=>l.status==='ativo');
+  if(!rows.length||!lotesAtivos.length){sec.innerHTML='';return;}
+  sec.innerHTML='';
+  const title=document.createElement('div');
+  title.style.cssText='font-size:13px;font-weight:600;color:var(--text);margin-bottom:6px;padding-top:10px;border-top:1.5px solid var(--border)';
+  title.textContent='Procedencia dos ovos';
+  sec.appendChild(title);
+  const note=document.createElement('div');note.style.cssText='font-size:11px;font-family:var(--mono);color:var(--muted);margin-bottom:10px';
+  note.textContent='De qual lote vieram os ovos? A receita sera registrada no centro de custo do lote.';
+  sec.appendChild(note);
+  if(!window._vendaProc)window._vendaProc={};
+  rows.forEach((row,i)=>{
+    const qtd=parseFloat(document.getElementById('vqtd_'+i)?.value||0);
+    if(!qtd)return;
+    const unid=row.unidade||{id:'ovo',label:'Ovo',fator:1};
+    const qtdOvos=qtd*unid.fator;
+    if(!window._vendaProc[i])window._vendaProc[i]=[];
+    const card=document.createElement('div');card.className='form-card';card.style.marginBottom='8px';
+    card.innerHTML='<div style="font-size:12px;font-weight:600;margin-bottom:8px">'+(row.produtoObj?.descricao||row.produto)+' — '+qtd+' '+unid.label+' ('+qtdOvos.toLocaleString('pt-BR')+' ovos)</div>';
+    const assigned=window._vendaProc[i]||[];
+    const totalAssigned=assigned.reduce((a,x)=>a+parseFloat(x.qtd),0);
+    const remaining=parseFloat((qtd-totalAssigned).toFixed(4));
+    assigned.forEach((entry,j)=>{
+      const lote=lotesAtivos.find(l=>l.id===entry.lote_id);
+      const g=GALPOES.find(x=>x.id===lote?.galpao_id);
+      const row2=document.createElement('div');row2.style.cssText='display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:12px;font-family:var(--mono);background:var(--green-pale);border-radius:8px;padding:6px 8px';
+      row2.innerHTML='<span style="flex:1;color:var(--green);font-weight:600">'+(lote?.codigo||'?')+(g?' ('+g.nome+')':'')+'</span><span>'+entry.qtd+' '+unid.id+'</span>';
+      const delBtn=document.createElement('button');delBtn.textContent='×';delBtn.style.cssText='background:var(--red-pale);color:var(--red);border:none;border-radius:4px;padding:0 6px;cursor:pointer';
+      delBtn.onclick=()=>{window._vendaProc[i].splice(j,1);renderProcedenciaSection();};
+      row2.appendChild(delBtn);card.appendChild(row2);
+    });
+    if(remaining>0.001){
+      const addRow=document.createElement('div');addRow.style.cssText='display:flex;align-items:center;gap:6px;margin-top:6px';
+      const sel=document.createElement('select');sel.className='field-input';sel.style.cssText='flex:2;font-size:12px';
+      sel.innerHTML='<option value="">Selecione lote...</option>'+lotesAtivos.map(l=>{
+        const g2=GALPOES.find(x=>x.id===l.galpao_id);
+        return '<option value="'+l.id+'">'+(l.codigo||l.id)+' — '+(g2?g2.nome:l.galpao_id)+'</option>';
+      }).join('');
+      const inp=document.createElement('input');inp.type='number';inp.min='0';inp.step='any';inp.value=remaining.toFixed(2);
+      inp.className='field-input';inp.style.cssText='width:70px;font-family:var(--mono);font-size:12px';
+      const addBtn2=document.createElement('button');addBtn2.className='g-btn g-btn-edit';addBtn2.textContent='+ Add';
+      addBtn2.onclick=()=>{
+        const lid=parseInt(sel.value);if(!lid){toast('Selecione o lote',true);return;}
+        const q=parseFloat(inp.value||0);if(!q){toast('Informe a quantidade',true);return;}
+        if(!window._vendaProc[i])window._vendaProc[i]=[];
+        window._vendaProc[i].push({lote_id:lid,qtd:q});
+        renderProcedenciaSection();
+      };
+      const restLabel=document.createElement('div');restLabel.style.cssText='font-size:11px;font-family:var(--mono);color:var(--muted);margin-bottom:4px';
+      restLabel.textContent='Restam: '+remaining+' '+unid.id;
+      card.appendChild(restLabel);addRow.appendChild(sel);addRow.appendChild(inp);addRow.appendChild(addBtn2);card.appendChild(addRow);
+    } else {
+      const ok=document.createElement('div');ok.style.cssText='font-size:11px;font-family:var(--mono);color:var(--green);margin-top:4px';ok.textContent='✓ Procedencia completa';
+      card.appendChild(ok);
+    }
+    sec.appendChild(card);
+  });
 }
 
 async function salvarVenda(){
+  const editId=window._editVendaId||null;
   const clidSel=document.getElementById('v-cliente-id')?.value;
   const clObj=clientesC.find(x=>x.id===parseInt(clidSel));
   const cliente=clObj?clObj.nome:'';
@@ -1924,12 +2213,49 @@ async function salvarVenda(){
     itens.push({produto:row.produto,quantidade:qtd,valor_unitario:unit,desconto_unitario:desc,valor_final:fin});
   });
   if(!itens.length){toast('Adicione ao menos um produto',true);return;}
-  const vRes=await supa.post('vendas',{cliente,cliente_id:parseInt(clidSel)||null,data_venda:data,numero_venda:numero,obs,valor_total:totalVenda,valor_pago:0,status_pagamento:'nao_pago'});
-  if(vRes===null)return;
-  const vid=vRes&&vRes[0]?vRes[0].id:null;
-  if(vRes&&vRes[0])vendasC.unshift(vRes[0]);
+  let vid;
+  if(editId){
+    // Update existing venda
+    await supa.del('venda_itens?venda_id=eq.'+editId);
+    await supa.patch('vendas?id=eq.'+editId,{cliente,cliente_id:parseInt(clidSel)||null,data_venda:data,numero_venda:numero,obs,valor_total:totalVenda});
+    vendasC=vendasC.map(v=>v.id===editId?{...v,cliente,cliente_id:parseInt(clidSel)||null,data_venda:data,numero_venda:numero,obs,valor_total:totalVenda}:v);
+    vendasItensC=vendasItensC.filter(x=>x.venda_id!==editId);
+    vid=editId;window._editVendaId=null;
+    toast('Venda atualizada!');
+  } else {
+    const vRes=await supa.post('vendas',{cliente,cliente_id:parseInt(clidSel)||null,data_venda:data,numero_venda:numero,obs,valor_total:totalVenda,valor_pago:0,status_pagamento:'nao_pago'});
+    if(vRes===null)return;
+    vid=vRes&&vRes[0]?vRes[0].id:null;
+    if(vRes&&vRes[0])vendasC.unshift(vRes[0]);
+    toast('Venda registrada!');
+  }
   if(vid){for(const item of itens){const ir=await supa.post('venda_itens',{venda_id:vid,...item});if(ir&&ir[0])vendasItensC.push(ir[0]);}}
-  toast('Venda registrada!');
+  // Save procedencia
+  const proc=window._vendaProc||{};
+  for(const[i,entries] of Object.entries(proc)){
+    const row=window._vendaRows[parseInt(i)];
+    if(!row||!entries.length)continue;
+    const unid=row.unidade||{id:'ovo',fator:1};
+    const qtdUnit=parseFloat(document.getElementById('vqtd_'+i)?.value||0);
+    const vUnit=parseFloat(document.getElementById('vunit_'+i)?.value||0);
+    const vDesc=parseFloat(document.getElementById('vdesc_'+i)?.value||0);
+    const valorTotal=qtdUnit*(vUnit-vDesc);
+    const totalProcQtd=entries.reduce((a,x)=>a+parseFloat(x.qtd),0);
+    for(const entry of entries){
+      const pct=totalProcQtd>0?entry.qtd/totalProcQtd:0;
+      const valor=parseFloat((valorTotal*pct).toFixed(2));
+      const qtdOvos=entry.qtd*unid.fator;
+      const lote=lotesC.find(l=>l.id===entry.lote_id);
+      const pr=await supa.post('venda_procedencia',{
+        venda_id:vid,lote_id:entry.lote_id,lote_codigo:lote?.codigo||null,
+        quantidade:entry.qtd,unidade:unid.id,valor,
+        ovos_equivalentes:qtdOvos
+      });
+      if(pr&&pr[0])vendaProcedenciaC.push(pr[0]);
+    }
+  }
+  window._vendaRows=[];
+  window._vendaProc={};
   window._finTab='vendas';renderFinanceiro();
 }
 
@@ -1975,6 +2301,14 @@ function abrirVenda(vid){
   const backBtn=document.createElement('button');backBtn.className='back-btn';backBtn.textContent='← Voltar';backBtn.onclick=()=>setFinTab('vendas');
   el.appendChild(backBtn);
 
+  // Edit/Delete buttons
+  const acoes=document.createElement('div');acoes.style.cssText='display:flex;gap:8px;margin-bottom:12px';
+  const editVBtn=document.createElement('button');editVBtn.className='g-btn g-btn-edit';editVBtn.textContent='Editar venda';
+  editVBtn.onclick=()=>editarVenda(vid);
+  const delVBtn=document.createElement('button');delVBtn.className='g-btn';delVBtn.style.cssText='background:var(--red-pale);color:var(--red)';delVBtn.textContent='Excluir venda';
+  delVBtn.onclick=()=>excluirVenda(vid);
+  acoes.appendChild(editVBtn);acoes.appendChild(delVBtn);el.appendChild(acoes);
+
   // Info card
   const info=document.createElement('div');info.className='form-card';
   info.innerHTML='<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px">'
@@ -2015,6 +2349,36 @@ function abrirVenda(vid){
   pagBtn.onclick=()=>registrarPagamento(vid,v.valor_total,v.valor_pago);
   pagCard.appendChild(pagBtn);
   el.appendChild(pagCard);
+}
+
+async function excluirVenda(vid){
+  if(!confirm('Excluir esta venda permanentemente?'))return;
+  await supa.del('venda_pagamentos?venda_id=eq.'+vid);
+  await supa.del('venda_itens?venda_id=eq.'+vid);
+  await supa.del('vendas?id=eq.'+vid);
+  vendasC=vendasC.filter(x=>x.id!==vid);
+  vendasItensC=vendasItensC.filter(x=>x.venda_id!==vid);
+  vendasPagamentosC=vendasPagamentosC.filter(x=>x.venda_id!==vid);
+  toast('Venda excluida');setFinTab('vendas');
+}
+
+function editarVenda(vid){
+  // Pre-fill registrar venda form with existing data
+  const v=vendasC.find(x=>x.id===vid);if(!v)return;
+  const itens=vendasItensC.filter(i=>i.venda_id===vid);
+  window._editVendaId=vid;
+  setFinTab('registrar');
+  setTimeout(()=>{
+    const cl=document.getElementById('venda-cliente');if(cl)cl.value=v.cliente_id||'';
+    const dt=document.getElementById('venda-data');if(dt)dt.value=v.data_venda||'';
+    const obs=document.getElementById('venda-obs');if(obs)obs.value=v.obs||'';
+    const num=document.getElementById('venda-numero');if(num)num.value=v.numero_venda||'';
+    // Pre-fill items
+    vendaItens=itens.map(i=>({produto:i.produto,qtd:parseFloat(i.quantidade),valorUnit:parseFloat(i.valor_unitario),descUnit:parseFloat(i.desconto_unitario||0),total:parseFloat(i.valor_final)}));
+    renderVendaItens();
+    const btn=document.querySelector('#fpanel-registrar .submit-btn');
+    if(btn){btn.textContent='Atualizar venda';btn.style.background='var(--amber)';}
+  },100);
 }
 
 async function registrarPagamento(vid,totalVenda,valorJaPago){
@@ -2178,7 +2542,7 @@ function renderListaProdutos(){
     'Insumo producao':'var(--green)',
   };
   // Combine real products + virtual ovo products
-  const allProd=[...produtosC,...PRODUTOS_OVOS_VENDA];
+  const allProd=[...produtosC]; // ovos now real products in DB
   if(!allProd.length){el.innerHTML='<div class="history-empty">Nenhum produto cadastrado.</div>';return;}
   // Group by natureza
   const byNat={};
@@ -2192,12 +2556,12 @@ function renderListaProdutos(){
     const color=grupos[nat]||'var(--muted)';
     html+='<div style="font-size:11px;font-family:var(--mono);color:'+color+';font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin:14px 0 8px">'+nat+'</div>';
     items.sort((a,b)=>(a.codigo||'').localeCompare(b.codigo||'')).forEach(p=>{
-      const isVirtual=typeof p.id==='string'&&p.id.startsWith('ov');
+      const isVirtual=false; // all products now in DB
       html+='<div class="history-item" style="display:flex;align-items:center;gap:10px;margin-bottom:8px">'
         +'<div style="font-family:var(--mono);font-size:13px;font-weight:700;color:'+color+';min-width:44px">'+(p.codigo||'—')+'</div>'
         +'<div style="flex:1"><div style="font-weight:600;font-size:13px">'+p.descricao+'</div>'
         +'<div style="font-size:11px;font-family:var(--mono);color:var(--muted)">'+(p.unidade||'—')+' · '+(p.natureza||p.tipo||'')+'</div></div>'
-        +(isVirtual
+        +(isVirtual&&typeof p.id==='string'
           ?'<span style="font-size:10px;font-family:var(--mono);color:var(--amber);background:var(--amber-pale);border-radius:4px;padding:2px 6px">Produto venda</span>'
           :'<button class="g-btn g-btn-edit" onclick="editarProduto('+p.id+')">Editar</button>'
           +'<button class="g-btn" style="background:var(--red-pale);color:var(--red)" onclick="deletarProduto('+p.id+')">Remover</button>')
@@ -2280,6 +2644,26 @@ async function forceSeedProdutos(){
   LS.set('g_produtos_cache',produtosC);
   toast('Produtos criados: '+produtosC.length);
   renderProdutos();
+}
+
+async function seedProdutosOvos(){
+  // One product per ovo type, unidade base = ovo
+  const tiposOvos=[
+    {descricao:'Ovo tipo Jumbo',codigo:'4001',unidade:'ovo'},
+    {descricao:'Ovo tipo Extra',codigo:'4002',unidade:'ovo'},
+    {descricao:'Ovo tipo A',codigo:'4003',unidade:'ovo'},
+    {descricao:'Ovo tipo B',codigo:'4004',unidade:'ovo'},
+    {descricao:'Ovo tipo C',codigo:'4005',unidade:'ovo'},
+    {descricao:'Ovo Sujo',codigo:'4006',unidade:'ovo'},
+    {descricao:'Ovo Trincado',codigo:'4007',unidade:'ovo'},
+  ];
+  for(const t of tiposOvos){
+    const ex=produtosC.find(p=>p.codigo===t.codigo);
+    if(!ex){
+      const res=await supa.post('produtos',{descricao:t.descricao,codigo:t.codigo,unidade:t.unidade,natureza:'Produto final - Ovo',tipo:'Produto final',custo_medio:0,estoque_atual:0});
+      if(res&&res[0])produtosC.push(res[0]);
+    }
+  }
 }
 
 async function seedProdutosRacao(){
@@ -2446,24 +2830,47 @@ function renderCentroCusto(){
 }
 
 function renderCCGalpoes(panel){
-  // Show galpao cards with active lotes
   panel.innerHTML='';
   GALPOES.forEach(g=>{
-    const lote=lotesC.find(l=>l.galpao_id===g.id&&l.status==='ativo');
-    const card=document.createElement('div');card.className='history-item';card.style.marginBottom='10px';
-    card.style.cursor='pointer';
-    card.innerHTML='<div class="history-header"><div class="history-galpao">'+g.nome+'</div>'
-      +(lote?'<span class="lote-status ativo" style="font-size:11px">ativo</span>':'<span style="font-size:11px;color:var(--muted)">sem lote</span>')+'</div>'
-      +(lote?'<div style="font-size:13px;margin-top:4px">'+lote.raca+'</div>':'')
-      +(lote?'<div style="font-size:11px;font-family:var(--mono);color:var(--muted);margin-top:2px">Chegada: '+fmtD(lote.data_chegada)+'</div>':'');
-    if(lote)card.onclick=()=>abrirCCLote(g.id,lote.id);
-    panel.appendChild(card);
+    const lotes=lotesC.filter(l=>l.galpao_id===g.id).sort((a,b)=>{
+      if(a.status==='ativo'&&b.status!=='ativo')return -1;
+      if(b.status==='ativo'&&a.status!=='ativo')return 1;
+      return new Date(b.data_chegada)-new Date(a.data_chegada);
+    });
+    const gCard=document.createElement('div');gCard.className='history-item';gCard.style.marginBottom='12px';
+    gCard.innerHTML='<div class="history-header"><div class="history-galpao">'+g.nome+'</div>'
+      +'<div style="font-size:11px;font-family:var(--mono);color:var(--muted)">'+lotes.length+' lote(s)</div></div>';
+
+    const loteList=document.createElement('div');loteList.style.marginTop='8px';
+    if(!lotes.length){
+      loteList.innerHTML='<div style="font-size:13px;color:var(--muted);padding:6px 0">Nenhum lote cadastrado.</div>';
+    } else {
+      lotes.forEach(l=>{
+        const isAtivo=l.status==='ativo';
+        const row=document.createElement('div');
+        row.style.cssText='display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-radius:10px;margin-bottom:6px;background:'+(isAtivo?'var(--green-pale)':'var(--bg)')+';cursor:pointer;border:1.5px solid '+(isAtivo?'var(--green)':'var(--border)');
+        row.innerHTML='<div>'
+          +'<div style="display:flex;align-items:center;gap:8px">'
+          +'<span style="font-family:var(--mono);font-weight:700;color:'+(isAtivo?'var(--green)':'var(--muted)')+'">'+( l.codigo||'#'+l.id)+'</span>'
+          +'<span style="font-size:13px;font-weight:500">'+l.raca+'</span>'
+          +'<span style="font-size:10px;padding:2px 7px;border-radius:10px;background:'+(isAtivo?'var(--green)':'var(--border)')+';color:'+(isAtivo?'#fff':'var(--muted)')+'">'+( isAtivo?'ativo':'encerrado')+'</span>'
+          +'</div>'
+          +'<div style="font-size:11px;font-family:var(--mono);color:var(--muted);margin-top:2px">'
+          +fmtD(l.data_chegada)+(l.data_encerramento&&!isAtivo?' → '+fmtD(l.data_encerramento):'')
+          +'</div></div>'
+          +'<span style="color:'+(isAtivo?'var(--green)':'var(--muted)')+';font-size:18px">›</span>';
+        row.onclick=()=>abrirCCLote(g.id,l.id,panel);
+        loteList.appendChild(row);
+      });
+    }
+    gCard.appendChild(loteList);
+    panel.appendChild(gCard);
   });
 }
 
-function abrirCCLote(gid,loteId){
+function abrirCCLote(gid,loteId,panelArg){
   window._ccGid=gid;window._ccLoteId=loteId;
-  const panel=document.getElementById('cc-panel');if(!panel)return;
+  const panel=panelArg||document.getElementById('cc-panel');if(!panel)return;
   const lote=lotesC.find(l=>l.id===loteId);
   const g=GALPOES.find(x=>x.id===gid);
   // Build list of months since lote start
@@ -2502,19 +2909,35 @@ function abrirCCMes(gid,loteId,ano,mes){
   const g=GALPOES.find(x=>x.id===gid);
   panel.innerHTML='';
   const back=document.createElement('button');back.className='back-btn';back.textContent='← Voltar';
-  back.onclick=()=>abrirCCLote(gid,loteId);panel.appendChild(back);
+  back.onclick=()=>abrirCCLote(gid,loteId,panel);panel.appendChild(back);
   const title=document.createElement('div');title.style.cssText='font-size:16px;font-weight:600;margin-bottom:4px';
   title.textContent=MESES_CC[mes-1]+' '+ano;panel.appendChild(title);
   const sub=document.createElement('div');sub.style.cssText='font-size:12px;color:var(--muted);font-family:var(--mono);margin-bottom:16px';
   sub.textContent=(g?g.nome:'')+(lote?' — '+lote.raca:'');panel.appendChild(sub);
 
   // ── RECEITAS ──────────────────────────────────────
+  // Use venda_procedencia for accurate lote-specific revenue and quantity
+  const procMes=vendaProcedenciaC.filter(p=>{
+    const v=vendasC.find(x=>x.id===p.venda_id);
+    if(!v)return false;
+    const d=parseDateBR(v.data_venda);
+    return p.lote_id===loteId&&d.getFullYear()===ano&&d.getMonth()+1===mes;
+  });
+  // Fallback: if no procedencia, use all vendas of month
   const vendasMes=vendasC.filter(v=>{const d=parseDateBR(v.data_venda);return d.getFullYear()===ano&&d.getMonth()+1===mes;});
-  const receitaTotal=vendasMes.reduce((a,v)=>a+(parseFloat(v.valor_total)||0),0);
-  panel.appendChild(ccCard('Receita — Vendas de Ovos','var(--green)',
-    vendasMes.length?vendasMes.map(v=>'<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px"><div>'+(v.cliente||'Cliente')+'<div style="font-size:11px;font-family:var(--mono);color:var(--muted)">'+fmtD(v.data_venda)+'</div></div><span style="font-family:var(--mono);font-weight:600;color:var(--green)">R$ '+parseFloat(v.valor_total||0).toLocaleString('pt-BR',{minimumFractionDigits:2})+'</span></div>').join('')
-    :'<div style="font-size:13px;color:var(--muted)">Nenhuma venda este mes.</div>',
-    receitaTotal,'Receita total'));
+  const receitaTotal=procMes.length>0
+    ?procMes.reduce((a,p)=>a+(parseFloat(p.valor)||0),0)
+    :vendasMes.reduce((a,v)=>a+(parseFloat(v.valor_total)||0),0);
+  const qtdOvosMes=procMes.reduce((a,p)=>a+(parseFloat(p.ovos_equivalentes)||0),0);
+  const qtdPentesMes=Math.round(qtdOvosMes/30);
+  const qtdCaixasMes=Math.round(qtdOvosMes/360);
+  const qtdLabel=procMes.length>0
+    ?'<div style="font-size:11px;font-family:var(--mono);color:var(--muted);margin-top:6px">'+qtdOvosMes.toLocaleString('pt-BR')+' ovos · '+qtdPentesMes+' pentes · '+qtdCaixasMes+' caixas</div>'
+    :'';
+  const receitaItems=procMes.length>0
+    ?procMes.map(p=>{const v=vendasC.find(x=>x.id===p.venda_id);return '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px"><div>'+(v?v.cliente||'Cliente':'')+'<div style="font-size:11px;font-family:var(--mono);color:var(--muted)">'+p.quantidade+' '+p.unidade+' ('+p.ovos_equivalentes+' ovos)'+(v?' · '+fmtD(v.data_venda):'')+'</div></div><span style="font-family:var(--mono);font-weight:600;color:var(--green)">R$ '+parseFloat(p.valor||0).toLocaleString('pt-BR',{minimumFractionDigits:2})+'</span></div>';}).join('')
+    :vendasMes.map(v=>'<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px"><div>'+(v.cliente||'Cliente')+'<div style="font-size:11px;font-family:var(--mono);color:var(--muted)">'+fmtD(v.data_venda)+'</div></div><span style="font-family:var(--mono);font-weight:600;color:var(--green)">R$ '+parseFloat(v.valor_total||0).toLocaleString('pt-BR',{minimumFractionDigits:2})+'</span></div>').join('');
+  panel.appendChild(ccCard('Receita — Vendas de Ovos','var(--green)',(receitaItems||'<div style="font-size:13px;color:var(--muted)">Nenhuma venda este mes.</div>')+qtdLabel,receitaTotal,'Receita total'));
 
   // ── RAÇÕES ────────────────────────────────────────
   const racaoMes=racaoCache.filter(r=>{
@@ -2530,24 +2953,24 @@ function abrirCCMes(gid,loteId,ano,mes){
     return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">'
       +'<div>'+r.tipo+' — '+r.num_misturas+' mistura(s)<div style="font-size:11px;font-family:var(--mono);color:var(--muted)">'+fmtD(r.data_fabricacao)+'</div></div>'
       +'<div style="display:flex;align-items:center;gap:8px">'
-      +(isAdm?'<input type="number" step="0.01" value="'+parseFloat(r.valor_mistura||0).toFixed(2)+'" style="width:80px;font-family:var(--mono);font-size:12px;border:1.5px solid var(--border);border-radius:6px;padding:3px 6px;text-align:right" onchange="atualizarValorRacao('+r.id+',this.value)">'
-        :'<span style="font-family:var(--mono);font-weight:600">R$ '+val.toLocaleString('pt-BR',{minimumFractionDigits:2})+'</span>')
+      +'<span style="font-family:var(--mono);font-weight:600">R$ '+val.toLocaleString('pt-BR',{minimumFractionDigits:2})+'</span>'
       +'</div></div>';
   }).join(''):'<div style="font-size:13px;color:var(--muted)">Nenhuma fabricacao este mes.</div>';
   panel.appendChild(ccCard('Custo — Racao','var(--blue)',racaoDiv.innerHTML,racaoTotal,'Custo total racao'));
 
   // ── DESPESAS ──────────────────────────────────────
-  const despMes=despesasC.filter(d=>d.galpao_id===gid&&d.ano===ano&&d.mes===mes);
+  const despMes=despesasC.filter(d=>d.galpao_id===gid&&parseInt(d.ano)===ano&&parseInt(d.mes)===mes&&d.categoria!=='Salario');
   const despTotal=despMes.reduce((a,d)=>a+(parseFloat(d.valor)||0),0);
     const despHtml=(despMes.length?despMes.map(d=>'<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px"><div><div>'+d.descricao+'</div><div style="font-size:11px;font-family:var(--mono);color:var(--muted)">'+(d.produto_nome?d.produto_nome+' · ':'')+(d.fornecedor_nome||'')+' '+(d.data_transacao?fmtD(d.data_transacao):'')+' '+(d.quantidade?d.quantidade+' '+(d.unidade||''):'')+'</div></div><div style="display:flex;align-items:center;gap:6px"><span style="font-family:var(--mono);font-weight:600;color:var(--red)">R$ '+parseFloat(d.valor||0).toLocaleString('pt-BR',{minimumFractionDigits:2})+'</span><button onclick="deletarDespesa('+d.id+')" style="font-size:10px;background:var(--red-pale);color:var(--red);border:none;border-radius:4px;padding:2px 6px;cursor:pointer">×</button></div></div>').join(''):'<div style="font-size:13px;color:var(--muted);margin-bottom:10px">Nenhuma despesa lancada.</div>')
     ;  // button added via DOM below
   panel.appendChild(ccCard('Custo — Despesas','var(--amber)',despHtml,despTotal,'Total despesas'));
 
   // ── SALÁRIOS ──────────────────────────────────────
-  const salMes=salariosC.filter(s=>s.ano===ano&&s.mes===mes);
-  const salTotal=salMes.reduce((a,s)=>a+(parseFloat(s.valor)||0),0);
-  const salHtml=(salMes.length?salMes.map(s=>'<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px"><span>'+s.usuario_nome+'</span><div style="display:flex;align-items:center;gap:6px"><span style="font-family:var(--mono);font-weight:600;color:var(--red)">R$ '+parseFloat(s.valor||0).toLocaleString('pt-BR',{minimumFractionDigits:2})+'</span><button onclick="deletarSalario('+s.id+')" style="font-size:10px;background:var(--red-pale);color:var(--red);border:none;border-radius:4px;padding:2px 6px;cursor:pointer">×</button></div></div>').join(''):'<div style="font-size:13px;color:var(--muted);margin-bottom:10px">Nenhum salario lancado.</div>')
-    +'<div style="margin-top:10px;display:flex;gap:6px"><select class="field-input" id="cc-sal-user" style="flex:2">'+usuariosC.map(u=>'<option value="'+u.id+'|'+u.nome+'">'+u.nome+'</option>').join('')+'</select><input class="field-input" id="cc-sal-val" type="number" step="0.01" placeholder="R$" style="flex:1;font-family:var(--mono)"><button class="g-btn g-btn-edit" onclick="adicionarSalario('+ano+','+mes+')">+ Add</button></div>';
+  const salMes=salariosC.filter(s=>parseInt(s.ano)===ano&&parseInt(s.mes)===mes&&(s.lote_id===loteId||s.galpao_id===gid));
+  const salDespMes=salMes; // salarios filter by lote
+  const salTotal=salDespMes.length>0?salDespMes.reduce((a,d)=>a+(parseFloat(d.valor)||0),0):0;
+  const salHtmlData=salDespMes.length>0?salDespMes:salMes;
+  const salHtml=(salHtmlData.length?salHtmlData.map(s=>'<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px"><span>'+(s.usuario_nome||s.descricao||'')+'</span><div style="display:flex;align-items:center;gap:6px"><span style="font-family:var(--mono);font-weight:600;color:var(--red)">R$ '+parseFloat(s.valor||0).toLocaleString('pt-BR',{minimumFractionDigits:2})+'</span><button onclick="deletarSalario('+s.id+')" style="font-size:10px;background:var(--red-pale);color:var(--red);border:none;border-radius:4px;padding:2px 6px;cursor:pointer">×</button></div></div>').join(''):'<div style="font-size:13px;color:var(--muted)">Nenhum salario lancado. Lance em Dep. Pessoal → Salarios.</div>');
   panel.appendChild(ccCard('Custo — Salarios','var(--red)',salHtml,salTotal,'Total salarios'));
 
   // ── RESULTADO ─────────────────────────────────────
@@ -2557,7 +2980,7 @@ function abrirCCMes(gid,loteId,ano,mes){
   resCard.style.background=resultado>=0?'var(--green-pale)':'var(--red-pale)';
   resCard.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center">'
     +'<div style="font-weight:600;font-size:15px">Resultado do mes</div>'
-    +'<div style="font-size:22px;font-weight:700;font-family:var(--mono);color:'+(resultado>=0?'var(--green)':'var(--red)')+'">R$ '+resultado.toLocaleString('pt-BR',{minimumFractionDigits:2})+'</div>'
+    +'<div style="font-size:22px;font-weight:700;font-family:var(--mono);color:'+(resultado>=0?'var(--green)':'var(--red)')+'">'+(resultado<0?'- ':'')+'R$ '+Math.abs(resultado).toLocaleString('pt-BR',{minimumFractionDigits:2})+'</div>'
     +'</div>'
     +'<div style="display:flex;gap:20px;margin-top:10px;font-size:12px;font-family:var(--mono)">'
     +'<span>Receita: <strong>R$ '+receitaTotal.toLocaleString('pt-BR',{minimumFractionDigits:2})+'</strong></span>'
@@ -2611,7 +3034,12 @@ function renderRateioOpcoes(){
   wrap.innerHTML='';
   // Pill buttons
   const pillRow=document.createElement('div');pillRow.style.cssText='display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px';
-  const opts=[...GALPOES.map(g=>({id:g.id,label:g.nome})),{id:'outros',label:'Outros'}];
+  // Use lotes ativos instead of galpoes
+  const lotesAtivos=lotesC.filter(l=>l.status==='ativo');
+  const opts=[...lotesAtivos.map(l=>{
+    const g=GALPOES.find(x=>x.id===l.galpao_id);
+    return {id:l.galpao_id,label:(l.codigo||l.id)+' — '+(g?g.nome:l.galpao_id)};
+  }),{id:'outros',label:'Outros'}];
   opts.forEach(o=>{
     const ativo=sel[o.id]!==undefined;
     const btn=document.createElement('button');btn.type='button';
@@ -2797,7 +3225,7 @@ function renderCCDespesas(panel){
 
   // Get unique despesas for this month (group by "original" — deduplicate rateio entries)
   // A rateio creates multiple entries; group by same descricao+data+custo_unitario+quantidade
-  const despMes=despesasC.filter(d=>d.ano===filtroAno&&d.mes===filtroMes);
+  const despMes=despesasC.filter(d=>parseInt(d.ano)===filtroAno&&parseInt(d.mes)===filtroMes);
 
   // Build "master" despesas list by grouping rateio siblings
   // Key: descricao + data_transacao + custo_unitario + quantidade
@@ -2900,6 +3328,356 @@ function abrirModalDespesaGlobal(){
 }
 
 // =============================================
+// DEPARTAMENTO PESSOAL
+// =============================================
+function renderDeptoPessoal(){
+  const el=document.getElementById('tab-deptopessoal');if(!el)return;
+  const sub=window._dpSub||'funcionarios';
+  el.innerHTML='';
+  // Subtabs
+  const tabRow=document.createElement('div');tabRow.style.cssText='display:flex;gap:4px;margin-bottom:16px';
+  [['funcionarios','Funcionarios'],['salarios','Salarios']].forEach(([id,label])=>{
+    const btn=document.createElement('button');
+    btn.style.cssText='flex:1;padding:8px;font-size:11px;border-radius:10px;border:none;cursor:pointer;font-family:var(--font);font-weight:500;background:'+(sub===id?'var(--card)':'var(--border)')+';color:'+(sub===id?'var(--green)':'var(--muted)')+(sub===id?';box-shadow:var(--shadow)':'');
+    btn.textContent=label;btn.onclick=()=>{window._dpSub=id;renderDeptoPessoal();};
+    tabRow.appendChild(btn);
+  });
+  el.appendChild(tabRow);
+  const panel=document.createElement('div');el.appendChild(panel);
+  if(sub==='funcionarios')renderDPFuncionarios(panel);
+  if(sub==='salarios')renderDPSalarios(panel);
+}
+
+function renderDPFuncionarios(panel){
+  panel.innerHTML='';
+  // Add button
+  const addBtn=document.createElement('button');addBtn.className='submit-btn';addBtn.style.cssText='margin-bottom:16px;width:100%';
+  addBtn.textContent='+ Adicionar funcionario';addBtn.onclick=()=>abrirModalFuncionario();
+  panel.appendChild(addBtn);
+
+  if(!funcionariosC.length){
+    const empty=document.createElement('div');empty.className='history-empty';empty.textContent='Nenhum funcionario cadastrado.';panel.appendChild(empty);return;
+  }
+
+  // Active first
+  const ativos=funcionariosC.filter(f=>f.status!=='desligado');
+  const desligados=funcionariosC.filter(f=>f.status==='desligado');
+
+  if(ativos.length){
+    const lbl=document.createElement('div');lbl.style.cssText='font-size:11px;font-family:var(--mono);color:var(--green);font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px';lbl.textContent='Ativos';panel.appendChild(lbl);
+    ativos.forEach(f=>panel.appendChild(makeFuncCard(f)));
+  }
+  if(desligados.length){
+    const lbl=document.createElement('div');lbl.style.cssText='font-size:11px;font-family:var(--mono);color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin:12px 0 8px';lbl.textContent='Desligados';panel.appendChild(lbl);
+    desligados.forEach(f=>panel.appendChild(makeFuncCard(f)));
+  }
+}
+
+function makeFuncCard(f){
+  const isAtivo=f.status!=='desligado';
+  const card=document.createElement('div');card.className='history-item';card.style.cssText='margin-bottom:8px;cursor:pointer';
+  card.innerHTML='<div class="history-header">'
+    +'<div class="history-galpao">'+f.nome_completo+'</div>'
+    +'<span style="font-size:11px;padding:2px 8px;border-radius:10px;background:'+(isAtivo?'var(--green-pale)':'var(--border)')+';color:'+(isAtivo?'var(--green)':'var(--muted)')+'">'+( isAtivo?'Ativo':'Desligado')+'</span>'
+    +'</div>'
+    +'<div class="history-tags">'
+    +'<span class="tag" style="background:var(--bg)">Desde '+fmtD(f.data_inicio)+'</span>'
+    +(f.salario_bruto?'<span class="tag tag-racao">R$ '+parseFloat(f.salario_bruto).toLocaleString('pt-BR',{minimumFractionDigits:2})+'</span>':'')
+    +(f.data_nascimento?'<span class="tag" style="background:var(--bg);color:var(--muted)">Nasc. '+fmtD(f.data_nascimento)+'</span>':'')
+    +'</div>';
+  card.onclick=()=>abrirDetalheFuncionario(f.id);
+  return card;
+}
+
+function abrirDetalheFuncionario(fid){
+  const f=funcionariosC.find(x=>x.id===fid);if(!f)return;
+  const el=document.getElementById('tab-deptopessoal');
+  const panel=el.querySelector('div:last-child');
+  panel.innerHTML='';
+  const back=document.createElement('button');back.className='back-btn';back.textContent='← Voltar';
+  back.onclick=()=>renderDeptoPessoal();panel.appendChild(back);
+
+  const isAtivo=f.status!=='desligado';
+  const card=document.createElement('div');card.className='form-card';
+  const fields=[
+    ['Nome completo',f.nome_completo],
+    ['Situacao',isAtivo?'Ativo':'Desligado'],
+    ['Data de inicio',fmtD(f.data_inicio)],
+    ['Data de nascimento',fmtD(f.data_nascimento)],
+    ['Salario bruto',f.salario_bruto?'R$ '+parseFloat(f.salario_bruto).toLocaleString('pt-BR',{minimumFractionDigits:2}):'-'],
+    ['Data desligamento',f.data_desligamento?fmtD(f.data_desligamento):'-'],
+    ['Observacoes',f.obs||'-'],
+  ];
+  let html='';
+  fields.forEach(([label,val])=>{
+    if(!val||val==='-'&&label==='Data desligamento'&&isAtivo)return;
+    html+='<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px">'
+      +'<span style="color:var(--muted)">'+label+'</span><span style="font-weight:500">'+val+'</span></div>';
+  });
+  card.innerHTML=html;panel.appendChild(card);
+
+  // Actions
+  const acoes=document.createElement('div');acoes.style.cssText='display:flex;gap:8px;margin-top:12px;flex-wrap:wrap';
+  const editBtn=document.createElement('button');editBtn.className='g-btn g-btn-edit';editBtn.textContent='Editar';
+  editBtn.onclick=()=>abrirModalFuncionario(f.id);acoes.appendChild(editBtn);
+  if(isAtivo){
+    const desligBtn=document.createElement('button');desligBtn.className='g-btn';desligBtn.style.cssText='background:var(--red-pale);color:var(--red)';desligBtn.textContent='Desligar funcionario';
+    desligBtn.onclick=()=>abrirDesligamento(f.id);acoes.appendChild(desligBtn);
+  } else {
+    const reativarBtn=document.createElement('button');reativarBtn.className='g-btn g-btn-edit';reativarBtn.textContent='Reativar';
+    reativarBtn.onclick=async()=>{await supa.patch('funcionarios?id=eq.'+f.id,{status:'ativo',data_desligamento:null});funcionariosC=funcionariosC.map(x=>x.id===f.id?{...x,status:'ativo',data_desligamento:null}:x);toast('Funcionario reativado');renderDeptoPessoal();};
+    acoes.appendChild(reativarBtn);
+  }
+  panel.appendChild(acoes);
+}
+
+function abrirDesligamento(fid){
+  const f=funcionariosC.find(x=>x.id===fid);if(!f)return;
+  const overlay=document.createElement('div');overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:199;display:flex;align-items:center;justify-content:center';
+  const box=document.createElement('div');box.style.cssText='background:var(--card);border-radius:16px;padding:20px;min-width:280px;box-shadow:var(--shadow)';
+  box.innerHTML='<div style="font-weight:600;font-size:15px;margin-bottom:12px">Desligar '+f.nome_completo+'</div>'
+    +'<div class="field-group"><div class="field-label">Data de desligamento</div><input class="field-input" id="dp-deslig-data" type="date" value="'+new Date().toISOString().slice(0,10)+'"></div>'
+    +'<div class="field-group"><div class="field-label">Observacao (opcional)</div><input class="field-input" id="dp-deslig-obs" placeholder="Motivo, aviso previo..."></div>';
+  const row=document.createElement('div');row.style.cssText='display:flex;gap:8px;margin-top:12px';
+  const cancelBtn=document.createElement('button');cancelBtn.className='modal-btn modal-btn-cancel';cancelBtn.textContent='Cancelar';cancelBtn.onclick=()=>document.body.removeChild(overlay);
+  const confBtn=document.createElement('button');confBtn.className='modal-btn modal-btn-save';confBtn.style.background='var(--red)';confBtn.textContent='Confirmar desligamento';
+  confBtn.onclick=async()=>{
+    const data=document.getElementById('dp-deslig-data').value;
+    const obs=document.getElementById('dp-deslig-obs').value;
+    await supa.patch('funcionarios?id=eq.'+fid,{status:'desligado',data_desligamento:data||null,obs:obs||f.obs});
+    funcionariosC=funcionariosC.map(x=>x.id===fid?{...x,status:'desligado',data_desligamento:data,obs:obs||x.obs}:x);
+    document.body.removeChild(overlay);toast('Funcionario desligado');renderDeptoPessoal();
+  };
+  row.appendChild(cancelBtn);row.appendChild(confBtn);box.appendChild(row);
+  overlay.appendChild(box);document.body.appendChild(overlay);
+}
+
+function abrirModalFuncionario(fid){
+  const f=fid?funcionariosC.find(x=>x.id===fid):null;
+  const overlay=document.createElement('div');overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:199;display:flex;align-items:flex-end;justify-content:center';
+  const box=document.createElement('div');box.style.cssText='background:var(--card);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:600px;max-height:90vh;overflow-y:auto;box-shadow:var(--shadow)';
+  box.innerHTML='<h3 style="margin-bottom:16px">'+(f?'Editar':'Adicionar')+' funcionario</h3>'
+    +'<div class="field-group"><div class="field-label">Nome completo <span class="badge badge-req">obrigatorio</span></div><input class="field-input" id="dp-nome" value="'+(f?f.nome_completo:'')+'"></div>'
+    +'<div class="field-row">'
+    +'<div class="field-group"><div class="field-label">Data de nascimento</div><input class="field-input" id="dp-nasc" type="date" value="'+(f?.data_nascimento||'')+'"></div>'
+    +'<div class="field-group"><div class="field-label">Data de inicio</div><input class="field-input" id="dp-inicio" type="date" value="'+(f?.data_inicio||'')+'"></div>'
+    +'</div>'
+    +'<div class="field-group"><div class="field-label">Salario bruto (R$)</div><input class="field-input" id="dp-salario" type="number" step="0.01" value="'+(f?.salario_bruto||'')+'"></div>'
+    +'<div class="field-group"><div class="field-label">Observacoes</div><textarea class="field-input" id="dp-obs">'+(f?.obs||'')+'</textarea></div>';
+  const row=document.createElement('div');row.style.cssText='display:flex;gap:8px;margin-top:12px';
+  const cancelBtn=document.createElement('button');cancelBtn.className='modal-btn modal-btn-cancel';cancelBtn.textContent='Cancelar';cancelBtn.onclick=()=>document.body.removeChild(overlay);
+  const saveBtn=document.createElement('button');saveBtn.className='modal-btn modal-btn-save';saveBtn.textContent='Salvar';
+  saveBtn.onclick=async()=>{
+    const nome=document.getElementById('dp-nome').value.trim();
+    if(!nome){toast('Informe o nome',true);return;}
+    const payload={nome_completo:nome,data_nascimento:document.getElementById('dp-nasc').value||null,data_inicio:document.getElementById('dp-inicio').value||null,salario_bruto:parseFloat(document.getElementById('dp-salario').value||0),obs:document.getElementById('dp-obs').value};
+    if(f){
+      await supa.patch('funcionarios?id=eq.'+f.id,payload);
+      funcionariosC=funcionariosC.map(x=>x.id===f.id?{...x,...payload}:x);
+      toast('Funcionario atualizado');
+    } else {
+      const res=await supa.post('funcionarios',{...payload,status:'ativo'});
+      if(res&&res[0])funcionariosC.push(res[0]);
+      toast('Funcionario adicionado');
+    }
+    document.body.removeChild(overlay);renderDeptoPessoal();
+  };
+  row.appendChild(cancelBtn);row.appendChild(saveBtn);box.appendChild(row);
+  overlay.appendChild(box);document.body.appendChild(overlay);
+}
+
+function renderSalRateio(formCard){
+  const wrap=document.getElementById('dp-sal-rateio-wrap');if(!wrap)return;
+  const modo=window._salRateioModo||'igual';
+  const sel=window._salRateio||{};
+  const lotesAtivos=lotesC.filter(l=>l.status==='ativo');
+  wrap.innerHTML='';
+  // Pill buttons
+  const pillRow=document.createElement('div');pillRow.style.cssText='display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px';
+  lotesAtivos.forEach(l=>{
+    const g=GALPOES.find(x=>x.id===l.galpao_id);
+    const isOn=sel[l.id]!==undefined;
+    const pill=document.createElement('button');pill.type='button';
+    pill.style.cssText='padding:5px 12px;border-radius:20px;border:2px solid '+(isOn?'var(--green)':'var(--border)')+';background:'+(isOn?'var(--green-pale)':'var(--card)')+';color:'+(isOn?'var(--green)':'var(--muted)')+';font-size:12px;cursor:pointer';
+    pill.textContent=(l.codigo||l.id)+(g?' ('+g.nome+')':'');
+    pill.onclick=()=>{
+      if(window._salRateio[l.id]!==undefined)delete window._salRateio[l.id];
+      else window._salRateio[l.id]={lote:l,pct:0,valor:0};
+      renderSalRateio(formCard);
+    };
+    pillRow.appendChild(pill);
+  });
+  wrap.appendChild(pillRow);
+  // Manual % or value inputs
+  const ativos=Object.keys(sel);
+  if(ativos.length>0&&(modo==='manual'||modo==='valor')){
+    ativos.forEach(lid=>{
+      const l=lotesC.find(x=>x.id===parseInt(lid));
+      const g=GALPOES.find(x=>x.id===l?.galpao_id);
+      const row=document.createElement('div');row.style.cssText='display:flex;align-items:center;gap:8px;margin-bottom:4px';
+      row.innerHTML='<span style="flex:1;font-size:12px;font-family:var(--mono)">'+(l?.codigo||lid)+(g?' ('+g.nome+')':'')+'</span>';
+      const inp=document.createElement('input');inp.type='number';inp.min='0';inp.step='0.01';
+      inp.value=modo==='manual'?(sel[lid].pct||Math.round(100/ativos.length)):(sel[lid].valor||0);
+      inp.style.cssText='width:80px;font-family:var(--mono);border:1.5px solid var(--border);border-radius:6px;padding:3px 6px;text-align:right';
+      const unit=document.createElement('span');unit.style.cssText='font-size:12px;color:var(--muted)';unit.textContent=modo==='manual'?'%':'R$';
+      inp.oninput=()=>{
+        if(modo==='manual')window._salRateio[lid].pct=parseFloat(inp.value||0);
+        else window._salRateio[lid].valor=parseFloat(inp.value||0);
+      };
+      row.appendChild(inp);row.appendChild(unit);wrap.appendChild(row);
+    });
+  }
+}
+
+function editarSalario(s,panel){
+  const funcSel=document.getElementById('dp-sal-func');
+  const valInp=document.getElementById('dp-sal-valor');
+  const obsInp=document.getElementById('dp-sal-obs');
+  if(funcSel){Array.from(funcSel.options).forEach(opt=>{if(opt.value.split('|')[0]===s.usuario_nome)funcSel.value=opt.value;});}
+  if(valInp)valInp.value=parseFloat(s.valor||0).toFixed(2);
+  if(obsInp)obsInp.value=s.obs||'';
+  window._editSalId=s.id;
+  const saveBtn=panel.querySelector('.submit-btn');
+  if(saveBtn){saveBtn.textContent='Atualizar salario';saveBtn.style.background='var(--amber)';}
+  toast('Editando — ajuste e salve');
+}
+
+function renderDPSalarios(panel){
+  panel.innerHTML='';
+  // Navigation by month
+  const now=new Date();
+  const ano=window._dpSalAno||now.getFullYear();
+  const mes=window._dpSalMes||(now.getMonth()+1);
+
+  const navDiv=document.createElement('div');navDiv.className='ficha-nav';navDiv.style.marginBottom='14px';
+  const prevBtn=document.createElement('button');prevBtn.className='ficha-nav-btn';prevBtn.textContent='←';
+  prevBtn.onclick=()=>{let m=mes-1,a=ano;if(m<1){m=12;a--;}window._dpSalAno=a;window._dpSalMes=m;renderDPSalarios(panel);};
+  const nextBtn=document.createElement('button');nextBtn.className='ficha-nav-btn';nextBtn.textContent='→';
+  nextBtn.onclick=()=>{let m=mes+1,a=ano;if(m>12){m=1;a++;}window._dpSalAno=a;window._dpSalMes=m;renderDPSalarios(panel);};
+  const navLabel=document.createElement('div');navLabel.className='ficha-nav-title';
+  navLabel.textContent=MESES_CC[mes-1]+' '+ano;
+  navDiv.appendChild(prevBtn);navDiv.appendChild(navLabel);navDiv.appendChild(nextBtn);
+  panel.appendChild(navDiv);
+
+  const salMes=salariosC.filter(s=>parseInt(s.ano)===ano&&parseInt(s.mes)===mes);
+  const total=salMes.reduce((a,s)=>a+(parseFloat(s.valor)||0),0);
+
+  // List salarios
+  if(salMes.length){
+    salMes.forEach(s=>{
+      const row=document.createElement('div');row.className='history-item';row.style.marginBottom='6px';
+      row.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center">'
+        +'<div><div style="font-weight:500;font-size:13px">'+s.usuario_nome+'</div>'
+        +(s.obs?'<div style="font-size:11px;font-family:var(--mono);color:var(--muted)">'+s.obs+'</div>':'')
+        +'</div>'
+        +'<div style="display:flex;align-items:center;gap:6px">'
+        +'<span style="font-family:var(--mono);font-weight:600;color:var(--text)">R$ '+parseFloat(s.valor||0).toLocaleString('pt-BR',{minimumFractionDigits:2})+'</span>'
+        +'<button id="esal_'+s.id+'" style="font-size:10px;background:var(--blue-pale);color:var(--blue);border:none;border-radius:4px;padding:2px 6px;cursor:pointer">editar</button>'
+        +'<button onclick="deletarSalario('+s.id+')" style="font-size:10px;background:var(--red-pale);color:var(--red);border:none;border-radius:4px;padding:2px 6px;cursor:pointer">×</button>'
+        +'</div></div>';
+      panel.appendChild(row);
+      const eBtn=document.getElementById('esal_'+s.id);
+      if(eBtn){const _s=s;eBtn.onclick=()=>editarSalario(_s,panel);}
+    });
+    const totDiv=document.createElement('div');
+    totDiv.style.cssText='display:flex;justify-content:space-between;padding:10px 0;font-weight:600;font-size:14px;font-family:var(--mono);border-top:2px solid var(--border);margin-top:6px';
+    totDiv.innerHTML='<span>Total</span><span>R$ '+total.toLocaleString('pt-BR',{minimumFractionDigits:2})+'</span>';
+    panel.appendChild(totDiv);
+  } else {
+    const empty=document.createElement('div');empty.className='history-empty';empty.textContent='Nenhum salario lancado neste mes.';panel.appendChild(empty);
+  }
+
+  // Add salario form
+  const formCard=document.createElement('div');formCard.className='form-card';formCard.style.marginTop='14px';
+  // Title
+  const formTitle=document.createElement('div');formTitle.className='form-card-title';
+  formTitle.innerHTML='<span class="dot" style="background:#7B5EA7"></span>Lancar salario';
+  formCard.appendChild(formTitle);
+  // Funcionario select
+  const selWrap=document.createElement('div');selWrap.className='field-group';
+  const selLabel=document.createElement('div');selLabel.className='field-label';selLabel.textContent='Funcionario';selWrap.appendChild(selLabel);
+  const sel=document.createElement('select');sel.className='field-input';sel.id='dp-sal-func';
+  const funcs=funcionariosC.filter(f=>f.status!=='desligado');
+  const opts=funcs.length?funcs:usuariosC;
+  sel.innerHTML='<option value="">Selecione...</option>'+opts.map(f=>{
+    const nome=f.nome_completo||f.nome;
+    const sal=f.salario_bruto?parseFloat(f.salario_bruto).toFixed(2):'';
+    return '<option value="'+nome+'|'+(sal||'')+'">'+nome+'</option>';
+  }).join('');
+  selWrap.appendChild(sel);formCard.appendChild(selWrap);
+  // Valor
+  const valWrap=document.createElement('div');valWrap.className='field-group';
+  const valLabel=document.createElement('div');valLabel.className='field-label';valLabel.textContent='Valor (R$)';valWrap.appendChild(valLabel);
+  const valInp=document.createElement('input');valInp.className='field-input';valInp.id='dp-sal-valor';valInp.type='number';valInp.step='0.01';valInp.placeholder='0,00';valWrap.appendChild(valInp);formCard.appendChild(valWrap);
+  // Auto-fill valor on select change
+  sel.onchange=function(){
+    const parts=this.value.split('|');
+    if(parts[1])valInp.value=parts[1];
+  };
+  // Obs
+  const obsWrap=document.createElement('div');obsWrap.className='field-group';
+  const obsLabel=document.createElement('div');obsLabel.className='field-label';obsLabel.textContent='Observacao';obsWrap.appendChild(obsLabel);
+  const obsInp=document.createElement('input');obsInp.className='field-input';obsInp.id='dp-sal-obs';obsInp.placeholder='Ex: 13o, ferias...';obsWrap.appendChild(obsInp);formCard.appendChild(obsWrap);
+  // Rateio CC — igual ao modelo de despesas
+  const rateioTitle=document.createElement('div');rateioTitle.style.cssText='font-size:12px;font-weight:600;margin:10px 0 4px';rateioTitle.textContent='Centro de custo (rateio opcional)';
+  formCard.appendChild(rateioTitle);
+  // Mode selector
+  const modeRow=document.createElement('div');modeRow.style.cssText='display:flex;gap:12px;margin-bottom:8px';
+  ['igual','manual','valor'].forEach(m=>{
+    const lbl=document.createElement('label');lbl.style.cssText='display:flex;align-items:center;gap:5px;font-size:12px;cursor:pointer';
+    const inp=document.createElement('input');inp.type='radio';inp.name='sal-rateio-modo';inp.value=m;
+    if((window._salRateioModo||'igual')===m)inp.checked=true;
+    inp.onchange=()=>{window._salRateioModo=m;renderSalRateio(formCard);};
+    lbl.appendChild(inp);lbl.appendChild(document.createTextNode(m==='igual'?'Dividir igualmente':m==='manual'?'% Manual':'Por valor'));
+    modeRow.appendChild(lbl);
+  });
+  formCard.appendChild(modeRow);
+  const rateioWrap=document.createElement('div');rateioWrap.id='dp-sal-rateio-wrap';formCard.appendChild(rateioWrap);
+  if(!window._salRateio)window._salRateio={};
+  if(!window._salRateioModo)window._salRateioModo='igual';
+  renderSalRateio(formCard);
+
+  const saveBtn=document.createElement('button');saveBtn.className='submit-btn';saveBtn.style.marginTop='8px';saveBtn.textContent='Lancar salario';
+  saveBtn.onclick=async()=>{
+    const funcVal=document.getElementById('dp-sal-func')?.value;
+    const nomeFunc=funcVal?funcVal.split('|')[0]:'';
+    const valor=parseFloat(document.getElementById('dp-sal-valor')?.value||0);
+    const obs=document.getElementById('dp-sal-obs')?.value||'';
+    if(!nomeFunc){toast('Informe o funcionario',true);return;}
+    if(!valor||valor<=0){toast('Informe o valor',true);return;}
+    // Edit mode
+    const editId=window._editSalId;
+    if(editId){
+      await supa.patch('salarios?id=eq.'+editId,{usuario_nome:nomeFunc,valor,obs});
+      salariosC=salariosC.map(x=>x.id===editId?{...x,usuario_nome:nomeFunc,valor,obs}:x);
+      window._editSalId=null;toast('Salario atualizado');renderDPSalarios(panel);return;
+    }
+    const rateioSel=Object.keys(window._salRateio||{});
+    const modo=window._salRateioModo||'igual';
+    if(rateioSel.length>0){
+      for(const loteId of rateioSel){
+        const lote=lotesC.find(l=>l.id===parseInt(loteId));
+        const entry=window._salRateio[loteId]||{};
+        let valPart;
+        if(modo==='valor')valPart=parseFloat(entry.valor||0);
+        else if(modo==='manual')valPart=parseFloat((valor*(entry.pct||0)/100).toFixed(2));
+        else valPart=parseFloat((valor/rateioSel.length).toFixed(2)); // igual
+        const res=await supa.post('salarios',{usuario_nome:nomeFunc,ano,mes,valor:valPart,obs:(obs?obs+' ':'')+'('+(lote?.codigo||loteId)+')',usuario_id:null,lote_id:parseInt(loteId),galpao_id:lote?.galpao_id||null});
+        if(res&&res[0])salariosC.push(res[0]);
+        // salario registrado apenas em salariosC, nao em despesas
+      }
+    } else {
+      const res=await supa.post('salarios',{usuario_nome:nomeFunc,ano,mes,valor,obs});
+      if(res&&res[0])salariosC.push(res[0]);
+    }
+    window._salRateio={};window._salRateioModo='igual';
+    toast('Salario lancado');renderDPSalarios(panel);
+  };
+  formCard.appendChild(saveBtn);
+  panel.appendChild(formCard);
+}
+
+// =============================================
 // SESSION & LOGIN
 // =============================================
 let currentUser=null; // {id, nome, nivel} or {adm:true}
@@ -2988,7 +3766,7 @@ async function carregarLogin(){
 
 function buildTabsForUser(){
   // Rebuild main tab bar based on permissions
-  const allTabs=[['postura','Postura'],['usuarios','Usuarios'],['racao','Racao'],['produtos','Produtos'],['financeiro','Financeiro'],['centrocusto','Centro de custo']];
+  const allTabs=[['postura','Postura'],['usuarios','Usuarios'],['racao','Racao'],['produtos','Produtos'],['financeiro','Financeiro'],['centrocusto','Centro de custo'],['deptopessoal','Dep. Pessoal']];
   const tabBar=document.querySelector('.tab-bar');if(!tabBar)return;
   tabBar.innerHTML='';
   allTabs.forEach(([id,label],i)=>{
