@@ -1454,9 +1454,12 @@ function renderRacaoHist(){
   if(!racaoCache.length){el.innerHTML='<div class="history-empty">Nenhuma fabricacao registrada.</div>';return;}
   el.innerHTML='';
   racaoCache.forEach(r=>{
-    const corTag=r.com_corante===false
+    const isCrescimento=r.tipo==='Crescimento';
+    const corTag=isCrescimento
       ?'<span class="tag" style="background:var(--bg);color:var(--muted);border:1px solid var(--border)">Sem corante</span>'
-      :'<span class="tag" style="background:var(--amber-pale);color:var(--amber)">Com corante</span>';
+      :(r.com_corante===false
+        ?'<span class="tag" style="background:var(--bg);color:var(--muted);border:1px solid var(--border)">Sem corante</span>'
+        :'<span class="tag" style="background:var(--amber-pale);color:var(--amber)">Com corante</span>');
     const div=document.createElement('div');div.className='history-item';div.style.marginBottom='8px';
     div.innerHTML='<div class="history-header"><div class="history-galpao">'+r.tipo+'</div><div class="history-time">'+fmtD(r.data_fabricacao)+'</div></div>'
       +'<div class="history-tags">'
@@ -2993,7 +2996,7 @@ function ccCard(title,color,bodyHtml,total,totalLabel){
   const div=document.createElement('div');div.className='form-card';div.style.marginBottom='10px';
   div.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">'
     +'<div class="form-card-title" style="margin-bottom:0"><span style="width:10px;height:10px;border-radius:50%;background:'+color+';display:inline-block;margin-right:8px"></span>'+title+'</div>'
-    +'<span style="font-family:var(--mono);font-size:13px;font-weight:600;color:'+color+'">R$ '+parseFloat(total||0).toLocaleString('pt-BR',{minimumFractionDigits:2})+'</span>'
+    +'<span style="font-family:var(--mono);font-size:13px;font-weight:600;color:'+color+'">'+(parseFloat(total)<0?'- ':'')+'R$ '+Math.abs(parseFloat(total||0)).toLocaleString('pt-BR',{minimumFractionDigits:2})+'</span>'
     +'</div>'+bodyHtml;
   return div;
 }
@@ -3152,7 +3155,6 @@ async function salvarDespesa(){
       if(res&&res[0])despesasC.push(res[0]);
     }
   }
-  document.getElementById('modal-despesa').classList.remove('hidden');
   closeModal('modal-despesa');
   toast('Despesa adicionada!');
   if(window._despRefreshTarget==='despesas'){
@@ -3225,7 +3227,7 @@ function renderCCDespesas(panel){
 
   // Get unique despesas for this month (group by "original" — deduplicate rateio entries)
   // A rateio creates multiple entries; group by same descricao+data+custo_unitario+quantidade
-  const despMes=despesasC.filter(d=>parseInt(d.ano)===filtroAno&&parseInt(d.mes)===filtroMes);
+  const despMes=despesasC.filter(d=>parseInt(d.ano)===filtroAno&&parseInt(d.mes)===filtroMes&&d.categoria!=='Salario');
 
   // Build "master" despesas list by grouping rateio siblings
   // Key: descricao + data_transacao + custo_unitario + quantidade
