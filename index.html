@@ -2230,7 +2230,6 @@ function renderProcedenciaSection(){
 }
 
 async function salvarVenda(){
-  const editId=window._editVendaId||null;
   const clidSel=document.getElementById('v-cliente-id')?.value;
   const clObj=clientesC.find(x=>x.id===parseInt(clidSel));
   const cliente=clObj?clObj.nome:'';
@@ -2249,17 +2248,7 @@ async function salvarVenda(){
   });
   if(!itens.length){toast('Adicione ao menos um produto',true);return;}
   let vid;
-  if(editId){
-    // Update existing venda
-    await supa.del('venda_procedencia?venda_id=eq.'+editId);
-    await supa.del('venda_itens?venda_id=eq.'+editId);
-    vendaProcedenciaC=vendaProcedenciaC.filter(x=>x.venda_id!==editId);
-    await supa.patch('vendas?id=eq.'+editId,{cliente,cliente_id:parseInt(clidSel)||null,data_venda:data,numero_venda:numero,obs,valor_total:totalVenda});
-    vendasC=vendasC.map(v=>v.id===editId?{...v,cliente,cliente_id:parseInt(clidSel)||null,data_venda:data,numero_venda:numero,obs,valor_total:totalVenda}:v);
-    vendasItensC=vendasItensC.filter(x=>x.venda_id!==editId);
-    vid=editId;window._editVendaId=null;
-    toast('Venda atualizada!');
-  } else {
+  {
     const vRes=await supa.post('vendas',{cliente,cliente_id:parseInt(clidSel)||null,data_venda:data,numero_venda:numero,obs,valor_total:totalVenda,valor_pago:0,status_pagamento:'nao_pago'});
     if(vRes===null)return;
     vid=vRes&&vRes[0]?vRes[0].id:null;
@@ -3198,11 +3187,11 @@ function abrirCCMes(gid,loteId,ano,mes){
       // Itens: buscar venda_itens para esta venda e cruzar com procedência
       const itensVenda=vendasItensC.filter(i=>i.venda_id===parseInt(vid2));
       if(itensVenda.length){
-        // Match each proc entry to its item by quantity, show product name from item
+        // Use venda_item_id first, fall back to quantity match
         procs.forEach(p=>{
-          // Find item whose quantidade matches this proc entry
-          const matchItem=itensVenda.find(item=>parseFloat(item.quantidade||0)===parseFloat(p.quantidade||0))
-            ||itensVenda[0];
+          let matchItem=null;
+          if(p.venda_item_id)matchItem=itensVenda.find(item=>item.id===p.venda_item_id);
+          if(!matchItem)matchItem=itensVenda.find(item=>parseFloat(item.quantidade||0)===parseFloat(p.quantidade||0))||itensVenda[0];
           const nomeProd=(matchItem.produto||'').replace(/\s*\(Caixa \(360 ovos\)\)(\s*\(Caixa \(360 ovos\)\))*/g,' (Caixa)').replace(/\s*\(Pente \(30 ovos\)\)(\s*\(Pente \(30 ovos\)\))*/g,' (Pente)').replace(/\s*\(Ovo\)(\s*\(Ovo\))*/g,'').trim();
           const unidLabel=p.unidade==='caixa'?'cx':p.unidade==='pente'?'pentes':'ovos';
           const valor=parseFloat(p.valor||0);
@@ -3223,17 +3212,22 @@ function abrirCCMes(gid,loteId,ano,mes){
       }
       receitaItems+='</div>';
     });
-    // Totalizadores por tipo
+    // Totalizadores por tipo — usar venda_item_id para match correto
     const totPorTipo={};
     procMes.forEach(p=>{
-      const itens=vendasItensC.filter(i=>i.venda_id===p.venda_id);
-      itens.forEach(item=>{
-        const nomeLimpo=(item.produto||'').replace(/\s*\(Caixa \(360 ovos\)\)(\s*\(Caixa \(360 ovos\)\))*/g,'').replace(/\s*\(Pente \(30 ovos\)\)(\s*\(Pente \(30 ovos\)\))*/g,'').replace(/\s*\(Ovo\)(\s*\(Ovo\))*/g,'').trim();
-        const unidLabel=item.produto&&item.produto.includes('Caixa')?'cx':item.produto&&item.produto.includes('Pente')?'pentes':'ovos';
-        const key=nomeLimpo+'|||'+unidLabel;
-        if(!totPorTipo[key])totPorTipo[key]={qtd:0,nome:nomeLimpo,unid:unidLabel};
-        totPorTipo[key].qtd+=parseFloat(item.quantidade||0);
-      });
+      // Find the specific item this proc entry belongs to
+      let matchItem=null;
+      if(p.venda_item_id)matchItem=vendasItensC.find(i=>i.id===p.venda_item_id);
+      if(!matchItem){
+        const itensV=vendasItensC.filter(i=>i.venda_id===p.venda_id);
+        matchItem=itensV.find(i=>parseFloat(i.quantidade||0)===parseFloat(p.quantidade||0))||itensV[0];
+      }
+      if(!matchItem)return;
+      const nomeLimpo=(matchItem.produto||'').replace(/\s*\(Caixa \(360 ovos\)\)(\s*\(Caixa \(360 ovos\)\))*/g,'').replace(/\s*\(Pente \(30 ovos\)\)(\s*\(Pente \(30 ovos\)\))*/g,'').replace(/\s*\(Ovo\)(\s*\(Ovo\))*/g,'').trim();
+      const unidLabel=matchItem.produto&&matchItem.produto.includes('Caixa')?'cx':matchItem.produto&&matchItem.produto.includes('Pente')?'pentes':'ovos';
+      const key=nomeLimpo+'|||'+unidLabel;
+      if(!totPorTipo[key])totPorTipo[key]={qtd:0,nome:nomeLimpo,unid:unidLabel};
+      totPorTipo[key].qtd+=parseFloat(p.quantidade||0); // use proc qty not item qty
     });
     const tipoStr=Object.values(totPorTipo).map(v2=>v2.qtd.toLocaleString('pt-BR')+' '+v2.unid+' '+v2.nome).join(' · ');
     if(tipoStr)receitaItems+='<div style="font-size:11px;font-family:var(--mono);color:var(--muted);margin-top:8px;padding-top:6px;border-top:1px solid var(--border)">'+tipoStr+'</div>';
