@@ -245,6 +245,7 @@ select.field-input{cursor:pointer}
   <div class="tab-panel" id="tab-racao"></div>
   <div class="tab-panel" id="tab-produtos"></div>
   <div class="tab-panel" id="tab-financeiro"></div>
+  <div class="tab-panel" id="tab-producao"></div>
   <div class="tab-panel" id="tab-centrocusto"></div>
   <div class="tab-panel" id="tab-deptopessoal"></div>
 </div>
@@ -574,7 +575,7 @@ async function loadAll(){
     supa.get('venda_pagamentos?order=created_at.desc'),
   ]);
   // Optional tables (may not exist yet)
-  const[perms,formula_db,clientes_db,forn_db,desp_db,sal_db,proc_db,func_db]=await Promise.all([
+  const[perms,formula_db,clientes_db,forn_db,desp_db,sal_db,proc_db,func_db,entd_db,ente_db]=await Promise.all([
     supa.get('nivel_permissoes?order=nivel.asc'),
     supa.get('formula_racao?tipo=eq.Postura&order=ingrediente.asc'),
     supa.get('clientes?order=nome.asc'),
@@ -583,6 +584,8 @@ async function loadAll(){
     supa.get('salarios?order=ano.desc,mes.desc'),
     supa.get('venda_procedencia?order=created_at.desc'),
     supa.get('funcionarios?order=nome_completo.asc'),
+    supa.get('entreposto_diario?order=data.desc'),
+    supa.get('entreposto_empenho?order=data.desc'),
   ]);
   if(hist!==null){histCache=hist;LS.set('g_hist',histCache);}
   if(aves&&aves.length){aves.forEach(g=>{avesReais[g.galpao_id]=g.aves_atuais;});LS.set('g_aves',avesReais);}
@@ -600,6 +603,8 @@ async function loadAll(){
   if(sal_db)salariosC=sal_db;
   if(proc_db)vendaProcedenciaC=proc_db;
   if(func_db)funcionariosC=func_db;
+  if(entd_db)entrepostoDiarioC=entd_db;
+  if(ente_db)entrepostoEmpenhoC=ente_db;
   setSS('online');
   buildTabsForUser();
   await seedProdutosRacao();
@@ -700,6 +705,45 @@ function renderGTab(){
   });
 }
 
+function abrirModalEditarLote(loteId){
+  const lote=lotesC.find(l=>l.id===loteId);if(!lote)return;
+  const overlay=document.createElement('div');overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:199;display:flex;align-items:flex-end;justify-content:center';
+  const box=document.createElement('div');box.style.cssText='background:var(--card);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:600px;max-height:90vh;overflow-y:auto;box-shadow:var(--shadow)';
+  box.innerHTML='<h3 style="margin-bottom:16px">Editar dados do lote</h3>'
+    +'<div class="field-group"><div class="field-label">Raca</div><input class="field-input" id="el-raca" value="'+(lote.raca||'')+'"></div>'
+    +'<div class="field-row">'
+    +'<div class="field-group"><div class="field-label">Data de nascimento</div><input class="field-input" id="el-nasc" type="date" value="'+(lote.nascimento||'')+'"></div>'
+    +'<div class="field-group"><div class="field-label">Data de chegada</div><input class="field-input" id="el-cheg" type="date" value="'+(lote.data_chegada||'')+'"></div>'
+    +'</div>'
+    +'<div class="field-group"><div class="field-label">Responsavel atual</div><input class="field-input" id="el-resp" value="'+(lote.responsavel_atual||'')+'"></div>'
+    +'<div class="field-group"><div class="field-label">Aves iniciais</div><input class="field-input" id="el-aves" type="number" value="'+(lote.aves_iniciais||'')+'"></div>'
+    +'<div class="field-group"><div class="field-label">Observacoes</div><textarea class="field-input" id="el-obs">'+(lote.obs||'')+'</textarea></div>'
+    +'<div style="background:var(--amber-pale);border-radius:8px;padding:8px 12px;font-size:11px;font-family:var(--mono);color:var(--amber);margin-bottom:12px">Nao altere o codigo do lote se ja houver registros vinculados a ele.</div>';
+  const row=document.createElement('div');row.style.cssText='display:flex;gap:8px;margin-top:4px';
+  const cancelBtn=document.createElement('button');cancelBtn.className='modal-btn modal-btn-cancel';cancelBtn.textContent='Cancelar';cancelBtn.onclick=()=>document.body.removeChild(overlay);
+  const saveBtn=document.createElement('button');saveBtn.className='modal-btn modal-btn-save';saveBtn.textContent='Salvar';
+  saveBtn.onclick=async()=>{
+    const payload={
+      raca:document.getElementById('el-raca').value.trim(),
+      nascimento:document.getElementById('el-nasc').value||null,
+      data_chegada:document.getElementById('el-cheg').value||null,
+      responsavel_atual:document.getElementById('el-resp').value.trim(),
+      aves_iniciais:parseInt(document.getElementById('el-aves').value)||null,
+      obs:document.getElementById('el-obs').value
+    };
+    if(!payload.raca){toast('Informe a raca',true);return;}
+    await supa.patch('lotes?id=eq.'+loteId,payload);
+    lotesC=lotesC.map(l=>l.id===loteId?{...l,...payload}:l);
+    document.body.removeChild(overlay);
+    toast('Lote atualizado!');
+    // Refresh detail view
+    const loteAtual=lotesC.find(l=>l.id===loteId);
+    if(loteAtual)renderDetail(loteAtual.galpao_id,loteId);
+  };
+  row.appendChild(cancelBtn);row.appendChild(saveBtn);box.appendChild(row);
+  overlay.appendChild(box);document.body.appendChild(overlay);
+}
+
 function abrirLote(gid){
   // Opens modal to create new lote — not for viewing
   document.getElementById('modal-lote-galpao').value=gid;
@@ -766,6 +810,7 @@ function renderDetail(gid, loteId){
   html+='<div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">';
   if(isAtivo)html+='<button class="g-btn" style="background:var(--red-pale);color:var(--red)" onclick="abrirEncerrar('+lote.id+')">Encerrar lote</button>';
   html+='<button class="g-btn g-btn-edit" id="btn-ficha-old">Ficha mensal</button>';
+  html+='<button class="g-btn" style="background:var(--amber-pale);color:var(--amber)" id="btn-editar-lote">Editar dados do lote</button>';
   html+='</div>';
 
   d.innerHTML=html;
@@ -773,6 +818,8 @@ function renderDetail(gid, loteId){
   if(btnAjustar)btnAjustar.onclick=()=>openModalAves(gid);
   const btnFicha=document.getElementById('btn-ficha-mensal');
   if(btnFicha)btnFicha.onclick=()=>verFichaMensal(gid,lote.id);
+  const btnEditarLote=document.getElementById('btn-editar-lote');
+  if(btnEditarLote)btnEditarLote.onclick=()=>abrirModalEditarLote(lote.id);
 }
 
 function voltarListaGalpoes(){
@@ -1437,7 +1484,7 @@ async function salvarRacao(){
     const custoPorMistura=valorManual||0;
     if(fabId)await supa.patch('fabricacao_racao?id=eq.'+fabId,{valor_mistura:custoPorMistura});
     if(res&&res[0])racaoCache[0]={...racaoCache[0],valor_mistura:custoPorMistura};
-    toast('Fabricacao registrada! Valor manual: R$ '+custoPorMistura.toFixed(2)+'/mistura');renderRacao();return;
+    toast('Fabricacao registrada! Valor manual: R$ '+custoPorMistura.toFixed(2)+'/mistura');refreshProducaoIfActive();renderRacao();return;
   }
   const formula=tipo==='Postura'?(Object.keys(formulaRacao).length?formulaRacao:FORMULA_POSTURA):FORMULA_CRESCIMENTO;
   let custoTotalFab=0;
@@ -1477,14 +1524,59 @@ async function salvarRacao(){
   const custoPorMistura=misturas>0?custoTotalFab/misturas:0;
   if(fabId)await supa.patch('fabricacao_racao?id=eq.'+fabId,{valor_mistura:parseFloat(custoPorMistura.toFixed(2))});
   if(res&&res[0])racaoCache[0]={...racaoCache[0],valor_mistura:parseFloat(custoPorMistura.toFixed(2))};
-  toast('Fabricacao registrada! Custo PEPS: R$ '+custoPorMistura.toFixed(2)+'/mistura');renderRacao();
+  toast('Fabricacao registrada! Custo PEPS: R$ '+custoPorMistura.toFixed(2)+'/mistura');refreshProducaoIfActive();renderRacao();
 }
 function renderRacaoHist(){
   const el=document.getElementById('rpanel-historico');if(!el)return;
   if(!racaoCache.length){el.innerHTML='<div class="history-empty">Nenhuma fabricacao registrada.</div>';return;}
   el.innerHTML='';
-  const sorted=[...racaoCache].sort((a,b)=>new Date(b.data_fabricacao)-new Date(a.data_fabricacao));
-  sorted.forEach(r=>{
+
+  // ── Filtros ────────────────────────────────────────────────────────────
+  const filtroTipo=window._racaoFiltroTipo||'todos';
+  const filtroDest=window._racaoFiltroDest||'todos';
+
+  const filterBar=document.createElement('div');filterBar.style.cssText='display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;align-items:center';
+
+  // Tipo filter
+  const tipoLabel=document.createElement('span');tipoLabel.style.cssText='font-size:11px;font-family:var(--mono);color:var(--muted)';tipoLabel.textContent='Tipo:';
+  filterBar.appendChild(tipoLabel);
+  ['todos','Postura','Crescimento'].forEach(t=>{
+    const btn=document.createElement('button');
+    const active=filtroTipo===t;
+    btn.style.cssText='padding:4px 10px;border-radius:20px;border:1.5px solid '+(active?'var(--green)':'var(--border)')+';background:'+(active?'var(--green-pale)':'var(--card)')+';color:'+(active?'var(--green)':'var(--muted)')+';font-size:11px;cursor:pointer;font-family:var(--font)';
+    btn.textContent=t==='todos'?'Todos':t;
+    btn.onclick=()=>{window._racaoFiltroTipo=t;renderRacaoHist();};
+    filterBar.appendChild(btn);
+  });
+
+  // Separator
+  const sep=document.createElement('span');sep.style.cssText='width:1px;height:16px;background:var(--border);margin:0 4px';filterBar.appendChild(sep);
+
+  // Destino filter
+  const destLabel=document.createElement('span');destLabel.style.cssText='font-size:11px;font-family:var(--mono);color:var(--muted)';destLabel.textContent='Destino:';
+  filterBar.appendChild(destLabel);
+  const destinos=[...new Set(racaoCache.map(r=>r.galpao_destino_id||'—').filter(Boolean))];
+  ['todos',...destinos].forEach(d=>{
+    const btn=document.createElement('button');
+    const active=filtroDest===d;
+    const label=d==='todos'?'Todos':(GALPOES.find(g=>g.id===d)?.nome||d);
+    btn.style.cssText='padding:4px 10px;border-radius:20px;border:1.5px solid '+(active?'var(--blue)':'var(--border)')+';background:'+(active?'var(--blue-pale)':'var(--card)')+';color:'+(active?'var(--blue)':'var(--muted)')+';font-size:11px;cursor:pointer;font-family:var(--font)';
+    btn.textContent=label;
+    btn.onclick=()=>{window._racaoFiltroDest=d;renderRacaoHist();};
+    filterBar.appendChild(btn);
+  });
+  el.appendChild(filterBar);
+
+  // ── Aplicar filtros e ordenar ──────────────────────────────────────────
+  let filtered=[...racaoCache].sort((a,b)=>new Date(b.data_fabricacao)-new Date(a.data_fabricacao));
+  if(filtroTipo!=='todos')filtered=filtered.filter(r=>r.tipo===filtroTipo);
+  if(filtroDest!=='todos')filtered=filtered.filter(r=>r.galpao_destino_id===filtroDest);
+
+  if(!filtered.length){
+    const empty=document.createElement('div');empty.className='history-empty';empty.textContent='Nenhuma fabricacao encontrada.';el.appendChild(empty);return;
+  }
+
+  filtered.forEach(r=>{
     const isCrescimento=r.tipo==='Crescimento';
     const corTag=isCrescimento
       ?'<span class="tag" style="background:var(--bg);color:var(--muted);border:1px solid var(--border)">Sem corante</span>'
@@ -1537,7 +1629,15 @@ async function deletarRacao(rid){
   await supa.del('fabricacao_racao?id=eq.'+rid);
   racaoCache=racaoCache.filter(x=>x.id!==rid);
   toast('Fabricacao excluida');
+  refreshProducaoIfActive();
   renderRacaoHist();
+}
+
+function refreshProducaoIfActive(){
+  const panel=document.getElementById('tab-producao');
+  if(panel&&panel.style.display!=='none'&&panel.innerHTML!==''){
+    renderProducao();
+  }
 }
 function renderRacaoFormula(){
   const el=document.getElementById('rpanel-formula');if(!el)return;
@@ -1810,7 +1910,7 @@ async function loadProdutos(){
 }
 
 function setTab(tab){
-  const tabs=['postura','usuarios','racao','produtos','financeiro','centrocusto','deptopessoal'];
+  const tabs=['postura','producao','racao','produtos','financeiro','centrocusto','deptopessoal'];
   document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',tabs[i]===tab));
   document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
   document.getElementById('tab-'+tab).classList.add('active');
@@ -1819,6 +1919,7 @@ function setTab(tab){
   if(tab==='racao')renderRacao();
   if(tab==='produtos')renderProdutos();
   if(tab==='financeiro')renderFinanceiro();
+  if(tab==='producao')renderProducao();
   if(tab==='centrocusto')renderCentroCusto();
   if(tab==='deptopessoal')renderDeptoPessoal();
 }
@@ -2230,6 +2331,8 @@ function renderProcedenciaSection(){
 }
 
 async function salvarVenda(){
+  if(window._salvandoVenda)return;window._salvandoVenda=true;
+  try{
   const clidSel=document.getElementById('v-cliente-id')?.value;
   const clObj=clientesC.find(x=>x.id===parseInt(clidSel));
   const cliente=clObj?clObj.nome:'';
@@ -2289,6 +2392,7 @@ async function salvarVenda(){
   window._vendaProc={};
   window._editVendaId=null;window._editVendaData=null;window._editVendaItens=null;
   window._finTab='vendas';renderFinanceiro();
+  }finally{window._salvandoVenda=false;}
 }
 
 function renderVendasLista(){
@@ -2552,7 +2656,9 @@ function calcEvTotal(){
 }
 
 async function salvarEdicaoVenda(){
-  const vid=window._editVendaId;if(!vid)return;
+  if(window._salvandoEdicaoVenda)return;window._salvandoEdicaoVenda=true;
+  try{
+  const vid=window._editVendaId;if(!vid){window._salvandoEdicaoVenda=false;return;}
   const itens=window._editVendaItensData||[];
   const clidSel=document.getElementById('ev-cliente')?.value;
   const clObj=clientesC.find(x=>x.id===parseInt(clidSel));
@@ -2597,6 +2703,7 @@ async function salvarEdicaoVenda(){
   closeModal('modal-edit-venda');
   toast('Venda atualizada!');
   setFinTab('vendas');
+  }finally{window._salvandoEdicaoVenda=false;}
 }
 
 async function registrarPagamento(vid,totalVenda,valorJaPago){
@@ -3300,6 +3407,7 @@ async function atualizarValorRacao(rid,val){
   await supa.patch('fabricacao_racao?id=eq.'+rid,{valor_mistura:v});
   racaoCache=racaoCache.map(r=>r.id===rid?{...r,valor_mistura:v}:r);
   toast('Valor atualizado');
+  refreshProducaoIfActive();
 }
 
 function abrirModalDespesa(gid,loteId,ano,mes){
@@ -3632,7 +3740,7 @@ function renderDeptoPessoal(){
   el.innerHTML='';
   // Subtabs
   const tabRow=document.createElement('div');tabRow.style.cssText='display:flex;gap:4px;margin-bottom:16px';
-  [['funcionarios','Funcionarios'],['salarios','Salarios']].forEach(([id,label])=>{
+  [['funcionarios','Funcionarios'],['salarios','Salarios'],['usuarios','Usuarios']].forEach(([id,label])=>{
     const btn=document.createElement('button');
     btn.style.cssText='flex:1;padding:8px;font-size:11px;border-radius:10px;border:none;cursor:pointer;font-family:var(--font);font-weight:500;background:'+(sub===id?'var(--card)':'var(--border)')+';color:'+(sub===id?'var(--green)':'var(--muted)')+(sub===id?';box-shadow:var(--shadow)':'');
     btn.textContent=label;btn.onclick=()=>{window._dpSub=id;renderDeptoPessoal();};
@@ -3642,6 +3750,7 @@ function renderDeptoPessoal(){
   const panel=document.createElement('div');el.appendChild(panel);
   if(sub==='funcionarios')renderDPFuncionarios(panel);
   if(sub==='salarios')renderDPSalarios(panel);
+  if(sub==='usuarios')renderUsuariosPanel(panel);
 }
 
 function renderDPFuncionarios(panel){
@@ -3838,6 +3947,47 @@ function editarSalario(s,panel){
   toast('Editando — ajuste e salve');
 }
 
+function renderUsuariosPanel(panel){
+  // Render usuarios content inside dep pessoal panel
+  panel.innerHTML='';
+  const wrap=document.createElement('div');wrap.id='dp-usuarios-wrap';panel.appendChild(wrap);
+  // Reuse existing usuarios tabs structure but inside the panel
+  const uSub=window._dpUsuSub||'ativos';
+  const tabRow=document.createElement('div');tabRow.style.cssText='display:flex;gap:4px;margin-bottom:16px';
+  [['ativos','Usuarios ativos'],['niveis','Definir niveis']].forEach(([id,label])=>{
+    const btn=document.createElement('button');
+    btn.style.cssText='flex:1;padding:8px;font-size:11px;border-radius:10px;border:none;cursor:pointer;font-family:var(--font);font-weight:500;background:'+(uSub===id?'var(--card)':'var(--border)')+';color:'+(uSub===id?'var(--green)':'var(--muted)')+(uSub===id?';box-shadow:var(--shadow)':'');
+    btn.textContent=label;btn.onclick=()=>{window._dpUsuSub=id;renderUsuariosPanel(panel);};
+    tabRow.appendChild(btn);
+  });
+  panel.appendChild(tabRow);
+  // Delegate to existing render functions
+  const subPanel=document.createElement('div');panel.appendChild(subPanel);
+  if(uSub==='ativos'){
+    // Render active users list
+    const ativos=usuariosC.filter(u=>u.ativo!==false);
+    if(!ativos.length){subPanel.innerHTML='<div class="history-empty">Nenhum usuario ativo.</div>';return;}
+    ativos.forEach(u=>{
+      const row=document.createElement('div');row.className='history-item';row.style.marginBottom='8px';
+      row.innerHTML='<div class="history-header"><div class="history-galpao">'+u.nome+'</div>'
+        +'<span class="tag" style="background:var(--green-pale);color:var(--green)">Nível '+u.nivel+'</span></div>';
+      subPanel.appendChild(row);
+    });
+  } else {
+    // Show niveis (ADM only)
+    if(!currentUser||(!currentUser.adm&&currentUser.nivel!==1)){
+      subPanel.innerHTML='<div class="history-empty">Acesso restrito ao ADM.</div>';return;
+    }
+    // Reuse the niveis tab content from existing renderUsuarios
+    const fakeEl=document.createElement('div');fakeEl.id='_fake_tab_usuarios';document.body.appendChild(fakeEl);
+    const orig=document.getElementById('tab-usuarios');
+    renderUsuarios();
+    const content=orig?orig.innerHTML:'';
+    document.body.removeChild(fakeEl);
+    subPanel.innerHTML=content||'<div class="history-empty">Conteudo de niveis.</div>';
+  }
+}
+
 function renderDPSalarios(panel){
   panel.innerHTML='';
   // Navigation by month
@@ -3973,6 +4123,564 @@ function renderDPSalarios(panel){
   panel.appendChild(formCard);
 }
 
+
+// =============================================
+// PRODUCAO — ENTREPOSTO GROTA
+// =============================================
+let entrepostoDiarioC=[];
+let entrepostoEmpenhoC=[];
+const ENTREPOSTO_START='2025-02-23';
+const ENTREPOSTO_GALPAO='pb'; // Pedra Bonita
+
+function renderProducao(){
+  const el=document.getElementById('tab-producao');if(!el)return;
+  el.innerHTML='';
+  const sub=window._prodSub||'entreposto';
+  // Only one subaba for now: Entreposto Grota
+  const tabRow=document.createElement('div');tabRow.style.cssText='display:flex;gap:4px;margin-bottom:16px';
+  const btn=document.createElement('button');
+  btn.style.cssText='flex:1;padding:8px;font-size:11px;border-radius:10px;border:none;cursor:pointer;font-family:var(--font);font-weight:500;background:var(--card);color:var(--green);box-shadow:var(--shadow)';
+  btn.textContent='Entreposto Grota';
+  tabRow.appendChild(btn);
+  el.appendChild(tabRow);
+  const panel=document.createElement('div');el.appendChild(panel);
+  renderEntrepostoGrota(panel);
+}
+
+function renderEntrepostoGrota(panel){
+  panel.innerHTML='';
+  const subSub=window._entSub||'diario';
+  const tabRow=document.createElement('div');tabRow.style.cssText='display:flex;gap:4px;margin-bottom:16px';
+  [['diario','Diario'],['semanal','Semanal'],['mensal','Mensal']].forEach(([id,label])=>{
+    const btn=document.createElement('button');
+    btn.style.cssText='flex:1;padding:8px;font-size:11px;border-radius:10px;border:none;cursor:pointer;font-family:var(--font);font-weight:500;background:'+(subSub===id?'var(--card)':'var(--border)')+';color:'+(subSub===id?'var(--green)':'var(--muted)')+(subSub===id?';box-shadow:var(--shadow)':'');
+    btn.textContent=label;btn.onclick=()=>{window._entSub=id;renderEntrepostoGrota(panel);};
+    tabRow.appendChild(btn);
+  });
+  panel.appendChild(tabRow);
+  const content=document.createElement('div');panel.appendChild(content);
+  if(subSub==='diario')renderEntDiario(content);
+  else if(subSub==='semanal')renderEntSemanal(content);
+  else renderEntMensal(content);
+}
+
+// ── DIARIO ───────────────────────────────────────────────────────────────────
+function renderEntDiario(el){
+  el.innerHTML='';
+  if(!window._entDiarioData)window._entDiarioData=new Date().toISOString().slice(0,10);
+  const data=window._entDiarioData;
+
+  // ── Mini calendário ─────────────────────────────────────────────────────
+  if(!window._entCalAno||!window._entCalMes){
+    const d0=new Date(data+'T12:00:00');
+    window._entCalAno=d0.getFullYear();window._entCalMes=d0.getMonth()+1;
+  }
+  const calAno=window._entCalAno,calMes=window._entCalMes;
+  const calWrap=document.createElement('div');calWrap.style.cssText='background:var(--card);border-radius:14px;padding:12px;margin-bottom:14px;box-shadow:var(--shadow)';
+
+  // Cal header
+  const calHdr=document.createElement('div');calHdr.style.cssText='display:flex;align-items:center;justify-content:space-between;margin-bottom:10px';
+  const calPrev=document.createElement('button');calPrev.className='ficha-nav-btn';calPrev.textContent='‹';calPrev.style.cssText='width:28px;height:28px;font-size:16px';
+  calPrev.onclick=()=>{let m=calMes-1,a=calAno;if(m<1){m=12;a--;}window._entCalAno=a;window._entCalMes=m;renderEntDiario(el);};
+  const calNext=document.createElement('button');calNext.className='ficha-nav-btn';calNext.textContent='›';calNext.style.cssText='width:28px;height:28px;font-size:16px';
+  calNext.onclick=()=>{let m=calMes+1,a=calAno;if(m>12){m=1;a++;}window._entCalAno=a;window._entCalMes=m;renderEntDiario(el);};
+  const calTitle=document.createElement('div');calTitle.style.cssText='font-weight:600;font-size:13px;font-family:var(--mono)';
+  calTitle.textContent=MESES_CC[calMes-1]+' '+calAno;
+  calHdr.appendChild(calPrev);calHdr.appendChild(calTitle);calHdr.appendChild(calNext);
+  calWrap.appendChild(calHdr);
+
+  // Day headers
+  const calGrid=document.createElement('div');calGrid.style.cssText='display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center';
+  ['D','S','T','Q','Q','S','S'].forEach(d=>{
+    const h=document.createElement('div');h.style.cssText='font-size:10px;font-family:var(--mono);color:var(--muted);padding:2px 0;';h.textContent=d;calGrid.appendChild(h);
+  });
+
+  // Days
+  const firstDay=new Date(calAno,calMes-1,1).getDay();
+  const daysInMonth=new Date(calAno,calMes,0).getDate();
+  const today=new Date().toISOString().slice(0,10);
+  const startIso=ENTREPOSTO_START;
+
+  // Empty cells
+  for(let i=0;i<firstDay;i++){const e=document.createElement('div');calGrid.appendChild(e);}
+
+  for(let d=1;d<=daysInMonth;d++){
+    const dateStr=calAno+'-'+String(calMes).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+    const isSelected=dateStr===data;
+    const isToday=dateStr===today;
+    const isPast=dateStr<=today&&dateStr>=startIso;
+    const isFuture=dateStr>today;
+    const isBeforeStart=dateStr<startIso;
+    const hasData=entrepostoDiarioC.some(r=>r.data===dateStr);
+    const hasEmpenho=entrepostoEmpenhoC.some(e=>e.data===dateStr);
+
+    const cell=document.createElement('div');
+    cell.style.cssText='padding:4px 2px;border-radius:6px;font-size:12px;font-family:var(--mono);text-align:center;position:relative;'
+      +(isSelected?'background:var(--green);color:#fff;font-weight:700;cursor:pointer;'
+        :isPast?'cursor:pointer;color:var(--text);'+(isToday?'border:1.5px solid var(--green);':'')
+        :'color:var(--border);cursor:default;');
+    cell.textContent=d;
+
+    // Dot for empenho
+    if(hasEmpenho&&!isSelected){
+      const dot=document.createElement('div');
+      dot.style.cssText='position:absolute;bottom:1px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--amber)';
+      cell.style.position='relative';cell.appendChild(dot);
+    }
+    if(!isFuture&&!isBeforeStart){
+      cell.onclick=()=>{
+        window._entDiarioData=dateStr;
+        window._entCalAno=parseInt(dateStr.slice(0,4));
+        window._entCalMes=parseInt(dateStr.slice(5,7));
+        renderEntDiario(el);
+      };
+    }
+    calGrid.appendChild(cell);
+  }
+  calWrap.appendChild(calGrid);
+  el.appendChild(calWrap);
+
+  // ── Nav arrows ──────────────────────────────────────────────────────────
+  const navDiv=document.createElement('div');navDiv.className='ficha-nav';navDiv.style.marginBottom='14px';
+  const prevBtn=document.createElement('button');prevBtn.className='ficha-nav-btn';prevBtn.textContent='←';
+  prevBtn.onclick=()=>{
+    const d=new Date(data+'T12:00:00');d.setDate(d.getDate()-1);
+    if(d<new Date(ENTREPOSTO_START+'T12:00:00'))return;
+    const ds=d.toISOString().slice(0,10);
+    window._entDiarioData=ds;window._entCalAno=d.getFullYear();window._entCalMes=d.getMonth()+1;
+    renderEntDiario(el);
+  };
+  const nextBtn=document.createElement('button');nextBtn.className='ficha-nav-btn';nextBtn.textContent='→';
+  nextBtn.onclick=()=>{
+    const d=new Date(data+'T12:00:00');d.setDate(d.getDate()+1);
+    if(d>new Date())return;
+    const ds=d.toISOString().slice(0,10);
+    window._entDiarioData=ds;window._entCalAno=d.getFullYear();window._entCalMes=d.getMonth()+1;
+    renderEntDiario(el);
+  };
+  const navLabel=document.createElement('div');navLabel.className='ficha-nav-title';
+  navLabel.textContent=fmtD(data);
+  navDiv.appendChild(prevBtn);navDiv.appendChild(navLabel);navDiv.appendChild(nextBtn);
+  el.appendChild(navDiv);
+
+  // Get or compute record for this date
+  const reg=entrepostoDiarioC.find(r=>r.data===data)||null;
+
+  // ── Compute values ─────────────────────────────────────────────────────────
+  // Previous day record
+  const prevDate=new Date(data+'T12:00:00');prevDate.setDate(prevDate.getDate()-1);
+  const prevDateStr=prevDate.toISOString().slice(0,10);
+
+  // Compute estoque racao usando consumo entre fabricacoes
+  // Logica: quando ha fabricacao = silo estava vazio. Consumo diario = 
+  // fabricacao_anterior / dias_entre_penultima_e_ultima fabricacao
+  function getFabricacoesPB(){
+    // All PB fabricacoes sorted by date asc
+    return racaoCache
+      .filter(r=>r.galpao_destino_id===ENTREPOSTO_GALPAO)
+      .sort((a,b)=>new Date(a.data_fabricacao)-new Date(b.data_fabricacao));
+  }
+
+  function getConsumoDiario(dateStr){
+    const fabs=getFabricacoesPB();
+    if(!fabs.length)return 0;
+    const d=new Date(dateStr+'T12:00:00');
+    // Find the last fabricacao <= dateStr
+    const ultima=fabs.filter(f=>f.data_fabricacao<=dateStr).pop();
+    if(!ultima)return 0;
+    // Find the fabricacao before ultima
+    const penultima=fabs.filter(f=>f.data_fabricacao<ultima.data_fabricacao).pop();
+    // Find the next fabricacao after dateStr
+    const proxima=fabs.find(f=>f.data_fabricacao>dateStr);
+    if(proxima){
+      // Between ultima and proxima: consumo = ultima.peso / dias entre elas
+      const dUltima=new Date(ultima.data_fabricacao+'T12:00:00');
+      const dProxima=new Date(proxima.data_fabricacao+'T12:00:00');
+      const dias=Math.round((dProxima-dUltima)/(1000*60*60*24));
+      return dias>0?parseFloat((parseFloat(ultima.peso_total_kg||0)/dias).toFixed(2)):0;
+    } else if(penultima){
+      // After ultima, no next: consumo = ultima.peso / dias entre penultima e ultima
+      const dPenultima=new Date(penultima.data_fabricacao+'T12:00:00');
+      const dUltima=new Date(ultima.data_fabricacao+'T12:00:00');
+      const dias=Math.round((dUltima-dPenultima)/(1000*60*60*24));
+      return dias>0?parseFloat((parseFloat(ultima.peso_total_kg||0)/dias).toFixed(2)):0;
+    } else {
+      // Only one fabricacao ever: use 30-day average as fallback
+      return calcConsumoMedio30(dateStr);
+    }
+  }
+
+  function computeEstoqueRacao(targetDate){
+    if(targetDate<ENTREPOSTO_START)return 0;
+    let estoque=0;
+    const end=new Date(targetDate+'T12:00:00');
+    let cur=new Date(ENTREPOSTO_START+'T12:00:00');
+    while(cur<=end){
+      const ds=cur.toISOString().slice(0,10);
+      const adicionada=calcRacaoAdicionada(ds);
+      const consumo=getConsumoDiario(ds);
+      // Se tem racao adicionada hoje: silo estava vazio, zera primeiro
+      if(adicionada>0)estoque=0;
+      estoque=Math.max(0,estoque+adicionada-consumo);
+      cur.setDate(cur.getDate()+1);
+    }
+    return estoque;
+  }
+
+  const estoqueRacaoPrev=prevDateStr>=ENTREPOSTO_START?computeEstoqueRacao(prevDateStr):0;
+  const racaoAdicionada=calcRacaoAdicionada(data);
+  const consumoDiario=getConsumoDiario(data);
+  const consumoMedio=consumoDiario; // alias para exibicao
+  const estoqueRacao=Math.max(0,(racaoAdicionada>0?0:estoqueRacaoPrev)+racaoAdicionada-consumoDiario);
+
+  // Ovos: from postura historico of PB lote ativo
+  const loteAtivoPB=lotesC.find(l=>l.galpao_id===ENTREPOSTO_GALPAO&&l.status==='ativo');
+  const qtdOvosPentes=calcOvosDia(data, loteAtivoPB);
+  const qtdOvosUnidade=qtdOvosPentes*30;
+
+  // Estoque ovos: acumular desde o início
+  function computeEstoqueOvos(targetDate){
+    if(targetDate<ENTREPOSTO_START)return 0;
+    let estoque=0;
+    const end=new Date(targetDate+'T12:00:00');
+    let cur=new Date(ENTREPOSTO_START+'T12:00:00');
+    while(cur<=end){
+      const ds=cur.toISOString().slice(0,10);
+      const pentes=calcOvosDia(ds,loteAtivoPB);
+      const emp=calcOvosEmpenhados(ds);
+      estoque=Math.max(0,estoque+pentes-emp);
+      cur.setDate(cur.getDate()+1);
+    }
+    return estoque;
+  }
+
+  const estoqueOvosAnterior=prevDateStr>=ENTREPOSTO_START?computeEstoqueOvos(prevDateStr):0;
+  const ovosEmpenhados=calcOvosEmpenhados(data);
+  const estoqueOvos=Math.max(0,estoqueOvosAnterior+qtdOvosPentes-ovosEmpenhados);
+
+  // ── Render header cards ────────────────────────────────────────────────────
+  const cards=[
+    {label:'Estoque de Racao',value:estoqueRacao.toLocaleString('pt-BR',{minimumFractionDigits:2})+' kg',
+     sub:(()=>{const diasRestantes=consumoDiario>0?Math.floor(estoqueRacao/consumoDiario):0;return 'Anterior: '+estoqueRacaoPrev.toFixed(2)+'kg + Adicionada: '+racaoAdicionada.toFixed(2)+'kg − Consumo/dia: '+consumoDiario.toFixed(2)+'kg'+(diasRestantes>0?' · ~'+diasRestantes+' dias restantes':'');})(),
+     color:'var(--amber)'},
+    {label:'Quantidade de Ovos hoje',value:qtdOvosPentes.toLocaleString('pt-BR')+' pentes / '+qtdOvosUnidade.toLocaleString('pt-BR')+' ovos',
+     sub:'Lote '+( loteAtivoPB?.codigo||'PB001'),color:'var(--green)'},
+    {label:'Estoque de Ovos',value:estoqueOvos.toLocaleString('pt-BR')+' pentes / '+(estoqueOvos*30).toLocaleString('pt-BR')+' ovos',
+     sub:'Anterior: '+estoqueOvosAnterior+' + Hoje: '+qtdOvosPentes+' − Empenhados: '+ovosEmpenhados,
+     color:'var(--blue)'},
+  ];
+  cards.forEach(card=>{
+    const div=document.createElement('div');div.className='form-card';div.style.marginBottom='10px';
+    div.innerHTML='<div style="display:flex;justify-content:space-between;align-items:flex-start">'
+      +'<div><div style="font-size:12px;font-family:var(--mono);color:var(--muted);margin-bottom:4px">'+card.label+'</div>'
+      +'<div style="font-size:18px;font-weight:700;font-family:var(--mono);color:'+card.color+'">'+card.value+'</div>'
+      +'<div style="font-size:10px;font-family:var(--mono);color:var(--muted);margin-top:4px">'+card.sub+'</div></div></div>';
+    el.appendChild(div);
+  });
+
+  // ── Empenhar button ────────────────────────────────────────────────────────
+  const empBtn=document.createElement('button');empBtn.className='submit-btn';empBtn.style.marginTop='8px';
+  empBtn.textContent='🥚 Empenhar ovos';
+  empBtn.onclick=()=>abrirModalEmpenho(data,estoqueOvos);
+  el.appendChild(empBtn);
+
+  // ── Empenhos do dia ────────────────────────────────────────────────────────
+  const empDia=entrepostoEmpenhoC.filter(e=>e.data===data);
+  if(empDia.length){
+    const title=document.createElement('div');title.className='form-card-title';title.style.marginTop='14px';
+    title.innerHTML='<span class="dot" style="background:var(--amber)"></span>Empenhos do dia';
+    el.appendChild(title);
+    empDia.forEach(emp=>{
+      const row=document.createElement('div');row.className='history-item';row.style.marginBottom='6px';
+      const nomeLimpo=(emp.produto_nome||'').replace(/\s*\(Caixa \(360 ovos\)\).*/g,' (Caixa)').replace(/\s*\(Pente \(30 ovos\)\).*/g,' (Pente)').trim();
+      row.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center">'
+        +'<div><div style="font-weight:500;font-size:13px">'+nomeLimpo+'</div>'
+        +'<div style="font-size:11px;font-family:var(--mono);color:var(--muted)">'+emp.quantidade+' '+emp.unidade+' ('+emp.ovos_equivalentes.toLocaleString('pt-BR')+' ovos)</div></div>'
+        +'<button id="del-emp-'+emp.id+'" style="font-size:10px;background:var(--red-pale);color:var(--red);border:none;border-radius:4px;padding:2px 6px;cursor:pointer">×</button>'
+        +'</div>';
+      el.appendChild(row);
+      // Wire delete button via DOM
+      const delBtn=row.querySelector('#del-emp-'+emp.id);
+      if(delBtn){const _empId=emp.id,_data=data;delBtn.onclick=()=>deletarEmpenho(_empId,_data);}
+    });
+  }
+
+  // Save computed values back to DB if not yet saved
+  if(!reg)salvarEntDiario(data,{estoque_racao_kg:estoqueRacao,racao_adicionada_kg:racaoAdicionada,consumo_medio_kg:consumoMedio,qtd_ovos_pentes:qtdOvosPentes,qtd_ovos_unidade:qtdOvosUnidade,estoque_ovos_pentes:estoqueOvos,estoque_ovos_unidade:estoqueOvos*30,ovos_empenhados_pentes:ovosEmpenhados});
+}
+
+function calcRacaoAdicionada(data){
+  // Fabricacoes para PB naquele dia
+  const fabs=racaoCache.filter(r=>r.galpao_destino_id===ENTREPOSTO_GALPAO&&r.data_fabricacao===data);
+  return fabs.reduce((a,r)=>a+(parseFloat(r.peso_total_kg)||0),0);
+}
+
+function calcConsumoMedio30(data){
+  // Last 30 days of fabricacao for PB, compute avg daily consumption
+  const end=new Date(data+'T12:00:00');
+  const start=new Date(end);start.setDate(start.getDate()-30);
+  const fabs=racaoCache.filter(r=>{
+    if(r.galpao_destino_id!==ENTREPOSTO_GALPAO)return false;
+    const d=new Date(r.data_fabricacao+'T12:00:00');
+    return d>=start&&d<=end;
+  });
+  if(!fabs.length)return 0;
+  const totalKg=fabs.reduce((a,r)=>a+(parseFloat(r.peso_total_kg)||0),0);
+  // Days with fabricacao
+  const dias=new Set(fabs.map(r=>r.data_fabricacao)).size;
+  if(!dias)return 0;
+  // Daily average based on total / 30 days period
+  return parseFloat((totalKg/30).toFixed(2));
+}
+
+function calcOvosDia(data, lote){
+  if(!lote)return 0;
+  // histCache stores dates as dd/mm/yyyy — convert data (yyyy-mm-dd) for comparison
+  const [y,m,d]=data.split('-');
+  const dataBR=d+'/'+m+'/'+y;
+  const reg=histCache.filter(r=>r.galpao_id===ENTREPOSTO_GALPAO&&(r.data_registro===dataBR||r.data_registro===data));
+  return reg.reduce((a,r)=>a+(parseInt(r.total_pentes)||0),0);
+}
+
+function calcOvosEmpenhados(data){
+  const emps=entrepostoEmpenhoC.filter(e=>e.data===data);
+  return emps.reduce((a,e)=>a+Math.round((parseInt(e.ovos_equivalentes)||0)/30),0);
+}
+
+async function salvarEntDiario(data,payload){
+  const existing=entrepostoDiarioC.find(r=>r.data===data);
+  if(existing){
+    await supa.patch('entreposto_diario?data=eq.'+data,payload);
+    entrepostoDiarioC=entrepostoDiarioC.map(r=>r.data===data?{...r,...payload}:r);
+  } else {
+    const res=await supa.post('entreposto_diario',{data,...payload});
+    if(res&&res[0])entrepostoDiarioC.push(res[0]);
+  }
+}
+
+// ── MODAL EMPENHO ─────────────────────────────────────────────────────────────
+function abrirModalEmpenho(data,estoqueOvos){
+  const overlay=document.createElement('div');overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:199;display:flex;align-items:flex-end;justify-content:center';
+  const box=document.createElement('div');box.style.cssText='background:var(--card);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:600px;max-height:90vh;overflow-y:auto;box-shadow:var(--shadow)';
+  const ovosDisp=Math.max(0,estoqueOvos);
+  box.innerHTML='<h3 style="margin-bottom:4px">Empenhar Ovos</h3>'
+    +'<div style="font-size:12px;font-family:var(--mono);color:var(--muted);margin-bottom:16px">Data: '+fmtD(data)+' · Disponível: '+ovosDisp+' pentes / '+(ovosDisp*30)+' ovos</div>';
+
+  // Produto select
+  const prodWrap=document.createElement('div');prodWrap.className='field-group';
+  prodWrap.innerHTML='<div class="field-label">Produto</div>';
+  const prodSel=document.createElement('select');prodSel.className='field-input';
+  const ovos=produtosC.filter(p=>p.natureza==='Produto final - Ovo'||p.codigo?.startsWith('4'));
+  prodSel.innerHTML='<option value="">Selecione...</option>'+ovos.map(p=>{
+    const nm=(p.descricao||'').replace(/\s*\(.*\).*/g,'').trim();
+    return '<option value="'+p.id+'|'+nm+'">'+p.codigo+' — '+nm+'</option>';
+  }).join('');
+  prodWrap.appendChild(prodSel);box.appendChild(prodWrap);
+
+  // Unidade
+  const unidWrap=document.createElement('div');unidWrap.className='field-group';
+  unidWrap.innerHTML='<div class="field-label">Unidade</div>';
+  const unidSel=document.createElement('select');unidSel.className='field-input';
+  unidSel.innerHTML='<option value="pente|30">Pente (30 ovos)</option><option value="caixa|360">Caixa (360 ovos)</option>';
+  unidWrap.appendChild(unidSel);box.appendChild(unidWrap);
+
+  // Quantidade
+  const qtdWrap=document.createElement('div');qtdWrap.className='field-group';
+  qtdWrap.innerHTML='<div class="field-label">Quantidade</div>';
+  const qtdInp=document.createElement('input');qtdInp.className='field-input';qtdInp.type='number';qtdInp.min='0';qtdInp.step='1';qtdInp.placeholder='0';
+  // Show ovos equivalentes
+  const ovosEqDiv=document.createElement('div');ovosEqDiv.style.cssText='font-size:11px;font-family:var(--mono);color:var(--muted);margin-top:4px';
+  const updateOvosEq=()=>{
+    const q=parseFloat(qtdInp.value||0);
+    const fator=parseInt(unidSel.value.split('|')[1]||30);
+    const eq=q*fator;
+    const emPentes=Math.round(eq/30);
+    ovosEqDiv.textContent=eq>0?eq.toLocaleString('pt-BR')+' ovos equivalentes ('+emPentes+' pentes)':'';
+  };
+  qtdInp.oninput=updateOvosEq;unidSel.onchange=updateOvosEq;
+  qtdWrap.appendChild(qtdInp);qtdWrap.appendChild(ovosEqDiv);box.appendChild(qtdWrap);
+
+  // Obs
+  const obsWrap=document.createElement('div');obsWrap.className='field-group';
+  obsWrap.innerHTML='<div class="field-label">Observacoes</div>';
+  const obsInp=document.createElement('input');obsInp.className='field-input';obsInp.placeholder='Opcional';
+  obsWrap.appendChild(obsInp);box.appendChild(obsWrap);
+
+  // Buttons
+  const row=document.createElement('div');row.style.cssText='display:flex;gap:8px;margin-top:12px';
+  const cancelBtn=document.createElement('button');cancelBtn.className='modal-btn modal-btn-cancel';cancelBtn.textContent='Cancelar';
+  cancelBtn.onclick=()=>document.body.removeChild(overlay);
+  const saveBtn=document.createElement('button');saveBtn.className='modal-btn modal-btn-save';saveBtn.textContent='Registrar empenho';
+  saveBtn.onclick=async()=>{
+    const prodVal=prodSel.value;if(!prodVal){toast('Selecione o produto',true);return;}
+    const [prodId,prodNome]=prodVal.split('|');
+    const q=parseFloat(qtdInp.value||0);if(!q){toast('Informe a quantidade',true);return;}
+    const [unidNome,fatorStr]=unidSel.value.split('|');
+    const fator=parseInt(fatorStr);
+    const eq=Math.round(q*fator);
+    const pentes=Math.round(eq/30);
+    if(pentes>ovosDisp){toast('Quantidade supera estoque disponivel ('+ovosDisp+' pentes)',true);return;}
+    const res=await supa.post('entreposto_empenho',{
+      data,produto_id:parseInt(prodId),produto_nome:prodNome,
+      quantidade:q,unidade:unidNome,ovos_equivalentes:eq,obs:obsInp.value
+    });
+    if(res&&res[0])entrepostoEmpenhoC.push(res[0]);
+    document.body.removeChild(overlay);
+    toast('Empenho registrado!');
+    // Refresh diario
+    const panel=document.getElementById('tab-producao')?.querySelector('div:last-child');
+    if(panel){const c2=panel.querySelector('div:last-child');if(c2)renderEntDiario(c2);}
+    renderProducao();
+  };
+  row.appendChild(cancelBtn);row.appendChild(saveBtn);box.appendChild(row);
+  overlay.appendChild(box);document.body.appendChild(overlay);
+}
+
+async function deletarEmpenho(id,data){
+  if(!confirm('Remover empenho?'))return;
+  await supa.del('entreposto_empenho?id=eq.'+id);
+  entrepostoEmpenhoC=entrepostoEmpenhoC.filter(e=>e.id!==id);
+  toast('Empenho removido');renderProducao();
+}
+
+// ── SEMANAL ───────────────────────────────────────────────────────────────────
+function renderEntSemanal(el){
+  el.innerHTML='';
+  if(!window._entSemana)window._entSemana=getSemanaAtual();
+  const {start,end}=window._entSemana;
+
+  const navDiv=document.createElement('div');navDiv.className='ficha-nav';navDiv.style.marginBottom='14px';
+  const prevBtn=document.createElement('button');prevBtn.className='ficha-nav-btn';prevBtn.textContent='←';
+  prevBtn.onclick=()=>{
+    const d=new Date(start+'T12:00:00');d.setDate(d.getDate()-7);
+    window._entSemana=getSemanaFromDate(d.toISOString().slice(0,10));renderEntSemanal(el);
+  };
+  const nextBtn=document.createElement('button');nextBtn.className='ficha-nav-btn';nextBtn.textContent='→';
+  nextBtn.onclick=()=>{
+    const d=new Date(end+'T12:00:00');d.setDate(d.getDate()+1);
+    window._entSemana=getSemanaFromDate(d.toISOString().slice(0,10));renderEntSemanal(el);
+  };
+  const navLabel=document.createElement('div');navLabel.className='ficha-nav-title';
+  navLabel.textContent=fmtD(start)+' → '+fmtD(end);
+  navDiv.appendChild(prevBtn);navDiv.appendChild(navLabel);navDiv.appendChild(nextBtn);
+  el.appendChild(navDiv);
+
+  // Aggregate days in range
+  const dias=getDatasRange(start,end);
+  let totalOvosPentes=0,totalEmpenhados=0,totalRacaoAdicionada=0;
+  const table=document.createElement('div');
+  dias.forEach(d=>{
+    const reg=entrepostoDiarioC.find(r=>r.data===d);
+    const pentes=reg?parseInt(reg.qtd_ovos_pentes||0):calcOvosDia(d,lotesC.find(l=>l.galpao_id===ENTREPOSTO_GALPAO&&l.status==='ativo'));
+    const emp=calcOvosEmpenhados(d);
+    const racao=calcRacaoAdicionada(d);
+    totalOvosPentes+=pentes;totalEmpenhados+=emp;totalRacaoAdicionada+=racao;
+    const row=document.createElement('div');row.className='history-item';row.style.cssText='margin-bottom:6px;cursor:pointer';
+    row.innerHTML='<div style="display:flex;justify-content:space-between;font-size:13px">'
+      +'<span style="font-family:var(--mono)">'+fmtD(d)+'</span>'
+      +'<span>'+pentes+' pentes</span>'
+      +'<span style="color:var(--amber)">-'+emp+' emp.</span>'
+      +'<span style="color:var(--green)">'+(racao>0?racao.toFixed(0)+'kg':'—')+'</span>'
+      +'</div>';
+    row.onclick=()=>{window._entSub='diario';window._entDiarioData=d;renderEntrepostoGrota(el.closest('div'));};
+    table.appendChild(row);
+  });
+  el.appendChild(table);
+
+  // Totals
+  const tot=document.createElement('div');tot.className='form-card';tot.style.marginTop='10px';
+  tot.innerHTML='<div style="font-weight:600;margin-bottom:8px">Total da semana</div>'
+    +'<div style="display:flex;justify-content:space-between;font-size:13px;font-family:var(--mono);margin-bottom:4px"><span>Ovos produzidos</span><span style="color:var(--green)">'+totalOvosPentes+' pentes / '+(totalOvosPentes*30)+' ovos</span></div>'
+    +'<div style="display:flex;justify-content:space-between;font-size:13px;font-family:var(--mono);margin-bottom:4px"><span>Empenhados</span><span style="color:var(--amber)">'+totalEmpenhados+' pentes</span></div>'
+    +'<div style="display:flex;justify-content:space-between;font-size:13px;font-family:var(--mono)"><span>Racao adicionada</span><span style="color:var(--blue)">'+totalRacaoAdicionada.toFixed(2)+' kg</span></div>';
+  el.appendChild(tot);
+}
+
+// ── MENSAL ────────────────────────────────────────────────────────────────────
+function renderEntMensal(el){
+  el.innerHTML='';
+  const now=new Date();
+  const ano=window._entMesAno||now.getFullYear();
+  const mes=window._entMesMes||(now.getMonth()+1);
+
+  const navDiv=document.createElement('div');navDiv.className='ficha-nav';navDiv.style.marginBottom='14px';
+  const prevBtn=document.createElement('button');prevBtn.className='ficha-nav-btn';prevBtn.textContent='←';
+  prevBtn.onclick=()=>{let m=mes-1,a=ano;if(m<1){m=12;a--;}window._entMesAno=a;window._entMesMes=m;renderEntMensal(el);};
+  const nextBtn=document.createElement('button');nextBtn.className='ficha-nav-btn';nextBtn.textContent='→';
+  nextBtn.onclick=()=>{let m=mes+1,a=ano;if(m>12){m=1;a++;}window._entMesAno=a;window._entMesMes=m;renderEntMensal(el);};
+  const navLabel=document.createElement('div');navLabel.className='ficha-nav-title';
+  navLabel.textContent=MESES_CC[mes-1]+' '+ano;
+  navDiv.appendChild(prevBtn);navDiv.appendChild(navLabel);navDiv.appendChild(nextBtn);
+  el.appendChild(navDiv);
+
+  const startDate=ano+'-'+String(mes).padStart(2,'0')+'-01';
+  const endDate=new Date(ano,mes,0).toISOString().slice(0,10);
+  const dias=getDatasRange(startDate,endDate);
+  const loteAtivoPB=lotesC.find(l=>l.galpao_id===ENTREPOSTO_GALPAO&&l.status==='ativo');
+  let totalOvosPentes=0,totalEmpenhados=0,totalRacaoAdicionada=0;
+
+  // Group by week
+  const semanas=[];let semAtual=[];
+  dias.forEach((d,i)=>{
+    semAtual.push(d);
+    const dow=new Date(d+'T12:00:00').getDay();
+    if(dow===6||i===dias.length-1){semanas.push([...semAtual]);semAtual=[];}
+  });
+
+  semanas.forEach((sem,si)=>{
+    let semPentes=0,semEmp=0,semRacao=0;
+    sem.forEach(d=>{
+      const reg=entrepostoDiarioC.find(r=>r.data===d);
+      const pentes=reg?parseInt(reg.qtd_ovos_pentes||0):calcOvosDia(d,loteAtivoPB);
+      const emp=calcOvosEmpenhados(d);
+      const racao=calcRacaoAdicionada(d);
+      semPentes+=pentes;semEmp+=emp;semRacao+=racao;
+      totalOvosPentes+=pentes;totalEmpenhados+=emp;totalRacaoAdicionada+=racao;
+    });
+    const semCard=document.createElement('div');semCard.className='history-item';semCard.style.cssText='margin-bottom:8px;cursor:pointer';
+    semCard.innerHTML='<div style="font-weight:600;font-size:12px;font-family:var(--mono);margin-bottom:4px">Semana '+(si+1)+': '+fmtD(sem[0])+'→'+fmtD(sem[sem.length-1])+'</div>'
+      +'<div style="display:flex;gap:16px;font-size:12px;font-family:var(--mono)">'
+      +'<span style="color:var(--green)">'+semPentes+' pentes</span>'
+      +'<span style="color:var(--amber)">-'+semEmp+' emp.</span>'
+      +'<span style="color:var(--blue)">'+semRacao.toFixed(0)+'kg racao</span>'
+      +'</div>';
+    semCard.onclick=()=>{window._entSub='semanal';window._entSemana=getSemanaFromDate(sem[0]);renderEntrepostoGrota(el.closest('div'));};
+    el.appendChild(semCard);
+  });
+
+  // Monthly totals
+  const tot=document.createElement('div');tot.className='form-card';tot.style.cssText='margin-top:10px;background:var(--green-pale)';
+  tot.innerHTML='<div style="font-weight:600;margin-bottom:8px">Total do mes — '+MESES_CC[mes-1]+' '+ano+'</div>'
+    +'<div style="display:flex;justify-content:space-between;font-size:13px;font-family:var(--mono);margin-bottom:4px"><span>Ovos produzidos</span><span style="color:var(--green)">'+totalOvosPentes+' pentes / '+(totalOvosPentes*30).toLocaleString('pt-BR')+' ovos</span></div>'
+    +'<div style="display:flex;justify-content:space-between;font-size:13px;font-family:var(--mono);margin-bottom:4px"><span>Empenhados</span><span style="color:var(--amber)">'+totalEmpenhados+' pentes / '+(totalEmpenhados*30).toLocaleString('pt-BR')+' ovos</span></div>'
+    +'<div style="display:flex;justify-content:space-between;font-size:13px;font-family:var(--mono)"><span>Racao adicionada</span><span style="color:var(--blue)">'+totalRacaoAdicionada.toFixed(2)+' kg</span></div>';
+  el.appendChild(tot);
+}
+
+// ── HELPERS ───────────────────────────────────────────────────────────────────
+function getSemanaAtual(){
+  return getSemanaFromDate(new Date().toISOString().slice(0,10));
+}
+function getSemanaFromDate(dateStr){
+  const d=new Date(dateStr+'T12:00:00');
+  const dow=d.getDay(); // 0=Sun
+  const sun=new Date(d);sun.setDate(d.getDate()-dow);
+  const sat=new Date(sun);sat.setDate(sun.getDate()+6);
+  return {start:sun.toISOString().slice(0,10),end:sat.toISOString().slice(0,10)};
+}
+function getDatasRange(start,end){
+  const dates=[];
+  const s=new Date(start+'T12:00:00');
+  const e=new Date(end+'T12:00:00');
+  const entStart=new Date(ENTREPOSTO_START+'T12:00:00');
+  let cur=new Date(Math.max(s,entStart));
+  while(cur<=e&&cur<=new Date()){
+    dates.push(cur.toISOString().slice(0,10));
+    cur.setDate(cur.getDate()+1);
+  }
+  return dates;
+}
+
 // =============================================
 // SESSION & LOGIN
 // =============================================
@@ -4062,7 +4770,7 @@ async function carregarLogin(){
 
 function buildTabsForUser(){
   // Rebuild main tab bar based on permissions
-  const allTabs=[['postura','Postura'],['usuarios','Usuarios'],['racao','Racao'],['produtos','Produtos'],['financeiro','Financeiro'],['centrocusto','Centro de custo'],['deptopessoal','Dep. Pessoal']];
+  const allTabs=[['postura','Postura'],['producao','Producao'],['racao','Racao'],['produtos','Produtos'],['financeiro','Financeiro'],['centrocusto','Centro de custo'],['deptopessoal','Dep. Pessoal']];
   const tabBar=document.querySelector('.tab-bar');if(!tabBar)return;
   tabBar.innerHTML='';
   allTabs.forEach(([id,label],i)=>{
