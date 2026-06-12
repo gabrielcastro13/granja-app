@@ -1259,6 +1259,7 @@ function buildHistMensal(gid,recs){
   if(!months.length)return'<div class="history-empty">Sem registros.</div>';
   const activeMonth=window['_hm_'+gid]||months[0];
   const MESES_PT=['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  const MESES_FULL=['Janeiro','Fevereiro','Marco','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   let html='<div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:12px">';
   months.forEach(m=>{
     const[y,mo]=m.split('-');const lbl=MESES_PT[parseInt(mo)-1]+'/'+y.slice(2);
@@ -1268,6 +1269,7 @@ function buildHistMensal(gid,recs){
   html+='</div>';
 
   const [year,mon]=activeMonth.split('-');
+  const mesNome=MESES_FULL[parseInt(mon)-1];
   const daysInMonth=new Date(parseInt(year),parseInt(mon),0).getDate();
   const recsMonth=byMonth[activeMonth]||[];
   const byDay={};
@@ -1279,6 +1281,36 @@ function buildHistMensal(gid,recs){
     byDay[d].mortes+=(r.mortes||0);
     byDay[d].aves=r.aves_restantes||r.aves_no_dia||0;
   });
+
+  // Compute qtd inicial (last day of previous month) and qtd final (last day with data)
+  const prevMonthKey=(()=>{const d=new Date(parseInt(year),parseInt(mon)-2,1);return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');})();
+  const prevRecs=byMonth[prevMonthKey]||[];
+  let qtdInicial=0;
+  if(prevRecs.length){
+    const lastPrev=prevRecs.sort((a,b)=>parseInt(b.data_registro)-parseInt(a.data_registro))[0];
+    qtdInicial=lastPrev.aves_restantes||lastPrev.aves_no_dia||0;
+  }
+  const diasComDadosArr=Object.keys(byDay).map(Number).sort((a,b)=>b-a);
+  const lastDayWithData=diasComDadosArr[0]||0;
+  const qtdFinal=lastDayWithData>0?(byDay[lastDayWithData].aves||0):0;
+
+  // ── Cabeçalho para impressão ──────────────────────────────────────────────
+  html+='<div id="print-header-'+gid+'" style="border:1.5px solid var(--border);border-radius:10px;padding:12px 16px;margin-bottom:12px;font-family:var(--mono);font-size:12px">'
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px 24px">'
+    +'<div><span style="color:var(--muted)">Galpao:</span> <strong>'+(g?g.nome:gid)+'</strong></div>'
+    +'<div><span style="color:var(--muted)">Raca:</span> <strong>'+(lote?lote.raca||'—':'—')+'</strong></div>'
+    +'<div><span style="color:var(--muted)">Lote:</span> <strong>'+(lote?lote.codigo||'—':'—')+'</strong></div>'
+    +'<div><span style="color:var(--muted)">Qtd inicial:</span> <strong>'+(qtdInicial>0?qtdInicial.toLocaleString('pt-BR'):'—')+'</strong></div>'
+    +'<div><span style="color:var(--muted)">Mes:</span> <strong>'+mesNome+'</strong></div>'
+    +'<div><span style="color:var(--muted)">Qtd final:</span> <strong>'+(qtdFinal>0?qtdFinal.toLocaleString('pt-BR'):'—')+'</strong></div>'
+    +'<div><span style="color:var(--muted)">Ano:</span> <strong>'+year+'</strong></div>'
+    +'</div>'
+    +'</div>';
+
+  // Print button
+  html+='<div style="display:flex;justify-content:flex-end;margin-bottom:8px">'
+    +'<button onclick="imprimirHistMes(\''+gid+'\',\''+activeMonth+'\')" style="font-size:12px;padding:6px 14px;border-radius:8px;border:1.5px solid var(--green);background:var(--green-pale);color:var(--green);cursor:pointer;font-family:var(--font)">🖨 Imprimir / Exportar</button>'
+    +'</div>';
 
   const aves=avesReais[gid]||1;
   let totPentes=0,totOvos=0,totMortes=0,totAves=0,diasComDados=0;
@@ -1319,6 +1351,55 @@ function buildHistMensal(gid,recs){
 }
 
 function setHistMes(gid,mes){window['_hm_'+gid]=mes;renderHist();}
+
+function imprimirHistMes(gid,activeMonth){
+  const g=GALPOES.find(x=>x.id===gid);
+  const lote=lotesC.find(l=>l.galpao_id===gid&&l.status==='ativo');
+  const MESES_FULL=['Janeiro','Fevereiro','Marco','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const [year,mon]=activeMonth.split('-');
+  const mesNome=MESES_FULL[parseInt(mon)-1];
+
+  // Get header values from DOM
+  const hdr=document.getElementById('print-header-'+gid);
+  const hdrHTML=hdr?hdr.outerHTML:'';
+
+  // Get table
+  const tableEl=document.querySelector('.ficha-table-wrap');
+  const tableHTML=tableEl?tableEl.outerHTML:'';
+
+  // Get summary cards
+  const resumoEl=document.querySelector('.ficha-resumo');
+  const resumoHTML=resumoEl?resumoEl.outerHTML:'';
+
+  const win=window.open('','_blank');
+  win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8">
+  <title>Postura — ${g?g.nome:gid} — ${mesNome} ${year}</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:'Courier New',monospace;font-size:12px;padding:24px;color:#222}
+    h1{font-size:16px;font-weight:700;margin-bottom:16px;color:#2D6A4F}
+    .header-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px 40px;border:1.5px solid #ccc;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:12px}
+    .header-grid span{color:#888}
+    table{width:100%;border-collapse:collapse;margin-bottom:16px}
+    th{background:#2D6A4F;color:#fff;padding:6px 8px;text-align:center;font-size:11px}
+    td{padding:5px 8px;text-align:center;border-bottom:1px solid #eee;font-size:12px}
+    tr.futuro td{color:#ccc}
+    tfoot tr td{background:#f5f5f5;font-weight:700;border-top:2px solid #ccc}
+    .resumo{display:flex;gap:16px}
+    .resumo-item{border:1px solid #ccc;border-radius:6px;padding:8px 12px;flex:1;text-align:center}
+    .resumo-label{font-size:10px;color:#888;margin-bottom:2px}
+    .resumo-value{font-size:16px;font-weight:700;color:#2D6A4F}
+    @media print{body{padding:12px}}
+  </style></head><body>
+  <h1>Granja Santa Gema — Relatorio de Postura</h1>
+  ${hdrHTML}
+  ${tableHTML}
+  ${resumoHTML}
+  <div style="margin-top:24px;font-size:10px;color:#aaa;text-align:right">Gerado em ${new Date().toLocaleDateString('pt-BR')}</div>
+  <script>window.onload=()=>{window.print();}<\/script>
+  </body></html>`);
+  win.document.close();
+}
 function parseDateBR(d){if(!d)return new Date(0);const p=d.split('/');if(p.length===3)return new Date(parseInt(p[2]),parseInt(p[1])-1,parseInt(p[0]));const iso=d.split('-');if(iso.length===3)return new Date(parseInt(iso[0]),parseInt(iso[1])-1,parseInt(iso[2]));return new Date(d);}
 // =============================================
 // USUARIOS
@@ -1602,26 +1683,97 @@ function renderRacaoHist(){
 
 function editarRacao(rid){
   const r=racaoCache.find(x=>x.id===rid);if(!r)return;
-  // Switch to registrar tab and pre-fill fields
-  setRacaoTab('registrar');
-  setTimeout(()=>{
-    const tipo=document.getElementById('r-tipo');
-    const data=document.getElementById('r-data');
-    const misturas=document.getElementById('r-misturas');
-    const galpao=document.getElementById('r-galpao');
-    const corante=document.getElementById('r-corante');
-    if(tipo)tipo.value=r.tipo||'Postura';
-    if(data)data.value=r.data_fabricacao||'';
-    if(misturas){misturas.value=r.num_misturas||1;calcPesoTotal();}
-    if(galpao)galpao.value=r.galpao_destino_id||'';
-    if(corante)corante.checked=r.com_corante!==false;
-    atualizaPreviewEstoque();
-    // Store edit id so salvarRacao knows to PATCH instead of POST
-    window._editRacaoId=rid;
-    const btn=document.querySelector('#rpanel-registrar .submit-btn');
-    if(btn){btn.textContent='Atualizar fabricacao';btn.style.background='var(--amber)';}
-    toast('Editando fabricacao — ajuste e salve');
-  },100);
+  const overlay=document.createElement('div');overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:199;display:flex;align-items:flex-end;justify-content:center';
+  const box=document.createElement('div');box.style.cssText='background:var(--card);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:600px;max-height:90vh;overflow-y:auto;box-shadow:var(--shadow)';
+  box.innerHTML='<h3 style="margin-bottom:16px">Editar Fabricacao</h3>';
+
+  // Tipo
+  const tipoWrap=document.createElement('div');tipoWrap.className='field-group';
+  tipoWrap.innerHTML='<div class="field-label">Tipo de racao</div>';
+  const tipoSel=document.createElement('select');tipoSel.className='field-input';tipoSel.id='er-tipo';
+  tipoSel.innerHTML='<option value="Postura"'+(r.tipo==='Postura'?' selected':'')+'>Postura</option>'
+    +'<option value="Crescimento"'+(r.tipo==='Crescimento'?' selected':'')+'>Crescimento</option>';
+  tipoWrap.appendChild(tipoSel);box.appendChild(tipoWrap);
+
+  // Data + Misturas
+  const rowDiv=document.createElement('div');rowDiv.className='field-row';
+  rowDiv.innerHTML='<div class="field-group"><div class="field-label">Data</div><input class="field-input" id="er-data" type="date" value="'+(r.data_fabricacao||'')+'"></div>'
+    +'<div class="field-group"><div class="field-label">Num. misturas</div><input class="field-input" id="er-misturas" type="number" min="1" value="'+(r.num_misturas||1)+'" oninput="calcErPeso()"></div>';
+  box.appendChild(rowDiv);
+
+  // Peso display
+  const pesoDiv=document.createElement('div');pesoDiv.className='field-group';
+  pesoDiv.innerHTML='<div class="field-label">Peso total</div>'
+    +'<div style="font-size:18px;font-weight:600;font-family:var(--mono);color:var(--green);padding:4px 0" id="er-peso-display">'+parseFloat(r.peso_total_kg||0).toLocaleString('pt-BR',{minimumFractionDigits:2})+' kg</div>';
+  box.appendChild(pesoDiv);
+  tipoSel.onchange=()=>calcErPeso();
+
+  // Galpao destino
+  const gWrap=document.createElement('div');gWrap.className='field-group';
+  gWrap.innerHTML='<div class="field-label">Galpao de destino</div>';
+  const gSel=document.createElement('select');gSel.className='field-input';gSel.id='er-galpao';
+  gSel.innerHTML='<option value="">Selecione...</option>'+GALPOES.map(g=>'<option value="'+g.id+'"'+(r.galpao_destino_id===g.id?' selected':'')+'>'+g.nome+'</option>').join('');
+  gWrap.appendChild(gSel);box.appendChild(gWrap);
+
+  // Corante
+  const corWrap=document.createElement('div');corWrap.className='field-group';corWrap.id='er-corante-wrap';
+  corWrap.style.display=r.tipo==='Crescimento'?'none':'flex';
+  corWrap.style.cssText+='align-items:center;justify-content:space-between;padding:8px 0';
+  corWrap.innerHTML='<span style="font-size:13px">Com corante</span>'
+    +'<label class="toggle-wrap"><input type="checkbox" id="er-corante"'+(r.com_corante!==false?' checked':'')+'><span class="toggle-track"></span></label>';
+  box.appendChild(corWrap);
+  tipoSel.addEventListener('change',()=>{corWrap.style.display=tipoSel.value==='Crescimento'?'none':'flex';calcErPeso();});
+
+  // Valor manual
+  const valWrap=document.createElement('div');valWrap.className='field-group';
+  valWrap.innerHTML='<div class="field-label">Valor por mistura (R$)</div>'
+    +'<input class="field-input" id="er-valor" type="number" step="0.01" min="0" placeholder="0,00" value="'+(r.valor_mistura?parseFloat(r.valor_mistura).toFixed(2):'')+'"><div style="font-size:11px;font-family:var(--mono);color:var(--muted);margin-top:2px">Deixe em branco para manter o valor atual</div>';
+  box.appendChild(valWrap);
+
+  // Obs
+  const obsWrap=document.createElement('div');obsWrap.className='field-group';
+  obsWrap.innerHTML='<div class="field-label">Observacoes</div><input class="field-input" id="er-obs" value="'+(r.obs||'')+'"></div>';
+  box.appendChild(obsWrap);
+
+  // Buttons
+  const row2=document.createElement('div');row2.style.cssText='display:flex;gap:8px;margin-top:14px';
+  const cancelBtn=document.createElement('button');cancelBtn.className='modal-btn modal-btn-cancel';cancelBtn.textContent='Cancelar';cancelBtn.onclick=()=>document.body.removeChild(overlay);
+  const saveBtn=document.createElement('button');saveBtn.className='modal-btn modal-btn-save';saveBtn.textContent='Salvar alteracoes';
+  saveBtn.onclick=async()=>{
+    const tipo=document.getElementById('er-tipo')?.value;
+    const data=document.getElementById('er-data')?.value;
+    const misturas=parseInt(document.getElementById('er-misturas')?.value||1);
+    const gidDest=document.getElementById('er-galpao')?.value;
+    const gNomeDest=gidDest?(GALPOES.find(g=>g.id===gidDest)||{}).nome||'':'';
+    const comCorante=document.getElementById('er-corante')?.checked!==false;
+    const valorRaw=document.getElementById('er-valor')?.value;
+    const valor=valorRaw?parseFloat(valorRaw):r.valor_mistura;
+    const obs=document.getElementById('er-obs')?.value||'';
+    const pesoUnit=tipo==='Crescimento'?1004.8:1015.84;
+    const peso=misturas*pesoUnit;
+    if(!data){toast('Informe a data',true);return;}
+    const payload={tipo,data_fabricacao:data,num_misturas:misturas,peso_total_kg:peso,
+      galpao_destino_id:gidDest||null,galpao_destino_nome:gNomeDest||null,
+      com_corante:tipo==='Crescimento'?false:comCorante,valor_mistura:valor,obs:obs||null};
+    await supa.patch('fabricacao_racao?id=eq.'+rid,payload);
+    racaoCache=racaoCache.map(x=>x.id===rid?{...x,...payload}:x);
+    document.body.removeChild(overlay);
+    toast('Fabricacao atualizada!');
+    refreshProducaoIfActive();
+    renderRacaoHist();
+  };
+  row2.appendChild(cancelBtn);row2.appendChild(saveBtn);box.appendChild(row2);
+  overlay.appendChild(box);document.body.appendChild(overlay);
+}
+
+function calcErPeso(){
+  const tipo=document.getElementById('er-tipo')?.value||'Postura';
+  const m=parseInt(document.getElementById('er-misturas')?.value||1);
+  const pesoUnit=tipo==='Crescimento'?1004.8:1015.84;
+  const el=document.getElementById('er-peso-display');
+  if(el)el.textContent=(m*pesoUnit).toLocaleString('pt-BR',{minimumFractionDigits:2})+' kg';
+  const cw=document.getElementById('er-corante-wrap');
+  if(cw)cw.style.display=tipo==='Crescimento'?'none':'flex';
 }
 
 async function deletarRacao(rid){
@@ -2162,6 +2314,26 @@ function renderFormVenda(){
   tableCard.appendChild(addBtn);
   el.appendChild(tableCard);
 
+  // Empenho picker section
+  const empSection=document.createElement('div');empSection.id='v-empenho-section';empSection.style.cssText='margin-top:14px;padding:12px;background:var(--amber-pale);border-radius:12px;display:none';
+  const empTitle=document.createElement('div');empTitle.style.cssText='font-size:12px;font-weight:600;color:var(--amber);margin-bottom:6px';empTitle.textContent='Adicionar do estoque empenhado (opcional)';
+  const empNote=document.createElement('div');empNote.style.cssText='font-size:11px;font-family:var(--mono);color:var(--muted);margin-bottom:8px';empNote.textContent='Empenhos disponiveis na data da venda. Adicionar gera item de venda automaticamente.';
+  empSection.appendChild(empTitle);empSection.appendChild(empNote);
+  const empListDiv=document.createElement('div');empListDiv.id='v-empenho-list';empSection.appendChild(empListDiv);
+  // Update empenho list when date changes
+  const vDataInput=document.getElementById('v-data');
+  if(vDataInput){vDataInput.addEventListener('change',()=>renderVendaEmpenhos());}
+  el.appendChild(empSection);
+
+  // Toggle button for empenho section
+  const empToggle=document.createElement('button');empToggle.className='g-btn';empToggle.style.cssText='width:100%;margin-top:8px;border:1.5px dashed var(--amber);color:var(--amber);background:transparent';
+  empToggle.textContent='+ Adicionar do estoque empenhado';
+  empToggle.onclick=()=>{
+    const s=document.getElementById('v-empenho-section');
+    if(s){s.style.display=s.style.display==='none'?'block':'none';if(s.style.display==='block')renderVendaEmpenhos();}
+  };
+  el.appendChild(empToggle);
+
   // Procedencia section
   const procSection=document.createElement('div');procSection.id='v-procedencia-section';procSection.style.marginTop='14px';
   el.appendChild(procSection);
@@ -2267,6 +2439,44 @@ function calcTotalVenda(){
   renderProcedenciaSection();
 }
 
+
+function renderVendaEmpenhos(){
+  const listDiv=document.getElementById('v-empenho-list');if(!listDiv)return;
+  const dataVenda=document.getElementById('v-data')?.value;
+  if(!dataVenda){listDiv.innerHTML='<div style="font-size:12px;color:var(--muted)">Informe a data da venda primeiro.</div>';return;}
+  // Get empenhos with date <= dataVenda not yet fully sold
+  const emps=entrepostoEmpenhoC.filter(e=>e.data<=dataVenda);
+  if(!emps.length){listDiv.innerHTML='<div style="font-size:12px;color:var(--muted)">Nenhum empenho disponivel ate esta data.</div>';return;}
+  listDiv.innerHTML='';
+  emps.forEach(emp=>{
+    const nomeLimpo=(emp.produto_nome||'').replace(/\s*\(.*\).*/g,'').trim();
+    const row=document.createElement('div');row.style.cssText='display:flex;align-items:center;gap:8px;margin-bottom:6px;padding:8px;background:var(--card);border-radius:8px';
+    const label=document.createElement('div');label.style.cssText='flex:1;font-size:12px';
+    label.innerHTML='<div style="font-weight:500">'+nomeLimpo+'</div><div style="font-size:11px;font-family:var(--mono);color:var(--muted)">'+fmtD(emp.data)+' · Empenhado: '+emp.quantidade+' '+emp.unidade+'</div>';
+    const qtdInp=document.createElement('input');qtdInp.type='number';qtdInp.min='0';qtdInp.step='1';qtdInp.max=emp.quantidade;qtdInp.placeholder='0';
+    qtdInp.style.cssText='width:60px;font-family:var(--mono);border:1.5px solid var(--border);border-radius:6px;padding:3px 6px;text-align:right';
+    const addBtn=document.createElement('button');addBtn.className='g-btn g-btn-edit';addBtn.textContent='Add';
+    addBtn.onclick=()=>{
+      const q=parseFloat(qtdInp.value||0);if(!q){toast('Informe a quantidade',true);return;}
+      if(q>emp.quantidade){toast('Maximo: '+emp.quantidade+' '+emp.unidade,true);return;}
+      // Find or get product price
+      const prod=produtosC.find(p=>p.id===emp.produto_id);
+      let unid=UNIDADES_OVO[0];
+      if(emp.unidade==='caixa')unid=UNIDADES_OVO.find(u=>u.id==='caixa')||UNIDADES_OVO[2];
+      else if(emp.unidade==='pente')unid=UNIDADES_OVO.find(u=>u.id==='pente')||UNIDADES_OVO[1];
+      adicionarLinhaVenda(nomeLimpo,prod||{descricao:nomeLimpo},unid);
+      // Pre-fill quantity
+      const i=window._vendaRows.length-1;
+      setTimeout(()=>{
+        const qEl=document.getElementById('vqtd_'+i);if(qEl){qEl.value=q;calcItemVenda(i);calcTotalVenda();}
+      },100);
+      toast(q+' '+emp.unidade+' adicionados');
+      qtdInp.value='';
+    };
+    row.appendChild(label);row.appendChild(qtdInp);row.appendChild(addBtn);
+    listDiv.appendChild(row);
+  });
+}
 
 function renderProcedenciaSection(){
   const sec=document.getElementById('v-procedencia-section');if(!sec)return;
@@ -2468,21 +2678,48 @@ function abrirVenda(vid){
 
   // Payments card
   const pagCard=document.createElement('div');pagCard.className='form-card';
-  pagCard.innerHTML='<div class="form-card-title"><span class="dot" style="background:#52B788"></span>Pagamentos</div>'
-    +(pags.length?pags.map(p=>'<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px">'
-      +'<div><div style="font-weight:500">'+fmtD(p.data_pagamento)+'</div>'+(p.obs?'<div style="font-size:11px;font-family:var(--mono);color:var(--muted)">'+p.obs+'</div>':'')+'</div>'
-      +'<span style="font-family:var(--mono);font-weight:600;color:var(--green)">R$ '+parseFloat(p.valor||0).toLocaleString('pt-BR',{minimumFractionDigits:2})+'</span>'
-      +'</div>').join(''):'<div style="font-size:13px;color:var(--muted);margin-bottom:12px">Nenhum pagamento registrado.</div>')
-    +'<div style="background:var(--bg);border-radius:10px;padding:12px;margin:12px 0">'
-    +'<div style="display:flex;justify-content:space-between;font-size:13px;font-family:var(--mono);margin-bottom:4px"><span>Total pago</span><span style="color:var(--green)">R$ '+parseFloat(v.valor_pago||0).toLocaleString('pt-BR',{minimumFractionDigits:2})+'</span></div>'
-    +'<div style="display:flex;justify-content:space-between;font-size:13px;font-family:var(--mono)"><span>Saldo devedor</span><span style="color:'+(saldo>0?'var(--red)':'var(--green)')+'">R$ '+saldo.toLocaleString('pt-BR',{minimumFractionDigits:2})+'</span></div>'
-    +'</div>'
-    +'<div style="font-size:11px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Registrar pagamento</div>'
-    +'<div class="field-row">'
-    +'<div class="field-group"><div class="field-label">Valor (R$)</div><input class="field-input" id="pag-valor" type="number" min="0" step="0.01" placeholder="0,00"></div>'
-    +'<div class="field-group"><div class="field-label">Data</div><input class="field-input" id="pag-data" type="date" value="'+new Date().toISOString().slice(0,10)+'"></div>'
-    +'</div>'
-    +'<div class="field-group"><div class="field-label">Observacao</div><input class="field-input" id="pag-obs" placeholder="Opcional"></div>';
+  const pagTitle=document.createElement('div');pagTitle.className='form-card-title';
+  pagTitle.innerHTML='<span class="dot" style="background:#52B788"></span>Pagamentos';
+  pagCard.appendChild(pagTitle);
+  // Payment list via DOM
+  if(pags.length){
+    pags.forEach(p=>{
+      const desconto=parseFloat(p.desconto||0);
+      const efetivo=parseFloat(p.valor||0)+desconto;
+      const pRow=document.createElement('div');pRow.style.cssText='display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px';
+      pRow.innerHTML='<div><div style="font-weight:500">'+fmtD(p.data_pagamento)+'</div>'
+        +(desconto>0?'<span style="font-size:11px;font-family:var(--mono);color:var(--amber)">desc: R$ '+desconto.toFixed(2)+'</span>':'')
+        +(p.obs?'<div style="font-size:11px;font-family:var(--mono);color:var(--muted)">'+p.obs+'</div>':'')+'</div>'
+        +'<div style="display:flex;align-items:center;gap:6px">'
+        +'<span style="font-family:var(--mono);font-weight:600;color:var(--green)">R$ '+efetivo.toLocaleString('pt-BR',{minimumFractionDigits:2})+'</span>'
+        +'<button id="edit-pag-'+p.id+'" style="font-size:10px;background:var(--blue-pale);color:var(--blue);border:none;border-radius:4px;padding:2px 6px;cursor:pointer">editar</button>'
+        +'<button id="del-pag-'+p.id+'" style="font-size:10px;background:var(--red-pale);color:var(--red);border:none;border-radius:4px;padding:2px 6px;cursor:pointer">×</button>'
+        +'</div>';
+      pagCard.appendChild(pRow);
+      const eBtn=pRow.querySelector('#edit-pag-'+p.id);
+      if(eBtn){const _p=p,_vid=vid,_v=v;eBtn.onclick=()=>editarPagamento(_p,_vid,_v);}
+      const dBtn=pRow.querySelector('#del-pag-'+p.id);
+      if(dBtn){const _p=p,_vid=vid,_v=v;dBtn.onclick=()=>deletarPagamento(_p,_vid,_v);}
+    });
+  } else {
+    const noP=document.createElement('div');noP.style.cssText='font-size:13px;color:var(--muted);margin-bottom:12px';noP.textContent='Nenhum pagamento registrado.';pagCard.appendChild(noP);
+  }
+  // Summary
+  const sumDiv=document.createElement('div');sumDiv.style.cssText='background:var(--bg);border-radius:10px;padding:12px;margin:12px 0';
+  sumDiv.innerHTML='<div style="display:flex;justify-content:space-between;font-size:13px;font-family:var(--mono);margin-bottom:4px"><span>Total pago</span><span style="color:var(--green)">R$ '+parseFloat(v.valor_pago||0).toLocaleString('pt-BR',{minimumFractionDigits:2})+'</span></div>'
+    +'<div style="display:flex;justify-content:space-between;font-size:13px;font-family:var(--mono)"><span>Saldo devedor</span><span style="color:'+(saldo>0?'var(--red)':'var(--green)')+'">R$ '+saldo.toLocaleString('pt-BR',{minimumFractionDigits:2})+'</span></div>';
+  pagCard.appendChild(sumDiv);
+  // New payment form
+  const newPagLabel=document.createElement('div');newPagLabel.style.cssText='font-size:11px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px';newPagLabel.textContent='Registrar pagamento';pagCard.appendChild(newPagLabel);
+  const fRow=document.createElement('div');fRow.className='field-row';
+  ['<div class="field-group"><div class="field-label">Valor (R$)</div><input class="field-input" id="pag-valor" type="number" min="0" step="0.01" placeholder="0,00"></div>',
+   '<div class="field-group"><div class="field-label">Desconto (R$)</div><input class="field-input" id="pag-desconto" type="number" min="0" step="0.01" placeholder="0,00"></div>',
+   '<div class="field-group"><div class="field-label">Data</div><input class="field-input" id="pag-data" type="date" value="'+new Date().toISOString().slice(0,10)+'"></div>'
+  ].forEach(h=>{const d=document.createElement('div');d.innerHTML=h;fRow.appendChild(d.firstChild);});
+  pagCard.appendChild(fRow);
+  const obsDiv=document.createElement('div');obsDiv.className='field-group';
+  obsDiv.innerHTML='<div class="field-label">Observacao</div><input class="field-input" id="pag-obs" placeholder="Opcional">';
+  pagCard.appendChild(obsDiv);
   const pagBtn=document.createElement('button');pagBtn.className='submit-btn';pagBtn.style.marginTop='8px';pagBtn.textContent='Confirmar pagamento';
   pagBtn.onclick=()=>registrarPagamento(vid,v.valor_total,v.valor_pago);
   pagCard.appendChild(pagBtn);
@@ -2708,20 +2945,66 @@ async function salvarEdicaoVenda(){
 
 async function registrarPagamento(vid,totalVenda,valorJaPago){
   const valor=parseFloat(document.getElementById('pag-valor')?.value||0);
+  const desconto=parseFloat(document.getElementById('pag-desconto')?.value||0);
   const data=document.getElementById('pag-data')?.value;
   const obs=document.getElementById('pag-obs')?.value;
-  if(!valor||!data){toast('Informe valor e data',true);return;}
+  if((!valor&&!desconto)||!data){toast('Informe valor/desconto e data',true);return;}
+  const efetivo=valor+desconto;
   const saldoAtual=parseFloat(totalVenda||0)-parseFloat(valorJaPago||0);
-  if(valor>saldoAtual+0.01){toast('Valor excede o saldo devedor (R$ '+saldoAtual.toFixed(2)+')',true);return;}
-  const res=await supa.post('venda_pagamentos',{venda_id:vid,valor,data_pagamento:data,obs:obs||null});
+  if(efetivo>saldoAtual+0.01){toast('Valor excede o saldo devedor (R$ '+saldoAtual.toFixed(2)+')',true);return;}
+  const res=await supa.post('venda_pagamentos',{venda_id:vid,valor,desconto:desconto||0,data_pagamento:data,obs:obs||null});
   if(res===null)return;
   if(res&&res[0])vendasPagamentosC.unshift(res[0]);
-  const novoPago=parseFloat(valorJaPago||0)+valor;
-  const novoStatus=novoPago>=totalVenda?'pago':novoPago>0?'parcial':'nao_pago';
+  const novoPago=parseFloat(valorJaPago||0)+efetivo;
+  const novoStatus=novoPago>=totalVenda-0.01?'pago':novoPago>0?'parcial':'nao_pago';
   await supa.patch('vendas?id=eq.'+vid,{valor_pago:novoPago,status_pagamento:novoStatus});
   vendasC=vendasC.map(v=>v.id===vid?{...v,valor_pago:novoPago,status_pagamento:novoStatus}:v);
   toast('Pagamento registrado!');
   abrirVenda(vid);
+}
+
+function editarPagamento(p,vid,v){
+  const overlay=document.createElement('div');overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:199;display:flex;align-items:center;justify-content:center';
+  const box=document.createElement('div');box.style.cssText='background:var(--card);border-radius:16px;padding:20px;min-width:280px;box-shadow:var(--shadow)';
+  box.innerHTML='<div style="font-weight:600;font-size:15px;margin-bottom:14px">Editar pagamento</div>'
+    +'<div class="field-row">'
+    +'<div class="field-group"><div class="field-label">Valor (R$)</div><input class="field-input" id="ep-valor" type="number" step="0.01" value="'+parseFloat(p.valor||0).toFixed(2)+'"></div>'
+    +'<div class="field-group"><div class="field-label">Desconto (R$)</div><input class="field-input" id="ep-desconto" type="number" step="0.01" min="0" value="'+parseFloat(p.desconto||0).toFixed(2)+'"></div>'
+    +'</div>'
+    +'<div class="field-group"><div class="field-label">Data</div><input class="field-input" id="ep-data" type="date" value="'+(p.data_pagamento||new Date().toISOString().slice(0,10))+'"></div>'
+    +'<div class="field-group"><div class="field-label">Observacao</div><input class="field-input" id="ep-obs" value="'+(p.obs||'')+'"></div>';
+  const row=document.createElement('div');row.style.cssText='display:flex;gap:8px;margin-top:12px';
+  const cancelBtn=document.createElement('button');cancelBtn.className='modal-btn modal-btn-cancel';cancelBtn.textContent='Cancelar';cancelBtn.onclick=()=>document.body.removeChild(overlay);
+  const saveBtn=document.createElement('button');saveBtn.className='modal-btn modal-btn-save';saveBtn.textContent='Salvar';
+  saveBtn.onclick=async()=>{
+    const novoValor=parseFloat(document.getElementById('ep-valor')?.value||0);
+    const novoDesc=parseFloat(document.getElementById('ep-desconto')?.value||0);
+    const novaData=document.getElementById('ep-data')?.value;
+    const novoObs=document.getElementById('ep-obs')?.value||'';
+    await supa.patch('venda_pagamentos?id=eq.'+p.id,{valor:novoValor,desconto:novoDesc,data_pagamento:novaData,obs:novoObs});
+    vendasPagamentosC=vendasPagamentosC.map(x=>x.id===p.id?{...x,valor:novoValor,desconto:novoDesc,data_pagamento:novaData,obs:novoObs}:x);
+    // Recalculate valor_pago
+    const pags=vendasPagamentosC.filter(x=>x.venda_id===vid);
+    const novoPago=pags.reduce((a,x)=>a+parseFloat(x.valor||0)+parseFloat(x.desconto||0),0);
+    const novoStatus=novoPago>=parseFloat(v.valor_total||0)-0.01?'pago':novoPago>0?'parcial':'nao_pago';
+    await supa.patch('vendas?id=eq.'+vid,{valor_pago:novoPago,status_pagamento:novoStatus});
+    vendasC=vendasC.map(x=>x.id===vid?{...x,valor_pago:novoPago,status_pagamento:novoStatus}:x);
+    document.body.removeChild(overlay);toast('Pagamento atualizado!');abrirVenda(vid);
+  };
+  row.appendChild(cancelBtn);row.appendChild(saveBtn);box.appendChild(row);
+  overlay.appendChild(box);document.body.appendChild(overlay);
+}
+
+async function deletarPagamento(p,vid,v){
+  if(!confirm('Remover pagamento?'))return;
+  await supa.del('venda_pagamentos?id=eq.'+p.id);
+  vendasPagamentosC=vendasPagamentosC.filter(x=>x.id!==p.id);
+  const pags=vendasPagamentosC.filter(x=>x.venda_id===vid);
+  const novoPago=pags.reduce((a,x)=>a+parseFloat(x.valor||0)+parseFloat(x.desconto||0),0);
+  const novoStatus=novoPago>=parseFloat(v.valor_total||0)-0.01?'pago':novoPago>0?'parcial':'nao_pago';
+  await supa.patch('vendas?id=eq.'+vid,{valor_pago:novoPago,status_pagamento:novoStatus});
+  vendasC=vendasC.map(x=>x.id===vid?{...x,valor_pago:novoPago,status_pagamento:novoStatus}:x);
+  toast('Pagamento removido!');abrirVenda(vid);
 }
 
 // =============================================
@@ -2973,6 +3256,7 @@ async function forceSeedProdutos(){
 
 async function seedProdutosOvos(){
   // One product per ovo type, unidade base = ovo
+  // Only create if codigo doesn't already exist
   const tiposOvos=[
     {descricao:'Ovo tipo Jumbo',codigo:'4001',unidade:'ovo'},
     {descricao:'Ovo tipo Extra',codigo:'4002',unidade:'ovo'},
@@ -2983,7 +3267,8 @@ async function seedProdutosOvos(){
     {descricao:'Ovo Trincado',codigo:'4007',unidade:'ovo'},
   ];
   for(const t of tiposOvos){
-    const ex=produtosC.find(p=>p.codigo===t.codigo);
+    // Check by codigo AND by descricao to avoid any duplicate
+    const ex=produtosC.find(p=>p.codigo===t.codigo||p.descricao===t.descricao);
     if(!ex){
       const res=await supa.post('produtos',{descricao:t.descricao,codigo:t.codigo,unidade:t.unidade,natureza:'Produto final - Ovo',tipo:'Produto final',custo_medio:0,estoque_atual:0});
       if(res&&res[0])produtosC.push(res[0]);
@@ -4221,11 +4506,23 @@ function renderEntDiario(el){
         :'color:var(--border);cursor:default;');
     cell.textContent=d;
 
-    // Dot for empenho
-    if(hasEmpenho&&!isSelected){
-      const dot=document.createElement('div');
-      dot.style.cssText='position:absolute;bottom:1px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--amber)';
-      cell.style.position='relative';cell.appendChild(dot);
+    // Dots for empenho (azul) and racao (laranja)
+    const hasRacao=racaoCache.some(r=>r.galpao_destino_id===ENTREPOSTO_GALPAO&&r.data_fabricacao===dateStr);
+    if((hasEmpenho||hasRacao)&&!isSelected){
+      cell.style.position='relative';
+      const dotsRow=document.createElement('div');
+      dotsRow.style.cssText='position:absolute;bottom:1px;left:50%;transform:translateX(-50%);display:flex;gap:2px';
+      if(hasRacao){
+        const d=document.createElement('div');
+        d.style.cssText='width:4px;height:4px;border-radius:50%;background:#F97316';
+        dotsRow.appendChild(d);
+      }
+      if(hasEmpenho){
+        const d=document.createElement('div');
+        d.style.cssText='width:4px;height:4px;border-radius:50%;background:var(--blue)';
+        dotsRow.appendChild(d);
+      }
+      cell.appendChild(dotsRow);
     }
     if(!isFuture&&!isBeforeStart){
       cell.onclick=()=>{
@@ -4238,6 +4535,12 @@ function renderEntDiario(el){
     calGrid.appendChild(cell);
   }
   calWrap.appendChild(calGrid);
+  // Legend
+  const legend=document.createElement('div');
+  legend.style.cssText='display:flex;gap:12px;margin-top:8px;font-size:10px;font-family:var(--mono);color:var(--muted)';
+  legend.innerHTML='<span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#F97316;margin-right:3px;vertical-align:middle"></span>Racao</span>'
+    +'<span><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--blue);margin-right:3px;vertical-align:middle"></span>Empenho</span>';
+  calWrap.appendChild(legend);
   el.appendChild(calWrap);
 
   // ── Nav arrows ──────────────────────────────────────────────────────────
@@ -4395,13 +4698,18 @@ function renderEntDiario(el){
       const nomeLimpo=(emp.produto_nome||'').replace(/\s*\(Caixa \(360 ovos\)\).*/g,' (Caixa)').replace(/\s*\(Pente \(30 ovos\)\).*/g,' (Pente)').trim();
       row.innerHTML='<div style="display:flex;justify-content:space-between;align-items:center">'
         +'<div><div style="font-weight:500;font-size:13px">'+nomeLimpo+'</div>'
-        +'<div style="font-size:11px;font-family:var(--mono);color:var(--muted)">'+emp.quantidade+' '+emp.unidade+' ('+emp.ovos_equivalentes.toLocaleString('pt-BR')+' ovos)</div></div>'
+        +'<div style="font-size:11px;font-family:var(--mono);color:var(--muted)">'+emp.quantidade+' '+emp.unidade+' ('+emp.ovos_equivalentes.toLocaleString('pt-BR')+' ovos)'+(emp.obs?' · '+emp.obs:'')+'</div></div>'
+        +'<div style="display:flex;gap:6px">'
+        +'<button id="edit-emp-'+emp.id+'" style="font-size:10px;background:var(--blue-pale);color:var(--blue);border:none;border-radius:4px;padding:2px 6px;cursor:pointer">editar</button>'
         +'<button id="del-emp-'+emp.id+'" style="font-size:10px;background:var(--red-pale);color:var(--red);border:none;border-radius:4px;padding:2px 6px;cursor:pointer">×</button>'
+        +'</div>'
         +'</div>';
       el.appendChild(row);
       // Wire delete button via DOM
       const delBtn=row.querySelector('#del-emp-'+emp.id);
       if(delBtn){const _empId=emp.id,_data=data;delBtn.onclick=()=>deletarEmpenho(_empId,_data);}
+      const editBtn=row.querySelector('#edit-emp-'+emp.id);
+      if(editBtn){const _emp=emp,_el=el;editBtn.onclick=()=>abrirModalEmpenho(_emp.data,calcOvosDisponiveisEditar(_emp.data,_emp.id),_emp);}
     });
   }
 
@@ -4459,11 +4767,34 @@ async function salvarEntDiario(data,payload){
 }
 
 // ── MODAL EMPENHO ─────────────────────────────────────────────────────────────
-function abrirModalEmpenho(data,estoqueOvos){
+function calcOvosDisponiveisEditar(data,empId){
+  // When editing, add back the current empenho qty to available stock
+  const emp=entrepostoEmpenhoC.find(e=>e.id===empId);
+  if(!emp)return 0;
+  // Recompute stock without this empenho
+  const fatorUnid=emp.unidade==='caixa'?360:30;
+  const pentesBack=Math.round((parseInt(emp.ovos_equivalentes)||0)/30);
+  const loteAtivoPB=lotesC.find(l=>l.galpao_id===ENTREPOSTO_GALPAO&&l.status==='ativo');
+  let estoque=0;
+  const end=new Date(data+'T12:00:00');
+  let cur=new Date(ENTREPOSTO_START+'T12:00:00');
+  while(cur<=end){
+    const ds=cur.toISOString().slice(0,10);
+    const pentes=calcOvosDia(ds,loteAtivoPB);
+    const emps=entrepostoEmpenhoC.filter(e=>e.data===ds&&e.id!==empId);
+    const empPentes=emps.reduce((a,e)=>a+Math.round((parseInt(e.ovos_equivalentes)||0)/30),0);
+    estoque=Math.max(0,estoque+pentes-empPentes);
+    cur.setDate(cur.getDate()+1);
+  }
+  return estoque;
+}
+
+function abrirModalEmpenho(data,estoqueOvos,editEmp){
   const overlay=document.createElement('div');overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:199;display:flex;align-items:flex-end;justify-content:center';
   const box=document.createElement('div');box.style.cssText='background:var(--card);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:600px;max-height:90vh;overflow-y:auto;box-shadow:var(--shadow)';
   const ovosDisp=Math.max(0,estoqueOvos);
-  box.innerHTML='<h3 style="margin-bottom:4px">Empenhar Ovos</h3>'
+  const isEdit=!!editEmp;
+  box.innerHTML='<h3 style="margin-bottom:4px">'+(isEdit?'Editar Empenho':'Empenhar Ovos')+'</h3>'
     +'<div style="font-size:12px;font-family:var(--mono);color:var(--muted);margin-bottom:16px">Data: '+fmtD(data)+' · Disponível: '+ovosDisp+' pentes / '+(ovosDisp*30)+' ovos</div>';
 
   // Produto select
@@ -4473,7 +4804,7 @@ function abrirModalEmpenho(data,estoqueOvos){
   const ovos=produtosC.filter(p=>p.natureza==='Produto final - Ovo'||p.codigo?.startsWith('4'));
   prodSel.innerHTML='<option value="">Selecione...</option>'+ovos.map(p=>{
     const nm=(p.descricao||'').replace(/\s*\(.*\).*/g,'').trim();
-    return '<option value="'+p.id+'|'+nm+'">'+p.codigo+' — '+nm+'</option>';
+    return '<option value="'+p.id+'|'+nm+'"'+(editEmp&&editEmp.produto_id===p.id?' selected':'')+'>'+p.codigo+' — '+nm+'</option>';
   }).join('');
   prodWrap.appendChild(prodSel);box.appendChild(prodWrap);
 
@@ -4481,13 +4812,14 @@ function abrirModalEmpenho(data,estoqueOvos){
   const unidWrap=document.createElement('div');unidWrap.className='field-group';
   unidWrap.innerHTML='<div class="field-label">Unidade</div>';
   const unidSel=document.createElement('select');unidSel.className='field-input';
-  unidSel.innerHTML='<option value="pente|30">Pente (30 ovos)</option><option value="caixa|360">Caixa (360 ovos)</option>';
+  unidSel.innerHTML='<option value="pente|30"'+(editEmp&&editEmp.unidade==='pente'?' selected':'')+'>Pente (30 ovos)</option><option value="caixa|360"'+(editEmp&&editEmp.unidade==='caixa'?' selected':'')+'>Caixa (360 ovos)</option>';
   unidWrap.appendChild(unidSel);box.appendChild(unidWrap);
 
   // Quantidade
   const qtdWrap=document.createElement('div');qtdWrap.className='field-group';
   qtdWrap.innerHTML='<div class="field-label">Quantidade</div>';
   const qtdInp=document.createElement('input');qtdInp.className='field-input';qtdInp.type='number';qtdInp.min='0';qtdInp.step='1';qtdInp.placeholder='0';
+  if(editEmp)qtdInp.value=editEmp.quantidade;
   // Show ovos equivalentes
   const ovosEqDiv=document.createElement('div');ovosEqDiv.style.cssText='font-size:11px;font-family:var(--mono);color:var(--muted);margin-top:4px';
   const updateOvosEq=()=>{
@@ -4504,6 +4836,7 @@ function abrirModalEmpenho(data,estoqueOvos){
   const obsWrap=document.createElement('div');obsWrap.className='field-group';
   obsWrap.innerHTML='<div class="field-label">Observacoes</div>';
   const obsInp=document.createElement('input');obsInp.className='field-input';obsInp.placeholder='Opcional';
+  if(editEmp)obsInp.value=editEmp.obs||'';
   obsWrap.appendChild(obsInp);box.appendChild(obsWrap);
 
   // Buttons
@@ -4520,13 +4853,19 @@ function abrirModalEmpenho(data,estoqueOvos){
     const eq=Math.round(q*fator);
     const pentes=Math.round(eq/30);
     if(pentes>ovosDisp){toast('Quantidade supera estoque disponivel ('+ovosDisp+' pentes)',true);return;}
-    const res=await supa.post('entreposto_empenho',{
-      data,produto_id:parseInt(prodId),produto_nome:prodNome,
-      quantidade:q,unidade:unidNome,ovos_equivalentes:eq,obs:obsInp.value
-    });
-    if(res&&res[0])entrepostoEmpenhoC.push(res[0]);
+    if(isEdit){
+      await supa.patch('entreposto_empenho?id=eq.'+editEmp.id,{produto_id:parseInt(prodId),produto_nome:prodNome,quantidade:q,unidade:unidNome,ovos_equivalentes:eq,obs:obsInp.value});
+      entrepostoEmpenhoC=entrepostoEmpenhoC.map(e=>e.id===editEmp.id?{...e,produto_id:parseInt(prodId),produto_nome:prodNome,quantidade:q,unidade:unidNome,ovos_equivalentes:eq,obs:obsInp.value}:e);
+      toast('Empenho atualizado!');
+    } else {
+      const res=await supa.post('entreposto_empenho',{
+        data,produto_id:parseInt(prodId),produto_nome:prodNome,
+        quantidade:q,unidade:unidNome,ovos_equivalentes:eq,obs:obsInp.value
+      });
+      if(res&&res[0])entrepostoEmpenhoC.push(res[0]);
+      toast('Empenho registrado!');
+    }
     document.body.removeChild(overlay);
-    toast('Empenho registrado!');
     // Refresh diario
     const panel=document.getElementById('tab-producao')?.querySelector('div:last-child');
     if(panel){const c2=panel.querySelector('div:last-child');if(c2)renderEntDiario(c2);}
