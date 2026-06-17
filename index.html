@@ -6482,12 +6482,108 @@ function renderMatMensal(el){
 // =============================================
 let currentUser=null; // {id, nome, nivel} or {adm:true}
 let nivelPermissoes={}; // {nivel: {aba: bool}}
+let configSegurancaC=null; // {senha_hash, senha_salt} or null if not yet set
+
+async function _sha256Hex(text){
+  const enc=new TextEncoder().encode(text);
+  const buf=await crypto.subtle.digest('SHA-256',enc);
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+function _gerarSalt(){
+  const arr=crypto.getRandomValues(new Uint8Array(16));
+  return Array.from(arr).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+async function _carregarConfigSeguranca(){
+  const res=await supa.get('config_seguranca?id=eq.1');
+  configSegurancaC=(res&&res[0])?res[0]:null;
+}
+async function _definirSenhaAdm(novaSenha){
+  const salt=_gerarSalt();
+  const hash=await _sha256Hex(novaSenha+salt);
+  if(configSegurancaC){
+    await supa.patch('config_seguranca?id=eq.1',{senha_hash:hash,senha_salt:salt});
+  } else {
+    await supa.post('config_seguranca',{id:1,senha_hash:hash,senha_salt:salt});
+  }
+  configSegurancaC={senha_hash:hash,senha_salt:salt};
+}
+async function _validarSenhaAdm(senhaDigitada){
+  if(!configSegurancaC||!configSegurancaC.senha_hash)return true; // sem senha definida ainda = primeiro acesso
+  const hash=await _sha256Hex(senhaDigitada+configSegurancaC.senha_salt);
+  return hash===configSegurancaC.senha_hash;
+}
 
 function loginAdm(){
-  currentUser={adm:true,nome:'ADM',nivel:1};
-  sessionStorage.setItem('granja_user',JSON.stringify(currentUser));
-  document.getElementById('login-overlay').style.display='none';
-  init();
+  if(!configSegurancaC||!configSegurancaC.senha_hash){
+    // Primeiro acesso: nenhuma senha definida ainda — pede para criar uma
+    abrirModalDefinirSenha(true);
+    return;
+  }
+  abrirModalSenhaAdm();
+}
+
+function abrirModalSenhaAdm(){
+  const overlay=document.createElement('div');overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px';
+  const box=document.createElement('div');box.style.cssText='background:var(--card);border-radius:16px;padding:24px;width:100%;max-width:360px;box-shadow:var(--shadow)';
+  box.innerHTML='<h3 style="margin-bottom:4px">Acesso ADM</h3>'
+    +'<div style="font-size:12px;font-family:var(--mono);color:var(--muted);margin-bottom:16px">Digite a senha de administrador</div>'
+    +'<input type="password" id="adm-senha-input" class="field-input" placeholder="Senha" autocomplete="current-password">'
+    +'<div id="adm-senha-erro" style="color:var(--red);font-size:12px;font-family:var(--mono);margin-top:8px;display:none">Senha incorreta</div>';
+  const row=document.createElement('div');row.style.cssText='display:flex;gap:8px;margin-top:16px';
+  const cancelBtn=document.createElement('button');cancelBtn.className='modal-btn modal-btn-cancel';cancelBtn.textContent='Cancelar';
+  cancelBtn.onclick=()=>document.body.removeChild(overlay);
+  const okBtn=document.createElement('button');okBtn.className='modal-btn modal-btn-save';okBtn.textContent='Entrar';
+  const inp=box.querySelector('#adm-senha-input');
+  const tentar=async()=>{
+    const senha=inp.value;
+    const ok=await _validarSenhaAdm(senha);
+    if(!ok){
+      box.querySelector('#adm-senha-erro').style.display='block';
+      inp.value='';inp.focus();
+      return;
+    }
+    document.body.removeChild(overlay);
+    currentUser={adm:true,nome:'ADM',nivel:1};
+    sessionStorage.setItem('granja_user',JSON.stringify(currentUser));
+    document.getElementById('login-overlay').style.display='none';
+    init();
+  };
+  okBtn.onclick=tentar;
+  inp.onkeydown=(e)=>{if(e.key==='Enter')tentar();};
+  row.appendChild(cancelBtn);row.appendChild(okBtn);box.appendChild(row);
+  overlay.appendChild(box);document.body.appendChild(overlay);
+  setTimeout(()=>inp.focus(),100);
+}
+
+function abrirModalDefinirSenha(primeiroAcesso){
+  const overlay=document.createElement('div');overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px';
+  const box=document.createElement('div');box.style.cssText='background:var(--card);border-radius:16px;padding:24px;width:100%;max-width:360px;box-shadow:var(--shadow)';
+  box.innerHTML='<h3 style="margin-bottom:4px">'+(primeiroAcesso?'Criar senha do ADM':'Alterar senha do ADM')+'</h3>'
+    +'<div style="font-size:12px;font-family:var(--mono);color:var(--muted);margin-bottom:16px">'+(primeiroAcesso?'Nenhuma senha foi definida ainda. Crie uma para proteger o acesso ADM.':'Digite a nova senha.')+'</div>'
+    +'<div class="field-group"><div class="field-label">Nova senha</div><input type="password" id="def-senha-1" class="field-input" placeholder="Minimo 4 caracteres" autocomplete="new-password"></div>'
+    +'<div class="field-group"><div class="field-label">Confirmar senha</div><input type="password" id="def-senha-2" class="field-input" placeholder="Repita a senha" autocomplete="new-password"></div>'
+    +'<div id="def-senha-erro" style="color:var(--red);font-size:12px;font-family:var(--mono);margin-top:4px;display:none"></div>';
+  const row=document.createElement('div');row.style.cssText='display:flex;gap:8px;margin-top:16px';
+  const cancelBtn=document.createElement('button');cancelBtn.className='modal-btn modal-btn-cancel';cancelBtn.textContent='Cancelar';
+  cancelBtn.onclick=()=>document.body.removeChild(overlay);
+  const okBtn=document.createElement('button');okBtn.className='modal-btn modal-btn-save';okBtn.textContent='Salvar senha';
+  okBtn.onclick=async()=>{
+    const s1=box.querySelector('#def-senha-1').value;
+    const s2=box.querySelector('#def-senha-2').value;
+    const erroEl=box.querySelector('#def-senha-erro');
+    if(s1.length<4){erroEl.textContent='A senha deve ter pelo menos 4 caracteres';erroEl.style.display='block';return;}
+    if(s1!==s2){erroEl.textContent='As senhas nao coincidem';erroEl.style.display='block';return;}
+    okBtn.disabled=true;okBtn.textContent='Salvando...';
+    await _definirSenhaAdm(s1);
+    document.body.removeChild(overlay);
+    if(primeiroAcesso){
+      toast('Senha criada! Use-a para entrar como ADM.');
+    } else {
+      toast('Senha alterada com sucesso!');
+    }
+  };
+  row.appendChild(cancelBtn);row.appendChild(okBtn);box.appendChild(row);
+  overlay.appendChild(box);document.body.appendChild(overlay);
 }
 
 function loginUserFromSelect(){
@@ -6527,6 +6623,7 @@ async function carregarLogin(){
     supa.get('clientes?order=nome.asc'),
     supa.get('fornecedores?order=nome.asc'),
   ]);
+  await _carregarConfigSeguranca();
   if(users&&users.length)usuariosC=users;
   if(perms&&perms.length){
     perms.forEach(p=>{
@@ -6620,6 +6717,14 @@ function renderNiveis(panel){
   const ABAS=[['postura','Postura'],['usuarios','Usuarios'],['racao','Racoes'],['produtos','Produtos'],['financeiro','Financeiro']];
   const NIVEIS=[[1,'Administrador','var(--red)','var(--red-pale)'],[2,'Supervisor','var(--amber)','var(--amber-pale)'],[3,'Colaborador','var(--green)','var(--green-pale)']];
   panel.innerHTML='';
+  const senhaCard=document.createElement('div');senhaCard.className='form-card';senhaCard.style.marginBottom='12px';
+  senhaCard.innerHTML='<div class="form-card-title"><span class="dot" style="background:var(--red)"></span>Seguranca</div>'
+    +'<div style="font-size:12px;color:var(--muted);font-family:var(--mono);margin-bottom:10px">Senha de acesso ADM '+(configSegurancaC&&configSegurancaC.senha_hash?'configurada':'nao configurada')+'</div>';
+  const senhaBtn=document.createElement('button');senhaBtn.className='g-btn g-btn-edit';senhaBtn.style.width='100%';
+  senhaBtn.textContent=(configSegurancaC&&configSegurancaC.senha_hash)?'Alterar senha do ADM':'Definir senha do ADM';
+  senhaBtn.onclick=()=>abrirModalDefinirSenha(false);
+  senhaCard.appendChild(senhaBtn);
+  panel.appendChild(senhaCard);
   const intro=document.createElement('div');
   intro.style.cssText='font-size:12px;color:var(--muted);font-family:var(--mono);margin-bottom:14px;padding:10px 14px;background:var(--bg);border-radius:8px';
   intro.textContent='Nivel 1 (ADM) sempre tem acesso total. Clique nas abas para ligar/desligar por nivel.';
