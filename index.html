@@ -3732,30 +3732,73 @@ async function salvarEdicaoRegistro(){
     };
     const res=await supa.post('registros',newRec);
     if(res&&res[0]){histCache.unshift(res[0]);LS.set('g_hist',histCache);}
-    // Update galpao aves if there are mortes
-    if(mortes>0){
-      const novoAves=Math.max(0,aves-mortes);
-      const gRow=await supa.get('galpoes?galpao_id=eq.'+gid);
-      if(gRow&&gRow.length>0)await supa.patch('galpoes?galpao_id=eq.'+gid,{aves_atuais:novoAves});
-      else await supa.post('galpoes',{galpao_id:gid,aves_atuais:novoAves});
-      avesReais[gid]=novoAves;LS.set('g_aves',avesReais);
-    }
     // Reset modal title
     const h3=document.querySelector('#modal-edit-reg h3');if(h3)h3.textContent='Editar registro';
-    closeModal('modal-edit-reg');toast('Registro adicionado!');renderHist();
+    closeModal('modal-edit-reg');
+    toast('Registro adicionado! Recalculando dias seguintes...');
+    await recalcularCascataAves(gid,dr);
+    renderHist();
     return;
   }
 
   // Existing record
   const rid=parseInt(ridRaw);
   const r=histCache.find(x=>x.id===rid);if(!r)return;
+  const mortesAntigas=parseFloat(r.mortes||0);
+  const mortesMudou=mortesAntigas!==mortes;
   const aves=avesReais[r.galpao_id]||1;
   const taxa=parseFloat((ovos/aves*100).toFixed(1));
   if(!dataReg)dataReg=r.data_registro;
   await supa.patch('registros?id=eq.'+rid,{total_pentes:pentes,total_ovos:ovos,taxa_postura:taxa,mortes,causa_morte:causa,obs,data_registro:dataReg,editado_em:new Date().toISOString()});
   histCache=histCache.map(x=>x.id===rid?{...x,total_pentes:pentes,total_ovos:ovos,taxa_postura:taxa,mortes,causa_morte:causa,obs,data_registro:dataReg}:x);
   LS.set('g_hist',histCache);
-  closeModal('modal-edit-reg');toast('Registro atualizado!');renderHist();
+  closeModal('modal-edit-reg');
+  if(mortesMudou){
+    toast('Registro atualizado! Recalculando dias seguintes...');
+    await recalcularCascataAves(r.galpao_id,dataReg);
+  } else {
+    toast('Registro atualizado!');
+  }
+  renderHist();
+}
+
+// Recalcula aves_no_dia/aves_restantes/taxa_postura em cascata a partir de uma data,
+// para todos os registros seguintes do galpao, ate o mais recente. Atualiza tambem
+// galpoes.aves_atuais ao final para refletir o ultimo valor da cadeia.
+async function recalcularCascataAves(gid,dataAPartir){
+  const toISO=(dr)=>{const p=dr.split('/');return p[2]+'-'+p[1]+'-'+p[0];};
+  const dataAPartirISO=toISO(dataAPartir);
+  // Buscar TODOS os registros do galpao, ordenados cronologicamente
+  let todos=await supa.getAll('registros?galpao_id=eq.'+gid+'&order=created_at.asc');
+  if(todos===null){toast('Erro ao recalcular: falha ao buscar registros',true);return;}
+  todos=todos.sort((a,b)=>toISO(a.data_registro).localeCompare(toISO(b.data_registro)));
+  const idxInicio=todos.findIndex(r=>toISO(r.data_registro)>=dataAPartirISO);
+  if(idxInicio===-1)return;
+  const regsParaRecalcular=todos.slice(idxInicio);
+  // Ponto de partida: aves_no_dia do proprio primeiro registro da cadeia (ja correto, vem do dia anterior)
+  let avesAtual=parseFloat(regsParaRecalcular[0].aves_no_dia||0);
+  const updates=[];
+  for(const reg of regsParaRecalcular){
+    const mortesD=parseFloat(reg.mortes||0);
+    const avesNoDia=avesAtual;
+    const avesRestantes=Math.max(0,avesNoDia-mortesD);
+    const taxaD=avesNoDia>0?parseFloat((parseFloat(reg.total_ovos||0)/avesNoDia*100).toFixed(1)):0;
+    updates.push({id:reg.id,aves_no_dia:avesNoDia,aves_restantes:avesRestantes,taxa_postura:taxaD});
+    avesAtual=avesRestantes;
+  }
+  // Aplicar updates em paralelo
+  await Promise.all(updates.map(u=>supa.patch('registros?id=eq.'+u.id,{aves_no_dia:u.aves_no_dia,aves_restantes:u.aves_restantes,taxa_postura:u.taxa_postura})));
+  // Atualizar histCache local
+  const byId={};updates.forEach(u=>byId[u.id]=u);
+  histCache=histCache.map(x=>byId[x.id]?{...x,aves_no_dia:byId[x.id].aves_no_dia,aves_restantes:byId[x.id].aves_restantes,taxa_postura:byId[x.id].taxa_postura}:x);
+  LS.set('g_hist',histCache);
+  // Atualizar galpoes.aves_atuais com o valor final da cadeia (o ultimo aves_restantes calculado)
+  const valorFinal=updates[updates.length-1].aves_restantes;
+  avesReais[gid]=valorFinal;LS.set('g_aves',avesReais);
+  const ex=await supa.get('galpoes?galpao_id=eq.'+gid);
+  if(ex&&ex.length)await supa.patch('galpoes?galpao_id=eq.'+gid,{aves_atuais:valorFinal});
+  else await supa.post('galpoes',{galpao_id:gid,aves_atuais:valorFinal});
+  toast(updates.length+' dia(s) recalculado(s). Total atual: '+valorFinal.toLocaleString('pt-BR')+' aves.');
 }
 
 // =============================================
@@ -4117,24 +4160,33 @@ async function deletarProduto(pid){
 async function deletarRegistro(rid){
   if(!confirm('Excluir este registro permanentemente?'))return;
   const r=histCache.find(x=>x.id===rid);
-  // Restore mortes to galpao count
-  if(r&&r.mortes>0&&r.galpao_id){
-    const aves=avesReais[r.galpao_id]||0;
-    const novoAves=aves+parseInt(r.mortes||0);
-    // Check if galpao row exists
-    const gRow=await supa.get('galpoes?galpao_id=eq.'+r.galpao_id);
-    if(gRow&&gRow.length>0){
-      await supa.patch('galpoes?galpao_id=eq.'+r.galpao_id,{aves_atuais:novoAves});
-    } else {
-      await supa.post('galpoes',{galpao_id:r.galpao_id,aves_atuais:novoAves});
-    }
-    avesReais[r.galpao_id]=novoAves;
-    LS.set('g_aves',avesReais);
-  }
+  const gid=r?.galpao_id;
+  const dataDoExcluido=r?.data_registro;
   await supa.del('registros?id=eq.'+rid);
   histCache=histCache.filter(x=>x.id!==rid);
   LS.set('g_hist',histCache);
-  toast('Registro excluido. Mortes restauradas ao galpao.');
+  if(gid&&dataDoExcluido){
+    toast('Registro excluido. Recalculando dias seguintes...');
+    // Recalcula a partir do dia seguinte ao excluido (o proprio dia nao existe mais)
+    const todos=await supa.getAll('registros?galpao_id=eq.'+gid+'&order=created_at.asc');
+    const toISO=(dr)=>{const p=dr.split('/');return p[2]+'-'+p[1]+'-'+p[0];};
+    const dataExcluidaISO=toISO(dataDoExcluido);
+    const proximo=(todos||[]).filter(x=>toISO(x.data_registro)>dataExcluidaISO).sort((a,b)=>toISO(a.data_registro).localeCompare(toISO(b.data_registro)))[0];
+    if(proximo){
+      await recalcularCascataAves(gid,proximo.data_registro);
+    } else {
+      // Nao ha dias seguintes: recalcular galpoes.aves_atuais a partir do ultimo registro restante
+      const restantes=(todos||[]).filter(x=>toISO(x.data_registro)<=dataExcluidaISO).sort((a,b)=>toISO(b.data_registro).localeCompare(toISO(a.data_registro)));
+      const valorFinal=restantes.length?parseFloat(restantes[0].aves_restantes||0):0;
+      avesReais[gid]=valorFinal;LS.set('g_aves',avesReais);
+      const gRow=await supa.get('galpoes?galpao_id=eq.'+gid);
+      if(gRow&&gRow.length>0)await supa.patch('galpoes?galpao_id=eq.'+gid,{aves_atuais:valorFinal});
+      else await supa.post('galpoes',{galpao_id:gid,aves_atuais:valorFinal});
+      toast('Registro excluido. Total atual: '+valorFinal.toLocaleString('pt-BR')+' aves.');
+    }
+  } else {
+    toast('Registro excluido.');
+  }
   renderHist();
 }
 
