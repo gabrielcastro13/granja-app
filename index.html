@@ -650,7 +650,6 @@ async function loadAll(){
   if(ente_db)entrepostoEmpenhoC=ente_db;
   setSS('online');
   buildTabsForUser();
-  await seedProdutosRacao();
   await seedProdutosOvos();
   await seedCodigosProdutos();
 }
@@ -1735,13 +1734,18 @@ async function salvarRacaoOutro(btn){
           await supa.patch('compras?id=eq.'+lote.id,{quantidade_restante:parseFloat(novaQtRest.toFixed(4))});
           comprasC=comprasC.map(x=>x.id===lote.id?{...x,quantidade_restante:novaQtRest}:x);
         }
-        if(qtRest>0&&lotes.length>0)custoProd+=qtRest*parseFloat(lotes[lotes.length-1].custo_unitario||0);
+        if(qtRest>0&&lotes.length>0){
+          custoProd+=qtRest*parseFloat(lotes[lotes.length-1].custo_unitario||0);
+        } else if(qtRest>0&&lotes.length===0){
+          const precoRef=parseFloat(prod.preco_referencia||prod.custo_medio||0);
+          custoProd+=qtRest*precoRef;
+        }
         custoTotal+=custoProd;
       }
       // Atualizar estoque
       const novoEst=Math.max(0,(parseFloat(prod.estoque_atual||0))-qt);
       const nextLote=comprasC.filter(x=>x.produto_id===prod.id&&parseFloat(x.quantidade_restante||0)>0).sort((a,b)=>new Date(a.data_transacao)-new Date(b.data_transacao))[0];
-      const novoCusto=nextLote?parseFloat(nextLote.custo_unitario):parseFloat(prod.custo_medio||0);
+      const novoCusto=nextLote?parseFloat(nextLote.custo_unitario):(parseFloat(prod.preco_referencia)||parseFloat(prod.custo_medio||0));
       await supa.patch('produtos?id=eq.'+prod.id,{estoque_atual:parseFloat(novoEst.toFixed(4)),custo_medio:parseFloat(novoCusto.toFixed(4))});
       await supa.post('estoque_movimentos',{produto_id:prod.id,produto_nome:prod.descricao,tipo_movimento:'saida',origem:'fabricacao_racao',origem_id:fabId,quantidade:qt,unidade:prod.unidade});
       produtosC=produtosC.map(p=>p.id===prod.id?{...p,estoque_atual:novoEst,custo_medio:novoCusto}:p);
@@ -1876,6 +1880,65 @@ function atualizaPreviewEstoque(){
   });
   el.innerHTML='<div style="background:var(--bg);border-radius:10px;padding:12px;margin-bottom:4px"><div style="font-size:11px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Deducao do estoque</div>'+rows+(alerta?'<div style="font-size:11px;color:var(--red);margin-top:8px;font-family:var(--mono)">Estoque insuficiente para alguns produtos</div>':'')+'</div>';
 }
+// Estorna ao estoque tudo que foi debitado para uma fabricacao de racao,
+// usando as movimentacoes reais registradas (nao recalcula pela formula,
+// para refletir exatamente o que foi debitado originalmente).
+async function _estornarRacaoEstoque(fabId){
+  const movs=await supa.get('estoque_movimentos?origem=eq.fabricacao_racao&origem_id=eq.'+fabId);
+  if(!movs||!movs.length)return;
+  for(const mv of movs){
+    if(mv.tipo_movimento!=='saida')continue;
+    const prod=produtosC.find(p=>p.id===mv.produto_id);
+    if(!prod)continue;
+    const novoEst=parseFloat(prod.estoque_atual||0)+parseFloat(mv.quantidade||0);
+    await supa.patch('produtos?id=eq.'+prod.id,{estoque_atual:parseFloat(novoEst.toFixed(4))});
+    produtosC=produtosC.map(p=>p.id===prod.id?{...p,estoque_atual:novoEst}:p);
+  }
+  // Remover as movimentacoes antigas (serao recriadas no debito novo)
+  await supa.del('estoque_movimentos?origem=eq.fabricacao_racao&origem_id=eq.'+fabId);
+}
+
+// Debita do estoque os ingredientes da formula (PEPS), igual ao fluxo de criacao.
+// Usado tanto na criacao quanto, apos estornar, na edicao de uma fabricacao existente.
+async function _debitarRacaoEstoque(fabId,tipo,misturas,comCorante){
+  const formula=getFormulaTipo(tipo);
+  let custoTotalFab=0;
+  for(const[nome,q]of Object.entries(formula)){
+    if(nome==='Corante'&&!comCorante)continue;if(q===0)continue;
+    const qt=q*misturas;
+    const prod=produtosC.find(p=>p.descricao===nome);if(!prod)continue;
+    const lotes=comprasC
+      .filter(x=>x.produto_id===prod.id&&parseFloat(x.quantidade_restante||0)>0)
+      .sort((a,b)=>new Date(a.data_transacao)-new Date(b.data_transacao));
+    let qtRestante=qt;
+    let custoIngrediente=0;
+    for(const lote of lotes){
+      if(qtRestante<=0)break;
+      const usar=Math.min(qtRestante,parseFloat(lote.quantidade_restante||0));
+      custoIngrediente+=usar*parseFloat(lote.custo_unitario||0);
+      qtRestante-=usar;
+      const novaQtRest=parseFloat(lote.quantidade_restante||0)-usar;
+      await supa.patch('compras?id=eq.'+lote.id,{quantidade_restante:parseFloat(novaQtRest.toFixed(4))});
+      comprasC=comprasC.map(x=>x.id===lote.id?{...x,quantidade_restante:novaQtRest}:x);
+    }
+    if(qtRestante>0&&lotes.length>0){
+      custoIngrediente+=qtRestante*parseFloat(lotes[lotes.length-1].custo_unitario||0);
+    } else if(qtRestante>0&&lotes.length===0){
+      // Sem nenhuma compra registrada: usa o preco de referencia como fallback
+      const precoRef=parseFloat(prod.preco_referencia||prod.custo_medio||0);
+      custoIngrediente+=qtRestante*precoRef;
+    }
+    custoTotalFab+=custoIngrediente;
+    const novoEst=Math.max(0,(parseFloat(prod.estoque_atual)||0)-qt);
+    const nextLote=comprasC.filter(x=>x.produto_id===prod.id&&parseFloat(x.quantidade_restante||0)>0).sort((a,b)=>new Date(a.data_transacao)-new Date(b.data_transacao))[0];
+    const novoCusto=nextLote?parseFloat(nextLote.custo_unitario):(parseFloat(prod.preco_referencia)||parseFloat(prod.custo_medio||0));
+    await supa.patch('produtos?id=eq.'+prod.id,{estoque_atual:novoEst,custo_medio:parseFloat(novoCusto.toFixed(4))});
+    await supa.post('estoque_movimentos',{produto_id:prod.id,produto_nome:prod.descricao,tipo_movimento:'saida',origem:'fabricacao_racao',origem_id:fabId,quantidade:qt,unidade:'kg'});
+    produtosC=produtosC.map(p=>p.id===prod.id?{...p,estoque_atual:novoEst,custo_medio:novoCusto}:p);
+  }
+  return custoTotalFab;
+}
+
 async function salvarRacao(){
   const tipo=document.getElementById('r-tipo').value;const data=document.getElementById('r-data').value;
   // Check if editing existing
@@ -1888,10 +1951,23 @@ async function salvarRacao(){
     const gidDest=document.getElementById('r-galpao').value;
     const gNomeDest=gidDest?(GALPOES.find(g=>g.id===gidDest)||{}).nome||'':'';
     const comCorante=document.getElementById('r-corante')?.checked!==false;
-    await supa.patch('fabricacao_racao?id=eq.'+rid,{tipo,data_fabricacao:data,num_misturas:misturas,peso_total_kg:peso,galpao_destino_id:gidDest||null,galpao_destino_nome:gNomeDest||null,com_corante:comCorante});
-    racaoCache=racaoCache.map(x=>x.id===rid?{...x,tipo,data_fabricacao:data,num_misturas:misturas,peso_total_kg:peso,galpao_destino_id:gidDest||null,galpao_destino_nome:gNomeDest||null,com_corante:comCorante}:x);
+    const valorModoEdit=document.querySelector('input[name="r-valor-modo"]:checked')?.value||'peps';
+    // Estorna o estoque debitado anteriormente, depois debita de novo com os valores atualizados
+    await _estornarRacaoEstoque(rid);
+    let custoPorMisturaEdit=null;
+    if(valorModoEdit==='manual'){
+      const vKg=parseFloat(document.getElementById('r-valor-kg')?.value||0);
+      const totalFab=vKg*peso;
+      custoPorMisturaEdit=misturas>0?parseFloat((totalFab/misturas).toFixed(2)):0;
+    } else {
+      const custoTotalFab=await _debitarRacaoEstoque(rid,tipo,misturas,comCorante);
+      custoPorMisturaEdit=misturas>0?parseFloat((custoTotalFab/misturas).toFixed(2)):0;
+    }
+    const payloadEdit={tipo,data_fabricacao:data,num_misturas:misturas,peso_total_kg:peso,galpao_destino_id:gidDest||null,galpao_destino_nome:gNomeDest||null,com_corante:comCorante,valor_mistura:custoPorMisturaEdit,valor_modo:valorModoEdit};
+    await supa.patch('fabricacao_racao?id=eq.'+rid,payloadEdit);
+    racaoCache=racaoCache.map(x=>x.id===rid?{...x,...payloadEdit}:x);
     window._editRacaoId=null;
-    toast('Fabricacao atualizada!');
+    toast('Fabricacao atualizada! Estoque recalculado.');
     setRacaoTab('historico');
     return;
   }
@@ -1915,15 +1991,15 @@ async function salvarRacao(){
   if(!data){toast('Informe a data',true);return;}
   if(!gidDest){toast('Selecione o galpao de destino',true);return;}
   const loteDestino=gidDest?lotesC.find(l=>l.galpao_id===gidDest&&l.status==='ativo'):null;
-  const res=await supa.post('fabricacao_racao',{tipo,data_fabricacao:data,num_misturas:parseFloat(misturas.toFixed(4)),peso_total_kg:parseFloat(peso.toFixed(4)),galpao_destino_id:gidDest||null,galpao_destino_nome:gNomeDest||null,lote_id:loteDestino?.id||null,valor_mistura:valorManual,com_corante:comCorante,obs:obs||null});
+  const res=await supa.post('fabricacao_racao',{tipo,data_fabricacao:data,num_misturas:parseFloat(misturas.toFixed(4)),peso_total_kg:parseFloat(peso.toFixed(4)),galpao_destino_id:gidDest||null,galpao_destino_nome:gNomeDest||null,lote_id:loteDestino?.id||null,valor_mistura:valorManual,com_corante:comCorante,obs:obs||null,valor_modo:valorModo});
   if(!res){toast('Erro ao salvar fabricacao. Verifique a conexao.',true);return;}
   const fabId=res&&res[0]?res[0].id:null;
   if(res&&res[0])racaoCache.unshift(res[0]);
   // If manual valor: skip PEPS deduction
   if(valorModo==='manual'){
     const custoPorMistura=valorManual||0;
-    if(fabId)await supa.patch('fabricacao_racao?id=eq.'+fabId,{valor_mistura:custoPorMistura});
-    if(res&&res[0])racaoCache[0]={...racaoCache[0],valor_mistura:custoPorMistura};
+    if(fabId)await supa.patch('fabricacao_racao?id=eq.'+fabId,{valor_mistura:custoPorMistura,valor_modo:'manual'});
+    if(res&&res[0])racaoCache[0]={...racaoCache[0],valor_mistura:custoPorMistura,valor_modo:'manual'};
     toast('Fabricacao registrada! Valor manual: R$ '+custoPorMistura.toFixed(2)+'/mistura');
     refreshProducaoIfActive();
     window._racaoTab='historico';
@@ -1954,25 +2030,30 @@ async function salvarRacao(){
     // If stock ran out, use last known price for remainder
     if(qtRestante>0&&lotes.length>0){
       custoIngrediente+=qtRestante*parseFloat(lotes[lotes.length-1].custo_unitario||0);
+    } else if(qtRestante>0&&lotes.length===0){
+      // Sem nenhuma compra registrada: usa o preco de referencia como fallback
+      const precoRef=parseFloat(prod.preco_referencia||prod.custo_medio||0);
+      custoIngrediente+=qtRestante*precoRef;
     }
     custoTotalFab+=custoIngrediente;
     // Update estoque_atual and custo_medio (next lot price)
     const novoEst=Math.max(0,(parseFloat(prod.estoque_atual)||0)-qt);
     const nextLote=comprasC.filter(x=>x.produto_id===prod.id&&parseFloat(x.quantidade_restante||0)>0).sort((a,b)=>new Date(a.data_transacao)-new Date(b.data_transacao))[0];
-    const novoCusto=nextLote?parseFloat(nextLote.custo_unitario):parseFloat(prod.custo_medio||0);
+    const novoCusto=nextLote?parseFloat(nextLote.custo_unitario):(parseFloat(prod.preco_referencia)||parseFloat(prod.custo_medio||0));
     await supa.patch('produtos?id=eq.'+prod.id,{estoque_atual:novoEst,custo_medio:parseFloat(novoCusto.toFixed(4))});
     await supa.post('estoque_movimentos',{produto_id:prod.id,produto_nome:prod.descricao,tipo_movimento:'saida',origem:'fabricacao_racao',origem_id:fabId,quantidade:qt,unidade:'kg'});
     produtosC=produtosC.map(p=>p.id===prod.id?{...p,estoque_atual:novoEst,custo_medio:novoCusto}:p);
   }
   // Update fabricacao with real PEPS cost
   const custoPorMistura=misturas>0?custoTotalFab/misturas:0;
-  if(fabId)await supa.patch('fabricacao_racao?id=eq.'+fabId,{valor_mistura:parseFloat(custoPorMistura.toFixed(2))});
+  if(fabId)await supa.patch('fabricacao_racao?id=eq.'+fabId,{valor_mistura:parseFloat(custoPorMistura.toFixed(2)),valor_modo:'peps'});
   if(res&&res[0])racaoCache[0]={...racaoCache[0],valor_mistura:parseFloat(custoPorMistura.toFixed(2))};
   toast('Fabricacao registrada! Custo PEPS: R$ '+custoPorMistura.toFixed(2)+'/mistura');
   refreshProducaoIfActive();
   window._racaoTab='historico';
   renderRacao();
 }
+
 function renderRacaoHist(){
   const el=document.getElementById('rpanel-historico');if(!el)return;
   if(!racaoCache.length){el.innerHTML='<div class="history-empty">Nenhuma fabricacao registrada.</div>';return;}
@@ -2113,18 +2194,29 @@ function editarRacao(rid){
     const gNomeDest=gidDest?(GALPOES.find(g=>g.id===gidDest)||{}).nome||'':'';
     const comCorante=document.getElementById('er-corante')?.checked!==false;
     const valorRaw=document.getElementById('er-valor')?.value;
-    const valor=valorRaw?parseFloat(valorRaw):r.valor_mistura;
     const obs=document.getElementById('er-obs')?.value||'';
     const pesoUnit=tipo==='Crescimento'?1004.8:1015.84;
     const peso=misturas*pesoUnit;
     if(!data){toast('Informe a data',true);return;}
+    saveBtn.disabled=true;saveBtn.textContent='Salvando...';
+    // Estorna o estoque debitado anteriormente, depois debita de novo com os valores atualizados
+    await _estornarRacaoEstoque(rid);
+    let valor,valorModoEr;
+    if(valorRaw){
+      valor=parseFloat(valorRaw);
+      valorModoEr='manual';
+    } else {
+      const custoTotalFab=await _debitarRacaoEstoque(rid,tipo,misturas,tipo==='Crescimento'?false:comCorante);
+      valor=misturas>0?parseFloat((custoTotalFab/misturas).toFixed(2)):0;
+      valorModoEr='peps';
+    }
     const payload={tipo,data_fabricacao:data,num_misturas:misturas,peso_total_kg:peso,
       galpao_destino_id:gidDest||null,galpao_destino_nome:gNomeDest||null,
-      com_corante:tipo==='Crescimento'?false:comCorante,valor_mistura:valor,obs:obs||null};
+      com_corante:tipo==='Crescimento'?false:comCorante,valor_mistura:valor,obs:obs||null,valor_modo:valorModoEr};
     await supa.patch('fabricacao_racao?id=eq.'+rid,payload);
     racaoCache=racaoCache.map(x=>x.id===rid?{...x,...payload}:x);
     document.body.removeChild(overlay);
-    toast('Fabricacao atualizada!');
+    toast('Fabricacao atualizada! Estoque recalculado.');
     refreshProducaoIfActive();
     renderRacaoHist();
   };
@@ -2143,12 +2235,11 @@ function calcErPeso(){
 }
 
 async function deletarRacao(rid){
-  if(!confirm('Excluir esta fabricacao? O estoque nao sera restaurado automaticamente.'))return;
+  if(!confirm('Excluir esta fabricacao? O estoque dos ingredientes sera devolvido.'))return;
+  await _estornarRacaoEstoque(rid);
   await supa.del('fabricacao_racao?id=eq.'+rid);
-  // Cascade: remover movimentacoes de saida vinculadas
-  await supa.del('estoque_movimentos?origem=eq.fabricacao_racao&origem_id=eq.'+rid);
   racaoCache=racaoCache.filter(x=>x.id!==rid);
-  toast('Fabricacao excluida');
+  toast('Fabricacao excluida. Estoque devolvido.');
   refreshProducaoIfActive();
   renderRacaoHist();
 }
@@ -2160,16 +2251,32 @@ function refreshProducaoIfActive(){
   }
 }
 // ── Cache de formulas do banco (todas) ───────────────────────────────────────
-let formulasDB={};// {tipo: {ingrediente: qty, ...}}
+let formulasDB={};// {tipo: {ingrediente: qty, ...}} -- nome resolvido a partir do produto vinculado (produto_id)
+let formulasIdsDB={};// {tipo: {ingrediente_atual: produto_id}} -- mapa auxiliar para saber o produto_id de cada linha
 
 async function loadFormulasDB(){
   const rows=await supa.get('formula_racao?order=tipo.asc,ingrediente.asc');
-  formulasDB={};
+  formulasDB={};formulasIdsDB={};
   if(rows&&rows.length){
-    rows.forEach(r=>{
+    for(const r of rows){
       if(!formulasDB[r.tipo])formulasDB[r.tipo]={};
-      formulasDB[r.tipo][r.ingrediente]=parseFloat(r.quantidade_kg||0);
-    });
+      if(!formulasIdsDB[r.tipo])formulasIdsDB[r.tipo]={};
+      // A formula PUXA o nome atual do produto vinculado (produto_id), nao o contrario.
+      // Isso garante que renomear um produto nunca desalinha a formula.
+      let nomeAtual=r.ingrediente; // fallback: linhas antigas sem produto_id ainda
+      if(r.produto_id){
+        const prod=produtosC.find(p=>p.id===r.produto_id);
+        if(prod){
+          nomeAtual=prod.descricao;
+          // Se o nome salvo na linha estiver desatualizado, sincroniza silenciosamente (so o texto, nunca o vinculo)
+          if(r.ingrediente!==prod.descricao){
+            supa.patch('formula_racao?id=eq.'+r.id,{ingrediente:prod.descricao});
+          }
+        }
+      }
+      formulasDB[r.tipo][nomeAtual]=parseFloat(r.quantidade_kg||0);
+      formulasIdsDB[r.tipo][nomeAtual]=r.produto_id||null;
+    }
   }
   // Seed defaults if missing
   if(!formulasDB['Postura']||!Object.keys(formulasDB['Postura']).length){
@@ -2190,12 +2297,27 @@ async function loadFormulasDB(){
     await supa.query('POST','formula_racao?on_conflict=tipo,ingrediente',{tipo:'Crescimento',ingrediente:'Milho',quantidade_kg:formulasDB['Crescimento']['Milho']},{'Prefer':'resolution=merge-duplicates,return=representation'});
     toast('Migrado: "Milho (Fuba)" → "Milho" na formula Crescimento');
   }
+  // Vincular automaticamente linhas antigas (sem produto_id) a produtos existentes pelo nome exato,
+  // para que passem a usar o vinculo por id a partir de agora
+  await _vincularFormulaProdutoIds();
   // Sync legacy formulaRacao
   if(formulasDB['Postura'])formulaRacao={...formulasDB['Postura']};
 }
+
+// Vincula linhas de formula_racao que ainda nao tem produto_id a um produto existente
+// com descricao igual ao texto salvo (caso de linhas antigas, criadas antes desta migracao).
+async function _vincularFormulaProdutoIds(){
+  const rows=await supa.get('formula_racao?produto_id=is.null');
+  if(!rows||!rows.length)return;
+  for(const r of rows){
+    const prod=produtosC.find(p=>p.descricao===r.ingrediente);
+    if(prod)await supa.patch('formula_racao?id=eq.'+r.id,{produto_id:prod.id});
+  }
+}
 async function _seedFormulaTipo(tipo,obj){
   for(const[nome,qtd]of Object.entries(obj)){
-    await supa.query('POST','formula_racao?on_conflict=tipo,ingrediente',{tipo,ingrediente:nome,quantidade_kg:qtd},{'Prefer':'resolution=merge-duplicates,return=representation'});
+    const prod=produtosC.find(p=>p.descricao===nome);
+    await supa.query('POST','formula_racao?on_conflict=tipo,ingrediente',{tipo,ingrediente:nome,quantidade_kg:qtd,produto_id:prod?prod.id:null},{'Prefer':'resolution=merge-duplicates,return=representation'});
   }
 }
 
@@ -2299,7 +2421,11 @@ function _adicionarIngredienteFormula(tipo){
   const nome=nomeEl.value.trim();const qtd=parseFloat(qtdEl.value||0);
   if(!nome){toast('Informe o nome do ingrediente',true);return;}
   if(!formulasDB[tipo])formulasDB[tipo]={};
+  if(!formulasIdsDB[tipo])formulasIdsDB[tipo]={};
   formulasDB[tipo][nome]=qtd;
+  // O select so permite escolher produtos ja cadastrados, entao o nome corresponde exatamente a um produto
+  const prod=produtosC.find(p=>p.descricao===nome);
+  formulasIdsDB[tipo][nome]=prod?prod.id:null;
   nomeEl.value='';qtdEl.value='';
   // Re-render only this card
   const el=document.getElementById('rpanel-formula');if(!el)return;
@@ -2333,7 +2459,9 @@ async function salvarFormulaTipo(tipo){
   // Upsert all rows for this tipo
   await supa.del('formula_racao?tipo=eq.'+encodeURIComponent(tipo));
   for(const[nome,qtd]of Object.entries(updates)){
-    await supa.post('formula_racao',{tipo,ingrediente:nome,quantidade_kg:parseFloat(qtd.toFixed(4))});
+    // Vincula ao produto pelo id ja conhecido (formulasIdsDB) ou, na falta, busca pelo nome atual
+    const produtoId=(formulasIdsDB[tipo]&&formulasIdsDB[tipo][nome])||produtosC.find(p=>p.descricao===nome)?.id||null;
+    await supa.post('formula_racao',{tipo,ingrediente:nome,quantidade_kg:parseFloat(qtd.toFixed(4)),produto_id:produtoId});
   }
   window._editFormulaTipo=null;
   toast('Formula '+tipo+' salva!');
@@ -2674,6 +2802,16 @@ async function salvarProduto(){
     produtosC=produtosC.map(p=>p.id===parseInt(id)?{...p,...patchData}:p);
   }
   else{
+    // Aviso se ja existir produto com nome muito parecido (evita duplicacao tipo "Toxin" vs "Toxin - Yeasttec")
+    const descNorm=desc.toLowerCase().trim();
+    const similar=produtosC.find(p=>{
+      const pNorm=(p.descricao||'').toLowerCase().trim();
+      return pNorm!==descNorm&&(pNorm.startsWith(descNorm)||descNorm.startsWith(pNorm));
+    });
+    if(similar){
+      const ok=confirm('Ja existe um produto parecido: "'+similar.descricao+'" (estoque: '+parseFloat(similar.estoque_atual||0).toLocaleString('pt-BR')+'). Deseja criar "'+desc+'" como um produto NOVO e separado mesmo assim?');
+      if(!ok){toast('Cadastro cancelado. Use o produto existente.',true);return;}
+    }
     const custoInicial=precoReferencia!=null?precoReferencia:0;
     const res=await supa.post('produtos',{descricao:desc,unidade,tipo,natureza,codigo,custo_medio:custoInicial,estoque_atual:0,categoria:categoria||null,preco_referencia:precoReferencia,estoque_minimo:estoqueMinimo});
     if(res===null)return;if(res&&res[0])produtosC.push(res[0]);else{const fr=await supa.get('produtos?order=created_at.desc&limit=1');if(fr&&fr[0])produtosC.push(fr[0]);}
@@ -4213,23 +4351,7 @@ async function seedCodigosProdutos(){
   if(semCodigo.length>0)toast(semCodigo.length+' produtos com codigo gerado');
 }
 
-// Auto-seed produtos da formula se ainda nao existirem
-async function forceSeedProdutos(){
-  toast('Criando produtos...');
-  produtosC=[];
-  for(const nome of Object.keys(FORMULA_POSTURA)){
-    const res=await supa.post('produtos',{descricao:nome,unidade:'kg',tipo:'Insumo racao',custo_medio:0,estoque_atual:0});
-    if(res&&res[0])produtosC.push(res[0]);
-    else if(res&&Array.isArray(res)&&res.length===0){
-      // already exists, fetch it
-      const existing=await supa.get('produtos?descricao=eq.'+encodeURIComponent(nome));
-      if(existing&&existing[0])produtosC.push(existing[0]);
-    }
-  }
-  LS.set('g_produtos_cache',produtosC);
-  toast('Produtos criados: '+produtosC.length);
-  renderProdutos();
-}
+
 
 async function seedProdutosOvos(){
   const tiposOvos=[
@@ -4251,17 +4373,7 @@ async function seedProdutosOvos(){
   }
 }
 
-async function seedProdutosRacao(){
-  const nomes=Object.keys(FORMULA_POSTURA);
-  for(const nome of nomes){
-    const existe=produtosC.find(p=>p.descricao===nome||p.descricao.toLowerCase()===nome.toLowerCase());
-    if(!existe){
-      // Use upsert on descricao to avoid race-condition duplicates
-      const res=await supa.query('POST','produtos?on_conflict=descricao',{descricao:nome,unidade:'kg',tipo:'Insumo racao',custo_medio:0,estoque_atual:0},{'Prefer':'resolution=merge-duplicates,return=representation'});
-      if(res&&res[0])produtosC.push(res[0]);
-    }
-  }
-}
+
 
 // =============================================
 // CLIENTES & FORNECEDORES
