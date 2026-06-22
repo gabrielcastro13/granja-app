@@ -1593,6 +1593,13 @@ function onTipoRacaoChange(){
 // ── RACAO PERSONALIZADA (Outro) ───────────────────────────────────────────────
 let _outroItens=[]; // [{produto_id, nome, unidade, quantidade}]
 
+function _toggleOutroDestinoCustom(){
+  const sel=document.getElementById('outro-galpao');
+  const custom=document.getElementById('outro-destino-custom');
+  if(!sel||!custom)return;
+  custom.style.display=sel.value==='__outro__'?'block':'none';
+}
+
 function renderFormOutro(el){
   _outroItens=[];
   el.innerHTML='';
@@ -1602,7 +1609,8 @@ function renderFormOutro(el){
   card.innerHTML='<div class="form-card-title"><span class="dot" style="background:#52B788"></span>Fabricacao Personalizada</div>'
     +'<div class="field-row">'
     +'<div class="field-group"><div class="field-label">Data de fabricacao</div><input class="field-input" id="outro-data" type="date" value="'+new Date().toISOString().slice(0,10)+'"></div>'
-    +'<div class="field-group"><div class="field-label">Galpao de destino</div><select class="field-input" id="outro-galpao"><option value="">Selecione...</option>'+GALPOES.map(g=>'<option value="'+g.id+'">'+g.nome+'</option>').join('')+'</select></div>'
+    +'<div class="field-group"><div class="field-label">Destino</div><select class="field-input" id="outro-galpao" onchange="_toggleOutroDestinoCustom()"><option value="">Selecione...</option>'+GALPOES.map(g=>'<option value="'+g.id+'">'+g.nome+'</option>').join('')+'<option value="__outro__">Outro (Especificar)</option></select>'
+    +'<input class="field-input" id="outro-destino-custom" placeholder="Especifique o destino" style="display:none;margin-top:6px"></div>'
     +'</div>';
   el.appendChild(card);
 
@@ -1699,17 +1707,20 @@ async function salvarRacaoOutro(btn){
     const data=document.getElementById('outro-data').value;
     const gidDest=document.getElementById('outro-galpao').value;
     if(!data){toast('Informe a data',true);reEnable();return;}
-    if(!gidDest){toast('Selecione o galpao',true);reEnable();return;}
+    if(!gidDest){toast('Selecione o destino',true);reEnable();return;}
+    const isOutroDestino=gidDest==='__outro__';
+    const destinoCustomTexto=isOutroDestino?(document.getElementById('outro-destino-custom')?.value||'').trim():'';
+    if(isOutroDestino&&!destinoCustomTexto){toast('Especifique o destino',true);reEnable();return;}
     if(!_outroItens.length){toast('Adicione ao menos um produto',true);reEnable();return;}
     const insuf=_outroItens.find(i=>i.quantidade>i.estoque);
     if(insuf){if(!confirm('Estoque insuficiente para "'+insuf.nome+'". Continuar mesmo assim?')){reEnable();return;}}
     const pesoTotal=_outroItens.reduce((a,i)=>a+i.quantidade,0);
-    const gNomeDest=(GALPOES.find(g=>g.id===gidDest)||{}).nome||'';
+    const gNomeDest=isOutroDestino?destinoCustomTexto:(GALPOES.find(g=>g.id===gidDest)||{}).nome||'';
     const modo=document.querySelector('input[name="outro-valor-modo"]:checked')?.value||'peps';
     const obs=document.getElementById('outro-obs')?.value||'';
-    const loteDestino=lotesC.find(l=>l.galpao_id===gidDest&&l.status==='ativo');
+    const loteDestino=isOutroDestino?null:lotesC.find(l=>l.galpao_id===gidDest&&l.status==='ativo');
     // Salvar fabricacao
-    const res=await supa.post('fabricacao_racao',{tipo:'Outro',data_fabricacao:data,num_misturas:1,peso_total_kg:parseFloat(pesoTotal.toFixed(4)),galpao_destino_id:gidDest,galpao_destino_nome:gNomeDest,lote_id:loteDestino?.id||null,valor_mistura:null,com_corante:false,obs:obs||null});
+    const res=await supa.post('fabricacao_racao',{tipo:'Outro',data_fabricacao:data,num_misturas:1,peso_total_kg:parseFloat(pesoTotal.toFixed(4)),galpao_destino_id:isOutroDestino?null:gidDest,galpao_destino_nome:gNomeDest,lote_id:loteDestino?.id||null,valor_mistura:null,com_corante:false,obs:obs||null});
     if(!res){toast('Erro ao salvar',true);reEnable();return;}
     const fabId=res[0]?.id;
     if(res[0])racaoCache.unshift(res[0]);
@@ -1747,7 +1758,7 @@ async function salvarRacaoOutro(btn){
       const nextLote=comprasC.filter(x=>x.produto_id===prod.id&&parseFloat(x.quantidade_restante||0)>0).sort((a,b)=>new Date(a.data_transacao)-new Date(b.data_transacao))[0];
       const novoCusto=nextLote?parseFloat(nextLote.custo_unitario):(parseFloat(prod.preco_referencia)||parseFloat(prod.custo_medio||0));
       await supa.patch('produtos?id=eq.'+prod.id,{estoque_atual:parseFloat(novoEst.toFixed(4)),custo_medio:parseFloat(novoCusto.toFixed(4))});
-      await supa.post('estoque_movimentos',{produto_id:prod.id,produto_nome:prod.descricao,tipo_movimento:'saida',origem:'fabricacao_racao',origem_id:fabId,quantidade:qt,unidade:prod.unidade});
+      await supa.post('estoque_movimentos',{produto_id:prod.id,produto_nome:prod.descricao,tipo_movimento:'saida',origem:'fabricacao_racao',origem_id:fabId,quantidade:qt,unidade:prod.unidade,created_at:data+'T12:00:00'});
       produtosC=produtosC.map(p=>p.id===prod.id?{...p,estoque_atual:novoEst,custo_medio:novoCusto}:p);
     }
     // Atualizar valor_mistura
@@ -1900,9 +1911,10 @@ async function _estornarRacaoEstoque(fabId){
 
 // Debita do estoque os ingredientes da formula (PEPS), igual ao fluxo de criacao.
 // Usado tanto na criacao quanto, apos estornar, na edicao de uma fabricacao existente.
-async function _debitarRacaoEstoque(fabId,tipo,misturas,comCorante){
+async function _debitarRacaoEstoque(fabId,tipo,misturas,comCorante,dataFabricacao){
   const formula=getFormulaTipo(tipo);
   let custoTotalFab=0;
+  const createdAtMov=dataFabricacao?dataFabricacao+'T12:00:00':undefined;
   for(const[nome,q]of Object.entries(formula)){
     if(nome==='Corante'&&!comCorante)continue;if(q===0)continue;
     const qt=q*misturas;
@@ -1933,7 +1945,7 @@ async function _debitarRacaoEstoque(fabId,tipo,misturas,comCorante){
     const nextLote=comprasC.filter(x=>x.produto_id===prod.id&&parseFloat(x.quantidade_restante||0)>0).sort((a,b)=>new Date(a.data_transacao)-new Date(b.data_transacao))[0];
     const novoCusto=nextLote?parseFloat(nextLote.custo_unitario):(parseFloat(prod.preco_referencia)||parseFloat(prod.custo_medio||0));
     await supa.patch('produtos?id=eq.'+prod.id,{estoque_atual:novoEst,custo_medio:parseFloat(novoCusto.toFixed(4))});
-    await supa.post('estoque_movimentos',{produto_id:prod.id,produto_nome:prod.descricao,tipo_movimento:'saida',origem:'fabricacao_racao',origem_id:fabId,quantidade:qt,unidade:'kg'});
+    await supa.post('estoque_movimentos',{produto_id:prod.id,produto_nome:prod.descricao,tipo_movimento:'saida',origem:'fabricacao_racao',origem_id:fabId,quantidade:qt,unidade:'kg',created_at:createdAtMov});
     produtosC=produtosC.map(p=>p.id===prod.id?{...p,estoque_atual:novoEst,custo_medio:novoCusto}:p);
   }
   return custoTotalFab;
@@ -1960,7 +1972,7 @@ async function salvarRacao(){
       const totalFab=vKg*peso;
       custoPorMisturaEdit=misturas>0?parseFloat((totalFab/misturas).toFixed(2)):0;
     } else {
-      const custoTotalFab=await _debitarRacaoEstoque(rid,tipo,misturas,comCorante);
+      const custoTotalFab=await _debitarRacaoEstoque(rid,tipo,misturas,comCorante,data);
       custoPorMisturaEdit=misturas>0?parseFloat((custoTotalFab/misturas).toFixed(2)):0;
     }
     const payloadEdit={tipo,data_fabricacao:data,num_misturas:misturas,peso_total_kg:peso,galpao_destino_id:gidDest||null,galpao_destino_nome:gNomeDest||null,com_corante:comCorante,valor_mistura:custoPorMisturaEdit,valor_modo:valorModoEdit};
@@ -2041,7 +2053,7 @@ async function salvarRacao(){
     const nextLote=comprasC.filter(x=>x.produto_id===prod.id&&parseFloat(x.quantidade_restante||0)>0).sort((a,b)=>new Date(a.data_transacao)-new Date(b.data_transacao))[0];
     const novoCusto=nextLote?parseFloat(nextLote.custo_unitario):(parseFloat(prod.preco_referencia)||parseFloat(prod.custo_medio||0));
     await supa.patch('produtos?id=eq.'+prod.id,{estoque_atual:novoEst,custo_medio:parseFloat(novoCusto.toFixed(4))});
-    await supa.post('estoque_movimentos',{produto_id:prod.id,produto_nome:prod.descricao,tipo_movimento:'saida',origem:'fabricacao_racao',origem_id:fabId,quantidade:qt,unidade:'kg'});
+    await supa.post('estoque_movimentos',{produto_id:prod.id,produto_nome:prod.descricao,tipo_movimento:'saida',origem:'fabricacao_racao',origem_id:fabId,quantidade:qt,unidade:'kg',created_at:data+'T12:00:00'});
     produtosC=produtosC.map(p=>p.id===prod.id?{...p,estoque_atual:novoEst,custo_medio:novoCusto}:p);
   }
   // Update fabricacao with real PEPS cost
@@ -2206,7 +2218,7 @@ function editarRacao(rid){
       valor=parseFloat(valorRaw);
       valorModoEr='manual';
     } else {
-      const custoTotalFab=await _debitarRacaoEstoque(rid,tipo,misturas,tipo==='Crescimento'?false:comCorante);
+      const custoTotalFab=await _debitarRacaoEstoque(rid,tipo,misturas,tipo==='Crescimento'?false:comCorante,data);
       valor=misturas>0?parseFloat((custoTotalFab/misturas).toFixed(2)):0;
       valorModoEr='peps';
     }
@@ -2643,7 +2655,7 @@ async function salvarCompra(){
   const res=await supa.post('compras',{produto_id:pid,produto_nome:p.descricao,quantidade:qtd,quantidade_restante:qtd,unidade,data_transacao:data,custo_unitario:cuUnit,custos_adicionais:cuAdd,custo_total:total,fornecedor_id:parseInt(fornSel)||null,fornecedor_nome:fornObj?fornObj.nome:null,obs:document.getElementById('c-obs').value,entreposto});
   if(res===null){if(btn){btn.disabled=false;btn.textContent='Salvar compra';}return;}
   const cid=res&&res[0]?res[0].id:null;
-  await supa.post('estoque_movimentos',{produto_id:pid,produto_nome:p.descricao,tipo_movimento:'entrada',origem:'compra',origem_id:cid,quantidade:qtd,unidade});
+  await supa.post('estoque_movimentos',{produto_id:pid,produto_nome:p.descricao,tipo_movimento:'entrada',origem:'compra',origem_id:cid,quantidade:qtd,unidade,created_at:data+'T12:00:00'});
   // Atualizar estoque correto
   if(isInsProd&&entreposto){
     const col='estoque_'+entreposto;
@@ -2790,7 +2802,7 @@ async function salvarProduto(){
   const estMinVal=document.getElementById('p-estoque-min')?.value;
   const estoqueMinimo=estMinVal!==''&&estMinVal!=null?parseFloat(estMinVal):0;
   // Derive tipo from natureza for backward compat
-  const tipoMap={'Servicos':'Servico','Insumos racao':'Insumo racao','Insumos producao':'Insumo producao','Produto final - Ovo':'Produto final'};
+  const tipoMap={'Servicos':'Servico','Insumos racao':'Insumo racao','Insumos producao':'Insumo producao','Produto final - Ovo':'Produto final','Outros':'Outros'};
   const tipo=tipoMap[natureza]||natureza;
   if(id){
     const pAtual=produtosC.find(x=>x.id===parseInt(id));
@@ -2986,8 +2998,8 @@ function renderDashInto(panel){
 }
 // =============================================
 const PRODUTOS_VENDA=['Ovos tipo Jumbo','Ovos tipo Extra','Ovos tipo A','Ovos tipo B','Ovos tipo C','Ovos Sujos','Ovos trincados'];
-const NATUREZA_DIGITO={'Servicos':1,'Insumos racao':2,'Insumos producao':3,'Produto final - Ovo':4};
-const NATUREZA_OPCOES=['Servicos','Insumos racao','Insumos producao','Produto final - Ovo'];
+const NATUREZA_DIGITO={'Servicos':1,'Insumos racao':2,'Insumos producao':3,'Produto final - Ovo':4,'Outros':5};
+const NATUREZA_OPCOES=['Servicos','Insumos racao','Insumos producao','Produto final - Ovo','Outros'];
 // Ovos de venda como produtos virtuais (cod 4001-4007)
 // Ovos virtuais — now backed by produtosC; if not found, use these as fallback
 const PRODUTOS_OVOS_VENDA_DEFAULT=[
@@ -6057,8 +6069,9 @@ function _renderInsumosSection(box,unidade,editEmp){
   }
 }
 
-async function _debitarInsumosEmpenho(unidade,quantidade,editEmp,entreposto){
+async function _debitarInsumosEmpenho(unidade,quantidade,editEmp,entreposto,dataEmpenho,empenhoId){
   const col=entreposto?'estoque_'+entreposto:'estoque_grota';
+  const dataMovStr=dataEmpenho?dataEmpenho+'T12:00:00':null;
   if(unidade==='pente'){
     const penteId=parseInt(document.getElementById('ins-pente')?.value||0);
     if(penteId){
@@ -6067,6 +6080,7 @@ async function _debitarInsumosEmpenho(unidade,quantidade,editEmp,entreposto){
         const novo=Math.max(0,parseFloat(p[col]||0)-quantidade);
         await supa.patch('produtos?id=eq.'+penteId,{[col]:novo});
         produtosC=produtosC.map(x=>x.id===penteId?{...x,[col]:novo}:x);
+        await supa.post('estoque_movimentos',{produto_id:penteId,produto_nome:p.descricao,tipo_movimento:'saida',origem:'empenho',origem_id:empenhoId||null,quantidade,unidade:p.unidade,entreposto,created_at:dataMovStr});
       }
     }
     return {ins_pente_id:penteId||null,ins_separador_id:null,ins_caixa_id:null};
@@ -6075,9 +6089,9 @@ async function _debitarInsumosEmpenho(unidade,quantidade,editEmp,entreposto){
     const sepId=parseInt(document.getElementById('ins-separador')?.value||0);
     const caixaId=parseInt(document.getElementById('ins-caixa')?.value||0);
     const qtdCaixas=quantidade;
-    if(penteId){const p=produtosC.find(x=>x.id===penteId);if(p){const novo=Math.max(0,parseFloat(p[col]||0)-qtdCaixas*14);await supa.patch('produtos?id=eq.'+penteId,{[col]:novo});produtosC=produtosC.map(x=>x.id===penteId?{...x,[col]:novo}:x);}}
-    if(sepId){const p=produtosC.find(x=>x.id===sepId);if(p){const novo=Math.max(0,parseFloat(p[col]||0)-qtdCaixas);await supa.patch('produtos?id=eq.'+sepId,{[col]:novo});produtosC=produtosC.map(x=>x.id===sepId?{...x,[col]:novo}:x);}}
-    if(caixaId){const p=produtosC.find(x=>x.id===caixaId);if(p){const novo=Math.max(0,parseFloat(p[col]||0)-qtdCaixas);await supa.patch('produtos?id=eq.'+caixaId,{[col]:novo});produtosC=produtosC.map(x=>x.id===caixaId?{...x,[col]:novo}:x);}}
+    if(penteId){const p=produtosC.find(x=>x.id===penteId);if(p){const novo=Math.max(0,parseFloat(p[col]||0)-qtdCaixas*14);await supa.patch('produtos?id=eq.'+penteId,{[col]:novo});produtosC=produtosC.map(x=>x.id===penteId?{...x,[col]:novo}:x);await supa.post('estoque_movimentos',{produto_id:penteId,produto_nome:p.descricao,tipo_movimento:'saida',origem:'empenho',origem_id:empenhoId||null,quantidade:qtdCaixas*14,unidade:p.unidade,entreposto,created_at:dataMovStr});}}
+    if(sepId){const p=produtosC.find(x=>x.id===sepId);if(p){const novo=Math.max(0,parseFloat(p[col]||0)-qtdCaixas);await supa.patch('produtos?id=eq.'+sepId,{[col]:novo});produtosC=produtosC.map(x=>x.id===sepId?{...x,[col]:novo}:x);await supa.post('estoque_movimentos',{produto_id:sepId,produto_nome:p.descricao,tipo_movimento:'saida',origem:'empenho',origem_id:empenhoId||null,quantidade:qtdCaixas,unidade:p.unidade,entreposto,created_at:dataMovStr});}}
+    if(caixaId){const p=produtosC.find(x=>x.id===caixaId);if(p){const novo=Math.max(0,parseFloat(p[col]||0)-qtdCaixas);await supa.patch('produtos?id=eq.'+caixaId,{[col]:novo});produtosC=produtosC.map(x=>x.id===caixaId?{...x,[col]:novo}:x);await supa.post('estoque_movimentos',{produto_id:caixaId,produto_nome:p.descricao,tipo_movimento:'saida',origem:'empenho',origem_id:empenhoId||null,quantidade:qtdCaixas,unidade:p.unidade,entreposto,created_at:dataMovStr});}}
     return {ins_pente_id:penteId||null,ins_separador_id:sepId||null,ins_caixa_id:caixaId||null};
   }
   return {ins_pente_id:null,ins_separador_id:null,ins_caixa_id:null};
@@ -6087,6 +6101,8 @@ async function _estornarInsumosEmpenho(emp,entreposto){
   if(!emp)return;
   const col=entreposto?'estoque_'+entreposto:'estoque_grota';
   const unidade=emp.unidade;const q=parseFloat(emp.quantidade||0);
+  // Remove as movimentacoes de saida antigas vinculadas a este empenho (serao recriadas no debito novo)
+  if(emp.id)await supa.del('estoque_movimentos?origem=eq.empenho&origem_id=eq.'+emp.id);
   if(unidade==='pente'&&emp.ins_pente_id){
     const p=produtosC.find(x=>x.id===emp.ins_pente_id);
     if(p){const novo=parseFloat(p[col]||0)+q;await supa.patch('produtos?id=eq.'+emp.ins_pente_id,{[col]:novo});produtosC=produtosC.map(x=>x.id===emp.ins_pente_id?{...x,[col]:novo}:x);}
@@ -6160,17 +6176,19 @@ function abrirModalEmpenho(data,estoqueOvos,editEmp){
     if(isEdit){
       // Estornar insumos antigos antes de debitar novos
       await _estornarInsumosEmpenho(editEmp,'grota');
-      const ins=await _debitarInsumosEmpenho(unidNome,q,editEmp,'grota');
+      const ins=await _debitarInsumosEmpenho(unidNome,q,editEmp,'grota',data,editEmp.id);
       await supa.patch('entreposto_empenho?id=eq.'+editEmp.id,{produto_id:parseInt(prodId),produto_nome:prodNome,quantidade:q,unidade:unidNome,ovos_equivalentes:eq,obs:obsInp.value,...ins});
       entrepostoEmpenhoC=entrepostoEmpenhoC.map(e=>e.id===editEmp.id?{...e,produto_id:parseInt(prodId),produto_nome:prodNome,quantidade:q,unidade:unidNome,ovos_equivalentes:eq,obs:obsInp.value,...ins}:e);
       toast('Empenho atualizado!');
     } else {
-      const ins=await _debitarInsumosEmpenho(unidNome,q,null,'grota');
       const res=await supa.post('entreposto_empenho',{
         data,produto_id:parseInt(prodId),produto_nome:prodNome,
-        quantidade:q,unidade:unidNome,ovos_equivalentes:eq,obs:obsInp.value,...ins
+        quantidade:q,unidade:unidNome,ovos_equivalentes:eq,obs:obsInp.value
       });
-      if(res&&res[0])entrepostoEmpenhoC.push(res[0]);
+      const novoEmpId=res&&res[0]?res[0].id:null;
+      const ins=await _debitarInsumosEmpenho(unidNome,q,null,'grota',data,novoEmpId);
+      if(novoEmpId&&Object.values(ins).some(v=>v!=null))await supa.patch('entreposto_empenho?id=eq.'+novoEmpId,ins);
+      if(res&&res[0])entrepostoEmpenhoC.push({...res[0],...ins});
       toast('Empenho registrado!');
     }
     document.body.removeChild(overlay);
@@ -6629,15 +6647,17 @@ function abrirModalEmpenhoMatriz(data,estoqueOvos,editEmp){
     const [unidNome,fatorStr]=unidSel.value.split('|');const fator=parseInt(fatorStr);const eq=Math.round(q*fator);const pentes=Math.round(eq/30);
     if(pentes>ovosDisp){toast('Supera estoque disponivel ('+ovosDisp+' pentes)',true);return;}
     if(isEdit){
-      await _estornarInsumosEmpenho(editEmp,'grota');
-      const ins=await _debitarInsumosEmpenho(unidNome,q,editEmp,'matriz');
+      await _estornarInsumosEmpenho(editEmp,'matriz');
+      const ins=await _debitarInsumosEmpenho(unidNome,q,editEmp,'matriz',data,editEmp.id);
       await supa.patch('entreposto_empenho?id=eq.'+editEmp.id,{produto_id:parseInt(prodId),produto_nome:prodNome,quantidade:q,unidade:unidNome,ovos_equivalentes:eq,obs:obsInp.value,...ins});
       entrepostoEmpenhoC=entrepostoEmpenhoC.map(e=>e.id===editEmp.id?{...e,produto_id:parseInt(prodId),produto_nome:prodNome,quantidade:q,unidade:unidNome,ovos_equivalentes:eq,obs:obsInp.value,...ins}:e);
       toast('Empenho atualizado!');
     } else {
-      const ins=await _debitarInsumosEmpenho(unidNome,q,null,'matriz');
-      const res=await supa.post('entreposto_empenho',{data,produto_id:parseInt(prodId),produto_nome:prodNome,quantidade:q,unidade:unidNome,ovos_equivalentes:eq,obs:obsInp.value,entreposto:'matriz',...ins});
-      if(res&&res[0])entrepostoEmpenhoC.push(res[0]);
+      const res=await supa.post('entreposto_empenho',{data,produto_id:parseInt(prodId),produto_nome:prodNome,quantidade:q,unidade:unidNome,ovos_equivalentes:eq,obs:obsInp.value,entreposto:'matriz'});
+      const novoEmpId=res&&res[0]?res[0].id:null;
+      const ins=await _debitarInsumosEmpenho(unidNome,q,null,'matriz',data,novoEmpId);
+      if(novoEmpId&&Object.values(ins).some(v=>v!=null))await supa.patch('entreposto_empenho?id=eq.'+novoEmpId,ins);
+      if(res&&res[0])entrepostoEmpenhoC.push({...res[0],...ins});
       toast('Empenho registrado!');
     }
     document.body.removeChild(overlay);renderProducao();
