@@ -1159,13 +1159,15 @@ async function salvar(){
     const ultimoISO=ultimoReg?toISO(ultimoReg.data_registro):'';
     if(ultimoISO&&dataISO<ultimoISO){
       // Registro retroativo: buscar diretamente o ultimo registro ANTES desta data no banco
-      // (query precisa, sem trazer tudo — evita limite de 1000 linhas do PostgREST)
       const todos=await supa.getAll('registros?galpao_id=eq.'+selGalpao+'&select=data_registro,aves_restantes');
+      console.log('[DEBUG retroativo] total registros buscados:', (todos||[]).length);
       const regsAnteriores=(todos||[])
         .filter(r=>toISO(r.data_registro)<dataISO)
         .sort((x,y)=>toISO(y.data_registro).localeCompare(toISO(x.data_registro)));
+      console.log('[DEBUG retroativo] registros anteriores a '+dataISO+':', regsAnteriores.slice(0,5).map(r=>r.data_registro+'='+r.aves_restantes));
       if(regsAnteriores.length){
         a=parseFloat(regsAnteriores[0].aves_restantes||0);
+        console.log('[DEBUG retroativo] aves_no_dia escolhido:', a);
       }
     }
   }
