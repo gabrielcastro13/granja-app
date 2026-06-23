@@ -646,6 +646,8 @@ async function loadAll(){
   if(sal_db)salariosC=sal_db;
   if(proc_db)vendaProcedenciaC=proc_db;
   if(func_db)funcionariosC=func_db;
+  if(clientes_db)clientesC=clientes_db;
+  if(forn_db)fornecedoresC=forn_db;
   if(entd_db)entrepostoDiarioC=entd_db;
   if(ente_db)entrepostoEmpenhoC=ente_db;
   setSS('online');
@@ -1083,35 +1085,115 @@ async function salvar(){
   if(existente){
     const ok=confirm('Ja existe um registro para este dia, deseja altera-lo?');
     if(!ok)return;
-    // Apagar o registro anterior antes de inserir o novo
+    const btn=document.getElementById('submit-btn');btn.disabled=true;btn.textContent='Salvando...';
+    const tp=coletas.reduce((s,c)=>s+parseInt(document.getElementById(c.id)?.value||0),0);
+    const to=tp*PENTE;
+    const cd=coletas.map(c=>({horario:c.time,pentes:parseInt(document.getElementById(c.id)?.value||0),ovos:parseInt(document.getElementById(c.id)?.value||0)*PENTE}));
+    const m=parseInt(document.getElementById('mortes').value||0);
+    const causa=document.getElementById('causa').value;
+    const obs=document.getElementById('obs_geral').value;
+    const dataInput=document.getElementById('data-registro-input').value;
+    const dataObj=dataInput?new Date(dataInput+'T12:00:00'):new Date();
+    const dataReg=dataObj.toLocaleDateString('pt-BR');
+    // Preservar aves_no_dia do registro existente (ja calculado corretamente na cascata)
+    const avesNoDia=parseFloat(existente.aves_no_dia||avesReais[selGalpao]||0);
+    const avesRestantes=Math.max(0,avesNoDia-m);
+    const taxaPostura=avesNoDia>0?parseFloat((to/avesNoDia*100).toFixed(1)):0;
+    const mortesAntigas=parseFloat(existente.mortes||0);
+    const patchData={total_pentes:tp,total_ovos:to,mortes:m,causa_morte:causa,obs,coletas:JSON.stringify(cd),aves_restantes:avesRestantes,taxa_postura:taxaPostura,editado_em:new Date().toISOString()};
     if(isOnline&&existente.id&&typeof existente.id!=='string'){
-      await supa.del('registros?id=eq.'+existente.id);
+      await supa.patch('registros?id=eq.'+existente.id,patchData);
     }
-    histCache=histCache.filter(r=>!(r.galpao_id===selGalpao&&r.data_registro===dataRegCheck));
+    // Atualizar cache local
+    const recAtualizado={...existente,...patchData,aves_no_dia:avesNoDia};
+    histCache=histCache.map(r=>r.id===existente.id?recAtualizado:r);
+    if(!histCache.find(r=>r.id===existente.id))histCache.unshift(recAtualizado);
     LS.set('g_hist',histCache);
-    pendQ=pendQ.filter(r=>!(r.galpao_id===selGalpao&&r.data_registro===dataRegCheck));
-    LS.set('g_pend',pendQ);
+    // Atualizar fichas_mensais
+    const loteAtivo=lotesC.find(l=>l.galpao_id===selGalpao&&l.status==='ativo');
+    if(isOnline&&loteAtivo&&tp>0){
+      const dParts=dataReg.split('/');
+      const diaN=parseInt(dParts[0]),mesN=parseInt(dParts[1]),anoN=parseInt(dParts[2]);
+      const c1=cd[0]?cd[0].pentes:0,c2=cd[1]?cd[1].pentes:0,c3=cd[2]?cd[2].pentes:0;
+      await supa.query('POST','fichas_mensais?on_conflict=lote_id,ano,mes,dia',{lote_id:loteAtivo.id,galpao_id:selGalpao,ano:anoN,mes:mesN,dia:diaN,coleta1:c1,coleta2:c2,coleta3:c3,total_pentes:tp,total_ovos:to,mortes:m},{'Prefer':'resolution=merge-duplicates'});
+    }
+    // Se mortes mudaram, recalcular cascata a partir deste dia
+    if(m!==mortesAntigas&&isOnline){
+      await recalcularCascataAves(selGalpao,dataReg);
+    } else {
+      // Mesmo sem cascata, atualizar galpoes.aves_atuais se for o registro mais recente
+      const todosGalpao=histCache.filter(r=>r.galpao_id===selGalpao).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+      if(todosGalpao[0]?.id===existente.id){
+        avesReais[selGalpao]=avesRestantes;LS.set('g_aves',avesReais);
+        if(isOnline){const ex=await supa.get('galpoes?galpao_id=eq.'+selGalpao);if(ex&&ex.length)await supa.patch('galpoes?galpao_id=eq.'+selGalpao,{aves_atuais:avesRestantes});else await supa.post('galpoes',{galpao_id:selGalpao,aves_atuais:avesRestantes});}
+      }
+    }
+    toast('Registro atualizado!');
+    btn.disabled=false;btn.textContent='Salvar registro';
+    selGalpao=null;coletas=[];coletaCnt=0;
+    window._histTab=selGalpao||existente.galpao_id;
+    window._posturaSubTab='historico';
+    renderPosturaTab('historico');
+    return;
   }
   const btn=document.getElementById('submit-btn');btn.disabled=true;btn.textContent='Salvando...';
   const tp=coletas.reduce((s,c)=>s+parseInt(document.getElementById(c.id)?.value||0),0);
   const to=tp*PENTE;
   const cd=coletas.map(c=>({horario:c.time,pentes:parseInt(document.getElementById(c.id)?.value||0),ovos:parseInt(document.getElementById(c.id)?.value||0)*PENTE}));
   const gp=GALPOES.find(g=>g.id===selGalpao);
-  const a=avesReais[selGalpao]??0;const m=parseInt(document.getElementById('mortes').value||0);const ar=a-m;
-  const tp2=a>0?parseFloat((to/a*100).toFixed(1)):0;
-  const loteAtivo=lotesC.find(l=>l.galpao_id===selGalpao&&l.status==='ativo');
-  const silos=[];
-  const tratos=[];
+  const m=parseInt(document.getElementById('mortes').value||0);
   const now=new Date();
   const dataInput=document.getElementById('data-registro-input').value;
   const dataObj=dataInput?new Date(dataInput+'T12:00:00'):now;
   const dataReg=dataObj.toLocaleDateString('pt-BR');
+  const toISO=(dr)=>{const p=dr.split('/');return p[2]+'-'+p[1]+'-'+p[0];};
+  const dataISO=toISO(dataReg);
+
+  // Determinar aves_no_dia correto:
+  // Se a data do registro for retroativa (anterior ao ultimo registro do galpao),
+  // buscar o aves_restantes do dia imediatamente anterior no banco.
+  // Isso evita usar o valor atual do galpao (que seria incorreto para datas passadas).
+  let a=avesReais[selGalpao]??0;
+  if(isOnline){
+    const ultimoReg=histCache.filter(r=>r.galpao_id===selGalpao).sort((x,y)=>toISO(y.data_registro).localeCompare(toISO(x.data_registro)))[0];
+    const ultimoISO=ultimoReg?toISO(ultimoReg.data_registro):'';
+    if(ultimoISO&&dataISO<ultimoISO){
+      // Registro retroativo: buscar diretamente o ultimo registro ANTES desta data no banco
+      // (query precisa, sem trazer tudo — evita limite de 1000 linhas do PostgREST)
+      const todos=await supa.getAll('registros?galpao_id=eq.'+selGalpao+'&select=data_registro,aves_restantes');
+      const regsAnteriores=(todos||[])
+        .filter(r=>toISO(r.data_registro)<dataISO)
+        .sort((x,y)=>toISO(y.data_registro).localeCompare(toISO(x.data_registro)));
+      if(regsAnteriores.length){
+        a=parseFloat(regsAnteriores[0].aves_restantes||0);
+      }
+    }
+  }
+
+  const ar=Math.max(0,a-m);
+  const tp2=a>0?parseFloat((to/a*100).toFixed(1)):0;
+  const loteAtivo=lotesC.find(l=>l.galpao_id===selGalpao&&l.status==='ativo');
+  const silos=[];
+  const tratos=[];
   const rec={id:Date.now(),created_at:now.toISOString(),data_registro:dataReg,horario:now.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}),colaborador:currentUser?(currentUser.adm?'ADM':currentUser.nome||'Nao informado'):'Nao informado',galpao_id:selGalpao,galpao_nome:gp.nome,lote_id:loteAtivo?loteAtivo.id:null,aves_no_dia:a,mortes:m,aves_restantes:ar,causa_morte:document.getElementById('causa').value,coletas:JSON.stringify(cd),total_pentes:tp,total_ovos:to,taxa_postura:tp2,silos:JSON.stringify(silos),tratos:JSON.stringify(tratos),obs:document.getElementById('obs_geral').value};
-  if(m>0){avesReais[selGalpao]=ar;LS.set('g_aves',avesReais);if(isOnline){const ex=await supa.get('galpoes?galpao_id=eq.'+selGalpao);if(ex&&ex.length)await supa.patch('galpoes?galpao_id=eq.'+selGalpao,{aves_atuais:ar});else await supa.post('galpoes',{galpao_id:selGalpao,aves_atuais:ar});}buildGReg();}
+  if(m>0&&dataISO>=(()=>{const ultimoReg2=histCache.filter(r=>r.galpao_id===selGalpao).sort((x,y)=>toISO(y.data_registro).localeCompare(toISO(x.data_registro)))[0];return ultimoReg2?toISO(ultimoReg2.data_registro):'';})())
+  {avesReais[selGalpao]=ar;LS.set('g_aves',avesReais);if(isOnline){const ex=await supa.get('galpoes?galpao_id=eq.'+selGalpao);if(ex&&ex.length)await supa.patch('galpoes?galpao_id=eq.'+selGalpao,{aves_atuais:ar});else await supa.post('galpoes',{galpao_id:selGalpao,aves_atuais:ar});}buildGReg();}
   let saved=false;if(isOnline){const r=await supa.post('registros',rec);saved=r!==null;}
   if(!saved){pendQ.push(rec);LS.set('g_pend',pendQ);setSS('offline');}
   histCache.unshift(rec);if(histCache.length>200)histCache=histCache.slice(0,200);LS.set('g_hist',histCache);
-  toast(saved?'Registro salvo!':'Salvo - sera sincronizado');
+  // Se retroativo, disparar cascata para corrigir os dias seguintes
+  if(isOnline&&saved){
+    const ultimoRegPos=histCache.filter(r=>r.galpao_id===selGalpao).sort((x,y)=>toISO(y.data_registro).localeCompare(toISO(x.data_registro)))[0];
+    const ultimoISOPos=ultimoRegPos?toISO(ultimoRegPos.data_registro):'';
+    if(ultimoISOPos&&dataISO<ultimoISOPos){
+      await recalcularCascataAves(selGalpao,dataReg);
+      toast('Registro retroativo salvo! Cascata recalculada.');
+    } else {
+      toast(saved?'Registro salvo!':'Salvo - sera sincronizado');
+    }
+  } else {
+    toast(saved?'Registro salvo!':'Salvo - sera sincronizado');
+  }
 
   // Auto-upsert into ficha mensal
   if(isOnline && loteAtivo && tp>0){
@@ -2677,9 +2759,82 @@ async function salvarCompra(){
   }catch(e){console.error('salvarCompra error:',e);toast('Erro ao salvar. Tente novamente.',true);if(btn){btn.disabled=false;btn.textContent='Salvar compra';}}
 }
 function renderComprasLista(){
-  const el=document.getElementById('compras-lista');if(!el||!comprasC.length)return;
-  el.innerHTML='<div style="font-size:11px;font-family:var(--mono);color:var(--muted);padding:10px 0 6px;text-transform:uppercase;letter-spacing:.06em">Compras registradas</div>'
-    +comprasC.map(co=>'<div class="history-item" style="margin-bottom:8px"><div class="history-header"><div class="history-galpao">'+co.produto_nome+'</div><div class="history-time">'+fmtD(co.data_transacao)+'</div></div><div class="history-tags"><span class="tag tag-racao">'+co.quantidade+' '+co.unidade+'</span><span class="tag" style="background:var(--green-pale);color:var(--green)">R$ '+parseFloat(co.custo_total||0).toFixed(2)+'</span>'+(parseFloat(co.quantidade_restante||0)>0?'<span class="tag" style="background:var(--blue-pale);color:var(--blue)">'+parseFloat(co.quantidade_restante).toFixed(2)+' restante</span>':'<span class="tag" style="background:var(--bg);color:var(--muted)">esgotado</span>')+(co.fornecedor_nome?'<span class="tag tag-collab">'+co.fornecedor_nome+'</span>':'')+'</div><div style="display:flex;gap:6px;margin-top:6px"><button class="g-btn g-btn-edit" onclick="editarCompra('+co.id+')">Editar</button><button class="g-btn" style="background:var(--red-pale);color:var(--red)" onclick="deletarCompra('+co.id+')">Apagar</button></div></div>').join('');
+  const el=document.getElementById('compras-lista');if(!el)return;
+  if(!comprasC.length){el.innerHTML='<div class="history-empty">Nenhuma compra registrada.</div>';return;}
+
+  const filtro=(window._comprasFiltro||'').toLowerCase().trim();
+  const ordem=window._comprasOrdem||'novo'; // 'novo' | 'antigo'
+
+  // Filtrar
+  let lista=comprasC.filter(co=>{
+    if(!filtro)return true;
+    return (co.produto_nome||'').toLowerCase().includes(filtro)
+      ||(co.fornecedor_nome||'').toLowerCase().includes(filtro)
+      ||(co.obs||'').toLowerCase().includes(filtro);
+  });
+
+  // Ordenar
+  lista=[...lista].sort((a,b)=>{
+    const da=new Date(a.data_transacao),db=new Date(b.data_transacao);
+    return ordem==='novo'?db-da:da-db;
+  });
+
+  el.innerHTML='';
+
+  // ── Barra de filtro + ordenação ──────────────────────────────────────────
+  const bar=document.createElement('div');
+  bar.style.cssText='display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px';
+
+  const searchInp=document.createElement('input');
+  searchInp.className='field-input';
+  searchInp.placeholder='Filtrar por produto, fornecedor ou obs...';
+  searchInp.value=window._comprasFiltro||'';
+  searchInp.style.cssText='flex:1;min-width:180px;font-size:13px';
+  searchInp.oninput=()=>{window._comprasFiltro=searchInp.value;renderComprasLista();};
+  bar.appendChild(searchInp);
+
+  const ordemBtn=document.createElement('button');
+  ordemBtn.className='g-btn';
+  ordemBtn.style.cssText='white-space:nowrap;font-size:12px;padding:6px 12px;display:flex;align-items:center;gap:4px';
+  ordemBtn.innerHTML=(ordem==='novo'?'↓ Mais novo':'↑ Mais antigo');
+  ordemBtn.onclick=()=>{window._comprasOrdem=ordem==='novo'?'antigo':'novo';renderComprasLista();};
+  bar.appendChild(ordemBtn);
+
+  const count=document.createElement('span');
+  count.style.cssText='font-size:11px;font-family:var(--mono);color:var(--muted);white-space:nowrap;align-self:center';
+  count.textContent=lista.length+' de '+comprasC.length;
+  bar.appendChild(count);
+
+  el.appendChild(bar);
+
+  // ── Lista ────────────────────────────────────────────────────────────────
+  if(!lista.length){
+    const empty=document.createElement('div');
+    empty.className='history-empty';
+    empty.textContent='Nenhuma compra encontrada para este filtro.';
+    el.appendChild(empty);
+    return;
+  }
+
+  lista.forEach(co=>{
+    const item=document.createElement('div');
+    item.className='history-item';
+    item.style.marginBottom='8px';
+    item.innerHTML='<div class="history-header"><div class="history-galpao">'+co.produto_nome+'</div><div class="history-time">'+fmtD(co.data_transacao)+'</div></div>'
+      +'<div class="history-tags">'
+      +'<span class="tag tag-racao">'+co.quantidade+' '+co.unidade+'</span>'
+      +'<span class="tag" style="background:var(--green-pale);color:var(--green)">R$ '+parseFloat(co.custo_total||0).toFixed(2)+'</span>'
+      +(parseFloat(co.quantidade_restante||0)>0
+        ?'<span class="tag" style="background:var(--blue-pale);color:var(--blue)">'+parseFloat(co.quantidade_restante).toFixed(2)+' restante</span>'
+        :'<span class="tag" style="background:var(--bg);color:var(--muted)">esgotado</span>')
+      +(co.fornecedor_nome?'<span class="tag tag-collab">'+co.fornecedor_nome+'</span>':'')
+      +'</div>'
+      +'<div style="display:flex;gap:6px;margin-top:6px">'
+      +'<button class="g-btn g-btn-edit" onclick="editarCompra('+co.id+')">Editar</button>'
+      +'<button class="g-btn" style="background:var(--red-pale);color:var(--red)" onclick="deletarCompra('+co.id+')">Apagar</button>'
+      +'</div>';
+    el.appendChild(item);
+  });
 }
 async function editarCompra(cid){
   const co=comprasC.find(x=>x.id===cid);if(!co)return;
@@ -3177,11 +3332,11 @@ function abrirSeletorUnidadeVenda(produto){
   overlay.appendChild(box);document.body.appendChild(overlay);
 }
 
-function adicionarLinhaVenda(nomeProduto,produtoObj,unidadeObj){
+function adicionarLinhaVenda(nomeProduto,produtoObj,unidadeObj,empenhoId){
   if(!window._vendaRows)window._vendaRows=[];
   const i=window._vendaRows.length;
   const unidade=unidadeObj||{id:'ovo',label:'Ovo',fator:1};
-  window._vendaRows.push({produto:nomeProduto+(unidade.id!=='ovo'?' ('+unidade.label+')':' (ovo)'),produtoObj,unidade});
+  window._vendaRows.push({produto:nomeProduto+(unidade.id!=='ovo'?' ('+unidade.label+')':' (ovo)'),produtoObj,unidade,empenhoId:empenhoId||null});
   const tbody=document.getElementById('v-tbody');if(!tbody)return;
   const tr=document.createElement('tr');tr.id='vrow_'+i;
   // Nome + unidade
@@ -3232,8 +3387,10 @@ function renderVendaEmpenhos(){
   const listDiv=document.getElementById('v-empenho-list');if(!listDiv)return;
   const dataVenda=document.getElementById('v-data')?.value;
   if(!dataVenda){listDiv.innerHTML='<div style="font-size:12px;color:var(--muted)">Informe a data da venda primeiro.</div>';return;}
-  // Get empenhos with date <= dataVenda not yet fully sold
-  const emps=entrepostoEmpenhoC.filter(e=>e.data<=dataVenda);
+  // Empenhos disponiveis: data <= dataVenda E sem venda_id (ainda nao usados em nenhuma venda)
+  // Tambem exclui os ja adicionados nesta sessao (_vendaRows)
+  const empenhosJaAdicionados=new Set((window._vendaRows||[]).map(r=>r.empenhoId).filter(Boolean));
+  const emps=entrepostoEmpenhoC.filter(e=>e.data<=dataVenda&&!e.venda_id&&!empenhosJaAdicionados.has(e.id));
   if(!emps.length){listDiv.innerHTML='<div style="font-size:12px;color:var(--muted)">Nenhum empenho disponivel ate esta data.</div>';return;}
   listDiv.innerHTML='';
   emps.forEach(emp=>{
@@ -3247,19 +3404,20 @@ function renderVendaEmpenhos(){
     addBtn.onclick=()=>{
       const q=parseFloat(qtdInp.value||0);if(!q){toast('Informe a quantidade',true);return;}
       if(q>emp.quantidade){toast('Maximo: '+emp.quantidade+' '+emp.unidade,true);return;}
-      // Find or get product price
       const prod=produtosC.find(p=>p.id===emp.produto_id);
       let unid=UNIDADES_OVO[0];
       if(emp.unidade==='caixa')unid=UNIDADES_OVO.find(u=>u.id==='caixa')||UNIDADES_OVO[2];
       else if(emp.unidade==='pente')unid=UNIDADES_OVO.find(u=>u.id==='pente')||UNIDADES_OVO[1];
-      adicionarLinhaVenda(nomeLimpo,prod||{descricao:nomeLimpo},unid);
+      adicionarLinhaVenda(nomeLimpo,prod||{descricao:nomeLimpo},unid,emp.id);
       // Pre-fill quantity
       const i=window._vendaRows.length-1;
       setTimeout(()=>{
         const qEl=document.getElementById('vqtd_'+i);if(qEl){qEl.value=q;calcItemVenda(i);calcTotalVenda();}
       },100);
-      toast(q+' '+emp.unidade+' adicionados');
-      qtdInp.value='';
+      toast(q+' '+emp.unidade+' adicionados. Empenho reservado para esta venda.');
+      // Remove from list immediately (already tracked via _vendaRows)
+      row.remove();
+      if(!listDiv.children.length){listDiv.innerHTML='<div style="font-size:12px;color:var(--muted)">Nenhum empenho disponivel ate esta data.</div>';}
     };
     row.appendChild(label);row.appendChild(qtdInp);row.appendChild(addBtn);
     listDiv.appendChild(row);
@@ -3357,6 +3515,12 @@ async function salvarVenda(){
     toast('Venda registrada!');
   }
   if(vid){for(const item of itens){const ir=await supa.post('venda_itens',{venda_id:vid,...item});if(ir&&ir[0])vendasItensC.push(ir[0]);}}
+  // Vincular empenhos usados a esta venda (impede que aparecam disponiveis em vendas futuras)
+  const empenhosUsados=(window._vendaRows||[]).map(r=>r.empenhoId).filter(Boolean);
+  if(empenhosUsados.length){
+    await Promise.all(empenhosUsados.map(eid=>supa.patch('entreposto_empenho?id=eq.'+eid,{venda_id:vid})));
+    empenhosUsados.forEach(eid=>{entrepostoEmpenhoC=entrepostoEmpenhoC.map(e=>e.id===eid?{...e,venda_id:vid}:e);});
+  }
   // Save procedencia with venda_item_id
   const proc=window._vendaProc||{};
   for(const[i,entries] of Object.entries(proc)){
@@ -3702,16 +3866,16 @@ async function salvarEdicaoVenda(){
   // Update venda
   await supa.patch('vendas?id=eq.'+vid,{cliente,cliente_id:parseInt(clidSel)||null,data_venda:data,numero_venda:numero,obs,valor_total:total});
   vendasC=vendasC.map(v=>v.id===vid?{...v,cliente,cliente_id:parseInt(clidSel)||null,data_venda:data,numero_venda:numero,obs,valor_total:total}:v);
-  // Update itens
+  // Update itens (apagar procedencia primeiro, pois tem FK para venda_itens)
+  await supa.del('venda_procedencia?venda_id=eq.'+vid);
+  vendaProcedenciaC=vendaProcedenciaC.filter(x=>x.venda_id!==vid);
   await supa.del('venda_itens?venda_id=eq.'+vid);
   vendasItensC=vendasItensC.filter(x=>x.venda_id!==vid);
   for(const item of novosItens){
     const r=await supa.post('venda_itens',{venda_id:vid,produto:item.produto,quantidade:item.quantidade,valor_unitario:item.valor_unitario,desconto_unitario:item.desconto_unitario,valor_final:item.valor_final});
     if(r&&r[0])vendasItensC.push(r[0]);
   }
-  // Update procedencia
-  await supa.del('venda_procedencia?venda_id=eq.'+vid);
-  vendaProcedenciaC=vendaProcedenciaC.filter(x=>x.venda_id!==vid);
+  // Recriar procedencia
   const newProc=window._editVendaProc||[];
   for(const p of newProc){
     if(!p.valor||p.valor<=0)continue;
