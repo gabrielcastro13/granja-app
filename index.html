@@ -3545,7 +3545,7 @@ async function salvarVenda(){
     const vendaItem=vendasItensC.filter(it=>it.venda_id===vid)[parseInt(i)]||null;
     const vendaItemId=vendaItem?.id||null;
     for(const entry of entries){
-      const pct=totalProcQtd>0?entry.qtd/totalProcQtd:0;
+      const pct=qtdUnit>0?parseFloat(entry.qtd)/qtdUnit:0;
       const valor=parseFloat((valorTotal*pct).toFixed(2));
       const qtdOvos=entry.qtd*unid.fator;
       const lote=lotesC.find(l=>l.id===entry.lote_id);
