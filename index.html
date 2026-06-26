@@ -4304,8 +4304,15 @@ async function recalcularCascataAves(gid,dataAPartir){
   const idxInicio=todos.findIndex(r=>toISO(r.data_registro)>=dataAPartirISO);
   if(idxInicio===-1)return;
   const regsParaRecalcular=todos.slice(idxInicio);
-  // Ponto de partida: aves_no_dia do proprio primeiro registro da cadeia (ja correto, vem do dia anterior)
-  let avesAtual=parseFloat(regsParaRecalcular[0].aves_no_dia||0);
+  // Ponto de partida: aves_restantes do dia ANTERIOR ao primeiro da faixa.
+  // (nao o aves_no_dia do primeiro registro — isso causaria dupla subtracao das mortes)
+  let avesAtual;
+  if(idxInicio>0){
+    avesAtual=parseFloat(todos[idxInicio-1].aves_restantes||0);
+  } else {
+    // Nao ha dia anterior: usa o aves_no_dia do proprio primeiro registro
+    avesAtual=parseFloat(regsParaRecalcular[0].aves_no_dia||0);
+  }
   const updates=[];
   for(const reg of regsParaRecalcular){
     const mortesD=parseFloat(reg.mortes||0);
@@ -5145,6 +5152,152 @@ function abrirCCMes(gid,loteId,ano,mes){
   const salHtmlData=salDespMes.length>0?salDespMes:salMes;
   const salHtml=(salHtmlData.length?salHtmlData.map(s=>'<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px"><span>'+(s.usuario_nome||s.descricao||'')+'</span><div style="display:flex;align-items:center;gap:6px"><span style="font-family:var(--mono);font-weight:600;color:var(--red)">R$ '+parseFloat(s.valor||0).toLocaleString('pt-BR',{minimumFractionDigits:2})+'</span><button onclick="deletarSalario('+s.id+')" style="font-size:10px;background:var(--red-pale);color:var(--red);border:none;border-radius:4px;padding:2px 6px;cursor:pointer">×</button></div></div>').join(''):'<div style="font-size:13px;color:var(--muted)">Nenhum salario lancado. Lance em Dep. Pessoal → Salarios.</div>');
   panel.appendChild(ccCard('Custo — Salarios','var(--red)',salHtml,salTotal,'Total salarios'));
+
+  // ── MÉTRICAS DE PRODUCAO (só Pedra Bonita) ────────────────
+  if(gid===ENTREPOSTO_GALPAO){
+    const metricsCard=document.createElement('div');metricsCard.className='form-card';metricsCard.style.marginBottom='10px';
+
+    // Calcular total de ovos produzidos no mes (registros de postura do PB)
+    const diasDoMes=new Date(ano,mes,0).getDate();
+    const regsMes=histCache.filter(r=>{
+      if(r.galpao_id!==ENTREPOSTO_GALPAO)return false;
+      const parts=(r.data_registro||'').split('/');
+      if(parts.length!==3)return false;
+      return parseInt(parts[2])===ano&&parseInt(parts[1])===mes;
+    });
+    const totalOvosMes=regsMes.reduce((a,r)=>a+(parseFloat(r.total_ovos)||0),0);
+
+    // Tipo de ovo via empenhos do mes (entreposto grota)
+    const empenhosMes=entrepostoEmpenhoC.filter(e=>{
+      if(e.entreposto&&e.entreposto!=='grota')return false;
+      if(!e.data)return false;
+      const [ey,em]=e.data.split('-');
+      return parseInt(ey)===ano&&parseInt(em)===mes;
+    });
+    const porTipo={};
+    empenhosMes.forEach(e=>{
+      const nome=(e.produto_nome||'').trim();
+      if(!porTipo[nome])porTipo[nome]=0;
+      // converter para ovos: pente=30, caixa=360, ovo=1
+      const fator=e.unidade==='caixa'?360:e.unidade==='pente'?30:1;
+      porTipo[nome]+=(parseFloat(e.quantidade)||0)*fator;
+    });
+    const totalEmpenhOvos=Object.values(porTipo).reduce((a,b)=>a+b,0);
+
+    // Consumo de racao no mes (somando consumo diario de cada dia)
+    let consumoTotalMes=0;
+    const fabs=racaoCache.filter(r=>r.galpao_destino_id===ENTREPOSTO_GALPAO&&r.tipo==='Postura')
+      .sort((a,b)=>new Date(a.data_fabricacao)-new Date(b.data_fabricacao));
+    function getConsumoMesDia(dateStr){
+      if(!fabs.length)return 0;
+      const ultima=fabs.filter(f=>f.data_fabricacao<=dateStr).pop();
+      if(!ultima)return 0;
+      const penultima=fabs.filter(f=>f.data_fabricacao<ultima.data_fabricacao).pop();
+      const proxima=fabs.find(f=>f.data_fabricacao>dateStr);
+      if(proxima){
+        const dU=new Date(ultima.data_fabricacao+'T12:00:00');
+        const dP=new Date(proxima.data_fabricacao+'T12:00:00');
+        const dias=Math.round((dP-dU)/(1000*60*60*24));
+        return dias>0?parseFloat(ultima.peso_total_kg||0)/dias:0;
+      } else if(penultima){
+        const dPen=new Date(penultima.data_fabricacao+'T12:00:00');
+        const dU=new Date(ultima.data_fabricacao+'T12:00:00');
+        const dias=Math.round((dU-dPen)/(1000*60*60*24));
+        return dias>0?parseFloat(ultima.peso_total_kg||0)/dias:0;
+      }
+      return 0;
+    }
+    for(let d=1;d<=diasDoMes;d++){
+      const ds=ano+'-'+String(mes).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+      consumoTotalMes+=getConsumoMesDia(ds);
+    }
+    const consumoMedioDia=diasDoMes>0?consumoTotalMes/diasDoMes:0;
+
+    // Media de galinhas do mes
+    const galinhasDias=regsMes.map(r=>parseFloat(r.aves_no_dia||r.aves_restantes||0)).filter(v=>v>0);
+    const mediaGalinhas=galinhasDias.length>0?galinhasDias.reduce((a,b)=>a+b,0)/galinhasDias.length:0;
+
+    // Custo medio do kg de racao do mes (media ponderada)
+    const fabsMes=fabs.filter(f=>{
+      const parts=f.data_fabricacao?f.data_fabricacao.split('-'):[];
+      return parseInt(parts[0])===ano&&parseInt(parts[1])===mes;
+    });
+    let custoMedioKg=0;
+    const totalKgFabs=fabsMes.reduce((a,f)=>a+parseFloat(f.peso_total_kg||0),0);
+    if(totalKgFabs>0){
+      const custoTotalFabs=fabsMes.reduce((a,f)=>a+(parseFloat(f.valor_mistura||0)*parseFloat(f.num_misturas||1)),0);
+      custoMedioKg=custoTotalFabs/totalKgFabs;
+    }
+
+    // Valor de racao/galinha = (consumo_medio_dia_kg * dias_mes * custo_medio_kg) / media_galinhas
+    const valorRacaoGalinha=mediaGalinhas>0&&custoMedioKg>0
+      ?(consumoMedioDia*diasDoMes*custoMedioKg)/mediaGalinhas
+      :null;
+
+    // Custos base para custo/ovo
+    const despDiretasMes=despesasC.filter(d=>d.galpao_id===gid&&parseInt(d.ano)===ano&&parseInt(d.mes)===mes&&d.categoria!=='Salario'&&(d.tipo_despesa==='direta'||!d.tipo_despesa));
+    const despDiretasTotal=despDiretasMes.reduce((a,d)=>a+(parseFloat(d.valor)||0),0);
+    const custoOvo=totalOvosMes>0&&consumoTotalMes>0
+      ?(despDiretasTotal+racaoTotal+salTotal)/totalOvosMes
+      :null;
+    const custoCaixa=custoOvo!=null?custoOvo*360:null;
+
+    const fmt=(v,dec=2)=>v!=null?parseFloat(v).toLocaleString('pt-BR',{minimumFractionDigits:dec,maximumFractionDigits:dec}):'—';
+    const fmtR=(v)=>v!=null?'R$ '+fmt(v):'—';
+
+    // Tipos de ovo HTML
+    let tiposHtml='';
+    if(totalEmpenhOvos>0){
+      Object.entries(porTipo).sort((a,b)=>b[1]-a[1]).forEach(([nome,qtd])=>{
+        const pct=totalEmpenhOvos>0?(qtd/totalEmpenhOvos*100).toFixed(1):0;
+        tiposHtml+='<div style="display:flex;justify-content:space-between;font-size:11px;font-family:var(--mono);padding:2px 0 2px 10px;color:var(--muted)">'
+          +'<span>'+nome+'</span><span>'+qtd.toLocaleString('pt-BR')+' ovos ('+pct+'%)</span></div>';
+      });
+    } else {
+      tiposHtml='<div style="font-size:11px;font-family:var(--mono);color:var(--muted);padding-left:10px">Sem empenhos neste mes</div>';
+    }
+
+    const temDados=totalOvosMes>0||consumoTotalMes>0;
+    metricsCard.innerHTML='<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">'
+      +'<span style="width:10px;height:10px;border-radius:50%;background:var(--blue);display:inline-block"></span>'
+      +'<span style="font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)">Metricas de Producao</span>'
+      +'</div>'
+      +(temDados?
+        '<div style="display:flex;flex-direction:column;gap:8px">'
+        // Ovos produzidos
+        +'<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">'
+        +'<span style="font-size:13px;color:var(--muted)">Total de ovos produzidos</span>'
+        +'<span style="font-family:var(--mono);font-weight:600">'+totalOvosMes.toLocaleString('pt-BR')+' ovos</span></div>'
+        // Tipos de ovo
+        +'<div style="padding:6px 0;border-bottom:1px solid var(--border)">'
+        +'<div style="font-size:13px;color:var(--muted);margin-bottom:4px">Classificacao por tipo (via empenho)</div>'
+        +tiposHtml+'</div>'
+        // Consumo de racao
+        +'<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">'
+        +'<span style="font-size:13px;color:var(--muted)">Consumo total de racao</span>'
+        +'<span style="font-family:var(--mono);font-weight:600">'+fmt(consumoTotalMes,1)+' kg</span></div>'
+        // Racao/galinha/dia
+        +'<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">'
+        +'<span style="font-size:13px;color:var(--muted)">Racao / galinha / dia</span>'
+        +'<span style="font-family:var(--mono);font-weight:600">'+(mediaGalinhas>0&&consumoMedioDia>0?fmt(consumoMedioDia/mediaGalinhas*1000,1)+' g':'—')+'</span></div>'
+        // Valor racao/galinha
+        +'<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">'
+        +'<span style="font-size:13px;color:var(--muted)">Valor de racao / galinha (mes)</span>'
+        +'<span style="font-family:var(--mono);font-weight:600">'+fmtR(valorRacaoGalinha)+'</span></div>'
+        // Custo/ovo
+        +'<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border)">'
+        +'<span style="font-size:13px;color:var(--muted)">Custo para produzir 1 ovo</span>'
+        +'<span style="font-family:var(--mono);font-weight:600">'+fmtR(custoOvo)+'</span></div>'
+        // Custo/caixa
+        +'<div style="display:flex;justify-content:space-between;padding:6px 0">'
+        +'<span style="font-size:13px;color:var(--muted)">Custo de uma caixa (360 ovos)</span>'
+        +'<span style="font-family:var(--mono);font-weight:600">'+fmtR(custoCaixa)+'</span></div>'
+        +'<div style="font-size:10px;font-family:var(--mono);color:var(--muted);margin-top:4px">Base: despesas diretas + racao + salarios. Media: '+Math.round(mediaGalinhas).toLocaleString('pt-BR')+' galinhas · R$ '+fmt(custoMedioKg)+'/kg racao</div>'
+        +'</div>'
+        :'<div style="font-size:13px;color:var(--muted)">Nao ha dados suficientes para mostrar metricas para este mes.</div>'
+      );
+    panel.appendChild(metricsCard);
+  }
 
   // ── RESULTADO ─────────────────────────────────────
   const custosTotal=racaoTotal+despTotal+salTotal;
@@ -6315,10 +6468,22 @@ function renderEntDiario(el){
   const ovosEmpenhados=calcOvosEmpenhados(data);
   const estoqueOvos=Math.max(0,estoqueOvosAnterior+qtdOvosPentes-ovosEmpenhados);
 
+  // Galinhas do PB no dia para calcular racao/galinha
+  const [yD,mD,dD]=data.split('-');
+  const dataBRD=dD+'/'+mD+'/'+yD;
+  const regPBDia=histCache.filter(r=>r.galpao_id===ENTREPOSTO_GALPAO&&(r.data_registro===dataBRD||r.data_registro===data));
+  const galinhasDia=regPBDia.length>0?parseFloat(regPBDia[0].aves_no_dia||regPBDia[0].aves_restantes||0):parseFloat(avesReais[ENTREPOSTO_GALPAO]||0);
+  const racaoPorGalinha=galinhasDia>0&&consumoDiario>0?parseFloat((consumoDiario/galinhasDia*1000).toFixed(1)):null; // em gramas
+
   // ── Render header cards ────────────────────────────────────────────────────
   const cards=[
     {label:'Estoque de Racao',value:estoqueRacao.toLocaleString('pt-BR',{minimumFractionDigits:2})+' kg',
-     sub:(()=>{const diasRestantes=consumoDiario>0?Math.floor(estoqueRacao/consumoDiario):0;return 'Anterior: '+estoqueRacaoPrev.toFixed(2)+'kg + Adicionada: '+racaoAdicionada.toFixed(2)+'kg − Consumo/dia: '+consumoDiario.toFixed(2)+'kg'+(diasRestantes>0?' · ~'+diasRestantes+' dias restantes':'');})(),
+     sub:(()=>{
+       const diasRestantes=consumoDiario>0?Math.floor(estoqueRacao/consumoDiario):0;
+       const consumoStr='Anterior: '+estoqueRacaoPrev.toFixed(2)+'kg + Adicionada: '+racaoAdicionada.toFixed(2)+'kg − Consumo/dia: '+consumoDiario.toFixed(2)+'kg'+(diasRestantes>0?' · ~'+diasRestantes+' dias restantes':'');
+       const racaoGalinhaStr=racaoPorGalinha!=null?' · Racao/galinha: '+racaoPorGalinha+'g':'';
+       return consumoStr+racaoGalinhaStr;
+     })(),
      color:'var(--amber)'},
     {label:'Quantidade de Ovos hoje',value:qtdOvosPentes.toLocaleString('pt-BR')+' pentes / '+qtdOvosUnidade.toLocaleString('pt-BR')+' ovos',
      sub:'Lote '+( loteAtivoPB?.codigo||'PB001'),color:'var(--green)'},
