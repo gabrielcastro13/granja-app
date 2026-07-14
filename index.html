@@ -552,12 +552,12 @@ const supa={
 const GALPOES=[{id:'g1',nome:'Galpao 1',cap:4000},{id:'g2',nome:'Galpao 2',cap:4500},{id:'g3',nome:'Galpao 3',cap:4000},{id:'pb',nome:'Pedra Bonita',cap:5000}];
 const COLAB=['Lena','Lene','Diego','Gil'];
 const PENTE=30;
-const LS={get:(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d;}catch{return d;}},set:(k,v)=>localStorage.setItem(k,JSON.stringify(v))};
+const LS={get:(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d;}catch{return d;}},set:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));}catch(e){if(e.name==='QuotaExceededError')console.warn('LS quota exceeded for key:',k);}}};
 let avesReais=LS.get('g_aves',{g1:4000,g2:4500,g3:4000,pb:5000});
-let histCache=LS.get('g_hist',[]);
+let histCache=[]; // sempre carrega do banco, nao do LS (muito grande)
 let pendQ=LS.get('g_pend',[]);
 let lotesC=LS.get('g_lotes',[]);
-let docsC=LS.get('g_docs',[]);
+let docsC=[]; // sempre carrega do banco, nao do LS (pode ter base64 grande)
 let respsC=LS.get('g_resps',[]);
 let isOnline=navigator.onLine;
 let selCollab=null,selGalpao=null,coletas=[],coletaCnt=0,editGalpaoId=null,editLoteId=null,chartInst=null,viewGalpaoId=null;
@@ -638,10 +638,10 @@ async function loadAll(){
     supa.getAll('entreposto_diario?order=data.desc'),
     supa.getAll('entreposto_empenho?order=data.desc'),
   ]);
-  if(hist!==null){histCache=hist;LS.set('g_hist',histCache);}
+  if(hist!==null){histCache=hist;} // nao salvar no LS - muito grande
   if(aves&&aves.length){aves.forEach(g=>{avesReais[g.galpao_id]=g.aves_atuais;});LS.set('g_aves',avesReais);}
   if(lotes!==null){lotesC=lotes;LS.set('g_lotes',lotesC);}
-  if(docs!==null){docsC=docs;LS.set('g_docs',docsC);}
+  if(docs!==null){docsC=docs;} // nao salvar no LS - pode conter base64 grande
   if(resps!==null){respsC=resps;LS.set('g_resps',respsC);}
   if(usuarios!==null){usuariosC=usuarios;LS.set('g_usuarios',usuariosC);}
   if(racao!==null){racaoCache=racao;}
@@ -2062,6 +2062,21 @@ async function salvarRacao(){
       const totalFab=vKg*peso;
       custoPorMisturaEdit=misturas>0?parseFloat((totalFab/misturas).toFixed(2)):0;
     } else {
+      // Validar estoque (apos estorno, produtosC ja reflete o estoque real disponivel)
+      const formulaEditVal=getFormulaTipo(tipo);
+      for(const[nome,q]of Object.entries(formulaEditVal)){
+        if(nome==='Corante'&&!comCorante)continue;if(q===0)continue;
+        const qtNecessaria=q*misturas;
+        const prod=produtosC.find(p=>p.descricao===nome);
+        if(!prod)continue;
+        const estoqueDisp=parseFloat(prod.estoque_atual||0);
+        if(estoqueDisp<qtNecessaria){
+          // Reverter estorno — reaplica o debito original
+          await _debitarRacaoEstoque(rid,tipo,misturas,comCorante,data);
+          alert('Sua solicitacao nao pode ser atendida. Nao ha estoque suficiente do produto: '+nome+'\n\nEstoque disponivel: '+estoqueDisp.toLocaleString('pt-BR',{minimumFractionDigits:2})+' kg\nQuantidade necessaria: '+qtNecessaria.toLocaleString('pt-BR',{minimumFractionDigits:2})+' kg');
+          window._editRacaoId=null;setRacaoTab('historico');return;
+        }
+      }
       const custoTotalFab=await _debitarRacaoEstoque(rid,tipo,misturas,comCorante,data);
       custoPorMisturaEdit=misturas>0?parseFloat((custoTotalFab/misturas).toFixed(2)):0;
     }
@@ -2091,8 +2106,28 @@ async function salvarRacao(){
   const obs=document.getElementById('r-obs').value;
   const comCorante=document.getElementById('r-corante')?.checked!==false;
   if(!data){toast('Informe a data',true);return;}
-  if(!gidDest){toast('Selecione o galpao de destino',true);return;}
   const loteDestino=gidDest?lotesC.find(l=>l.galpao_id===gidDest&&l.status==='ativo'):null;
+
+  // Validar estoque antes de salvar (apenas no modo PEPS)
+  if(valorModo!=='manual'){
+    const formulaValidar=getFormulaTipo(tipo);
+    for(const[nome,q]of Object.entries(formulaValidar)){
+      if(nome==='Corante'&&!comCorante)continue;if(q===0)continue;
+      const qtNecessaria=q*misturas;
+      const prod=produtosC.find(p=>p.descricao===nome);
+      if(!prod){
+        // Produto nao cadastrado — pode continuar (sem estoque para descontar)
+        continue;
+      }
+      const estoqueDisp=parseFloat(prod.estoque_atual||0);
+      if(estoqueDisp<qtNecessaria){
+        alert('Sua solicitacao nao pode ser atendida. Nao ha estoque suficiente do produto: '+nome+'\n\nEstoque disponivel: '+estoqueDisp.toLocaleString('pt-BR',{minimumFractionDigits:2})+' kg\nQuantidade necessaria: '+qtNecessaria.toLocaleString('pt-BR',{minimumFractionDigits:2})+' kg');
+        const btn=document.querySelector('.submit-btn');if(btn){btn.disabled=false;btn.textContent='Registrar fabricacao';}
+        return;
+      }
+    }
+  }
+
   const res=await supa.post('fabricacao_racao',{tipo,data_fabricacao:data,num_misturas:parseFloat(misturas.toFixed(4)),peso_total_kg:parseFloat(peso.toFixed(4)),galpao_destino_id:gidDest||null,galpao_destino_nome:gNomeDest||null,lote_id:loteDestino?.id||null,valor_mistura:valorManual,com_corante:comCorante,obs:obs||null,valor_modo:valorModo});
   if(!res){toast('Erro ao salvar fabricacao. Verifique a conexao.',true);return;}
   const fabId=res&&res[0]?res[0].id:null;
@@ -2561,7 +2596,6 @@ async function salvarFormulaTipo(tipo){
   // Upsert all rows for this tipo
   await supa.del('formula_racao?tipo=eq.'+encodeURIComponent(tipo));
   for(const[nome,qtd]of Object.entries(updates)){
-    // Vincula ao produto pelo id ja conhecido (formulasIdsDB) ou, na falta, busca pelo nome atual
     const produtoId=(formulasIdsDB[tipo]&&formulasIdsDB[tipo][nome])||produtosC.find(p=>p.descricao===nome)?.id||null;
     await supa.post('formula_racao',{tipo,ingrediente:nome,quantidade_kg:parseFloat(qtd.toFixed(4)),produto_id:produtoId});
   }
@@ -5486,6 +5520,7 @@ async function salvarDespesa(){
       if(res&&res[0])despesasC.push(res[0]);
     }
   }
+  reEnableBtn();
   closeModal('modal-despesa');
   toast('Despesa adicionada!');
   if(window._despRefreshTarget==='despesas'){
@@ -5941,13 +5976,26 @@ function renderUsuariosPanel(panel){
   // Delegate to existing render functions
   const subPanel=document.createElement('div');panel.appendChild(subPanel);
   if(uSub==='ativos'){
+    // Botao novo usuario (ADM only)
+    if(isAdm){
+      const addBtn=document.createElement('button');addBtn.className='submit-btn';
+      addBtn.style.cssText='width:100%;margin-bottom:12px';
+      addBtn.textContent='+ Novo usuario';addBtn.onclick=()=>abrirModalUsuario();
+      subPanel.appendChild(addBtn);
+    }
     // Render active users list
     const ativos=usuariosC.filter(u=>u.ativo!==false);
-    if(!ativos.length){subPanel.innerHTML='<div class="history-empty">Nenhum usuario ativo.</div>';return;}
+    if(!ativos.length){const e=document.createElement('div');e.className='history-empty';e.textContent='Nenhum usuario ativo.';subPanel.appendChild(e);return;}
     ativos.forEach(u=>{
       const row=document.createElement('div');row.className='history-item';row.style.marginBottom='8px';
       row.innerHTML='<div class="history-header"><div class="history-galpao">'+u.nome+'</div>'
         +'<span class="tag" style="background:var(--green-pale);color:var(--green)">Nível '+u.nivel+'</span></div>';
+      if(isAdm){
+        const btnRow=document.createElement('div');btnRow.style.cssText='display:flex;gap:6px;margin-top:6px';
+        const editBtn=document.createElement('button');editBtn.className='g-btn g-btn-edit';editBtn.textContent='Editar';editBtn.onclick=()=>editarUsuario(u.id);
+        const delBtn=document.createElement('button');delBtn.className='g-btn';delBtn.style.cssText='background:var(--red-pale);color:var(--red)';delBtn.textContent='Remover';delBtn.onclick=()=>deletarUsuario(u.id);
+        btnRow.appendChild(editBtn);btnRow.appendChild(delBtn);row.appendChild(btnRow);
+      }
       subPanel.appendChild(row);
     });
   } else if(uSub==='niveis'){
@@ -6665,6 +6713,27 @@ function _renderInsumosSection(box,unidade,editEmp){
   }
 }
 
+// Valida se ha estoque suficiente dos insumos de embalagem para um empenho.
+// Retorna o nome do produto sem estoque, ou null se estiver tudo ok.
+function _validarEstoqueInsumos(unidade,quantidade,entreposto){
+  const col='estoque_'+(entreposto||'grota');
+  if(unidade==='pente'){
+    const penteId=parseInt(document.getElementById('ins-pente')?.value||0);
+    if(penteId){
+      const p=produtosC.find(x=>x.id===penteId);
+      if(p&&parseFloat(p[col]||0)<quantidade)return p.descricao+' (pente) — disponivel: '+parseFloat(p[col]||0).toLocaleString('pt-BR');
+    }
+  } else if(unidade==='caixa'){
+    const penteId=parseInt(document.getElementById('ins-pente')?.value||0);
+    const sepId=parseInt(document.getElementById('ins-separador')?.value||0);
+    const caixaId=parseInt(document.getElementById('ins-caixa')?.value||0);
+    if(penteId){const p=produtosC.find(x=>x.id===penteId);if(p&&parseFloat(p[col]||0)<quantidade*14)return p.descricao+' (pente) — disponivel: '+parseFloat(p[col]||0).toLocaleString('pt-BR')+', necessario: '+(quantidade*14).toLocaleString('pt-BR');}
+    if(sepId){const p=produtosC.find(x=>x.id===sepId);if(p&&parseFloat(p[col]||0)<quantidade)return p.descricao+' (separador) — disponivel: '+parseFloat(p[col]||0).toLocaleString('pt-BR');}
+    if(caixaId){const p=produtosC.find(x=>x.id===caixaId);if(p&&parseFloat(p[col]||0)<quantidade)return p.descricao+' (caixa) — disponivel: '+parseFloat(p[col]||0).toLocaleString('pt-BR');}
+  }
+  return null;
+}
+
 async function _debitarInsumosEmpenho(unidade,quantidade,editEmp,entreposto,dataEmpenho,empenhoId){
   const col=entreposto?'estoque_'+entreposto:'estoque_grota';
   const dataMovStr=dataEmpenho?dataEmpenho+'T12:00:00':null;
@@ -6769,11 +6838,15 @@ function abrirModalEmpenho(data,estoqueOvos,editEmp){
     const [unidNome,fatorStr]=unidSel.value.split('|');
     const fator=parseInt(fatorStr);const eq=Math.round(q*fator);const pentes=Math.round(eq/30);
     if(pentes>ovosDisp){toast('Quantidade supera estoque disponivel ('+ovosDisp+' pentes)',true);return;}
+    // Validar estoque de insumos antes de debitar (apenas na criacao)
+    if(!isEdit){
+      const erroEst=_validarEstoqueInsumos(unidNome,q,'grota');
+      if(erroEst){alert('Sua solicitacao nao pode ser atendida. Nao ha estoque suficiente do produto: '+erroEst);return;}
+    }
     if(isEdit){
       // Estornar insumos antigos antes de debitar novos
       await _estornarInsumosEmpenho(editEmp,'grota');
       const ins=await _debitarInsumosEmpenho(unidNome,q,editEmp,'grota',data,editEmp.id);
-      await supa.patch('entreposto_empenho?id=eq.'+editEmp.id,{produto_id:parseInt(prodId),produto_nome:prodNome,quantidade:q,unidade:unidNome,ovos_equivalentes:eq,obs:obsInp.value,...ins});
       entrepostoEmpenhoC=entrepostoEmpenhoC.map(e=>e.id===editEmp.id?{...e,produto_id:parseInt(prodId),produto_nome:prodNome,quantidade:q,unidade:unidNome,ovos_equivalentes:eq,obs:obsInp.value,...ins}:e);
       toast('Empenho atualizado!');
     } else {
@@ -6799,10 +6872,12 @@ function abrirModalEmpenho(data,estoqueOvos,editEmp){
 }
 
 async function deletarEmpenho(id,data){
-  if(!confirm('Remover empenho?'))return;
+  if(!confirm('Remover empenho? Os insumos de embalagem serao devolvidos ao estoque.'))return;
+  const emp=entrepostoEmpenhoC.find(e=>e.id===id);
+  if(emp)await _estornarInsumosEmpenho(emp,'grota');
   await supa.del('entreposto_empenho?id=eq.'+id);
   entrepostoEmpenhoC=entrepostoEmpenhoC.filter(e=>e.id!==id);
-  toast('Empenho removido');renderProducao();
+  toast('Empenho removido. Estoque devolvido.');renderProducao();
 }
 
 // ── SEMANAL ───────────────────────────────────────────────────────────────────
@@ -7242,6 +7317,11 @@ function abrirModalEmpenhoMatriz(data,estoqueOvos,editEmp){
     const q=parseFloat(qtdInp.value||0);if(!q){toast('Informe a quantidade',true);return;}
     const [unidNome,fatorStr]=unidSel.value.split('|');const fator=parseInt(fatorStr);const eq=Math.round(q*fator);const pentes=Math.round(eq/30);
     if(pentes>ovosDisp){toast('Supera estoque disponivel ('+ovosDisp+' pentes)',true);return;}
+    // Validar estoque de insumos antes de debitar (apenas na criacao)
+    if(!isEdit){
+      const erroEst=_validarEstoqueInsumos(unidNome,q,'matriz');
+      if(erroEst){alert('Sua solicitacao nao pode ser atendida. Nao ha estoque suficiente do produto: '+erroEst);return;}
+    }
     if(isEdit){
       await _estornarInsumosEmpenho(editEmp,'matriz');
       const ins=await _debitarInsumosEmpenho(unidNome,q,editEmp,'matriz',data,editEmp.id);
@@ -7264,10 +7344,12 @@ function abrirModalEmpenhoMatriz(data,estoqueOvos,editEmp){
 }
 
 async function deletarEmpenhoMatriz(id,data){
-  if(!confirm('Remover empenho?'))return;
+  if(!confirm('Remover empenho? Os insumos de embalagem serao devolvidos ao estoque.'))return;
+  const emp=entrepostoEmpenhoC.find(e=>e.id===id);
+  if(emp)await _estornarInsumosEmpenho(emp,'matriz');
   await supa.del('entreposto_empenho?id=eq.'+id);
   entrepostoEmpenhoC=entrepostoEmpenhoC.filter(e=>e.id!==id);
-  toast('Empenho removido');renderProducao();
+  toast('Empenho removido. Estoque devolvido.');renderProducao();
 }
 
 // ── SEMANAL Matriz ────────────────────────────────────────────────────────────
