@@ -1596,21 +1596,28 @@ function imprimirHistMes(gid,activeMonth){
   <title>Postura — ${g?g.nome:gid} — ${mesNome} ${year}</title>
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
-    body{font-family:'Courier New',monospace;font-size:12px;padding:24px;color:#222}
-    h1{font-size:16px;font-weight:700;margin-bottom:16px;color:#2D6A4F}
-    .header-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px 40px;border:1.5px solid #ccc;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:12px}
-    .header-grid span{color:#888}
-    table{width:100%;border-collapse:collapse;margin-bottom:16px}
-    th{background:#2D6A4F;color:#fff;padding:6px 8px;text-align:center;font-size:11px}
-    td{padding:5px 8px;text-align:center;border-bottom:1px solid #eee;font-size:12px}
-    tr.futuro td{color:#ccc}
-    tfoot tr td{background:#f5f5f5;font-weight:700;border-top:2px solid #ccc}
-    .resumo{display:flex;gap:16px}
-    .resumo-item{border:1px solid #ccc;border-radius:6px;padding:8px 12px;flex:1;text-align:center}
-    .resumo-label{font-size:10px;color:#888;margin-bottom:2px}
-    .resumo-value{font-size:16px;font-weight:700;color:#2D6A4F}
+    body{font-family:'Courier New',monospace;font-size:12px;padding:20px;color:#000}
+    h1{font-size:15px;font-weight:700;margin-bottom:14px;color:#000;text-transform:uppercase;letter-spacing:.05em}
+    .header-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px 40px;border:2px solid #000;border-radius:4px;padding:10px 14px;margin-bottom:14px;font-size:12px}
+    .header-grid span{color:#333;font-weight:600}
+    table{width:100%;border-collapse:collapse;margin-bottom:14px}
+    th{background:#000;color:#fff;padding:6px 8px;text-align:center;font-size:11px;font-weight:700;text-transform:uppercase}
+    td{padding:5px 8px;text-align:center;border-bottom:1px solid #999;border-right:1px solid #ddd;font-size:12px;color:#000}
+    td:last-child{border-right:none}
+    tr:nth-child(even) td{background:#f0f0f0}
+    tr.futuro td{color:#aaa}
+    tfoot tr td{background:#e0e0e0;font-weight:700;border-top:2px solid #000;color:#000}
+    .resumo{display:flex;gap:12px}
+    .resumo-item{border:2px solid #000;border-radius:4px;padding:8px 12px;flex:1;text-align:center}
+    .resumo-label{font-size:10px;color:#333;margin-bottom:2px;font-weight:600;text-transform:uppercase}
+    .resumo-value{font-size:15px;font-weight:700;color:#000}
     button{display:none!important}
-    @media print{body{padding:12px}}
+    @media print{
+      body{padding:8px}
+      th{-webkit-print-color-adjust:exact;print-color-adjust:exact;background:#000!important;color:#fff!important}
+      tfoot tr td{-webkit-print-color-adjust:exact;print-color-adjust:exact;background:#e0e0e0!important}
+      tr:nth-child(even) td{-webkit-print-color-adjust:exact;print-color-adjust:exact;background:#f0f0f0!important}
+    }
   </style></head><body>
   <h1>Granja Santa Gema — Relatorio de Postura</h1>
   ${hdrHTML}
@@ -3327,7 +3334,9 @@ function renderFormVenda(){
   const tbody=document.createElement('tbody');tbody.id='v-tbody';
   table.appendChild(tbody);
   const tfoot=document.createElement('tfoot');
-  tfoot.innerHTML='<tr class="ficha-total-row"><td colspan="4" style="text-align:right;padding-right:12px">Total da venda</td><td class="ficha-total-cell" id="v-total-display" style="padding:0 6px;font-size:15px">R$ 0,00</td><td></td></tr>';
+  tfoot.innerHTML='<tr class="ficha-total-row"><td colspan="4" style="text-align:right;padding-right:12px">Subtotal</td><td class="ficha-total-cell" id="v-subtotal-display" style="padding:0 6px;font-size:13px;color:var(--muted)">R$ 0,00</td><td></td></tr>'
+    +'<tr><td colspan="4" style="text-align:right;padding-right:12px;font-size:12px;color:var(--muted)">Desconto global (R$)</td><td style="padding:2px 6px"><input type="number" id="v-desconto-global" min="0" step="0.01" placeholder="0,00" style="width:100%;font-family:var(--mono);border:1.5px solid var(--border);border-radius:6px;padding:3px 6px;text-align:right;font-size:12px" oninput="calcTotalVenda()"></td><td></td></tr>'
+    +'<tr class="ficha-total-row"><td colspan="4" style="text-align:right;padding-right:12px">Total da venda</td><td class="ficha-total-cell" id="v-total-display" style="padding:0 6px;font-size:15px">R$ 0,00</td><td></td></tr>';
   table.appendChild(tfoot);
   wrap.appendChild(table);tableCard.appendChild(wrap);
 
@@ -3451,13 +3460,17 @@ function calcItemVenda(i){
   calcTotalVenda();
 }
 function calcTotalVenda(){
-  let total=0;
+  let subtotal=0;
   (window._vendaRows||[]).forEach((_,i)=>{
     const qtd=parseFloat(document.getElementById('vqtd_'+i)?.value||0);
     const unit=parseFloat(document.getElementById('vunit_'+i)?.value||0);
     const desc=parseFloat(document.getElementById('vdesc_'+i)?.value||0);
-    total+=qtd*(unit-desc);
+    subtotal+=qtd*(unit-desc);
   });
+  const descontoGlobal=parseFloat(document.getElementById('v-desconto-global')?.value||0);
+  const total=Math.max(0,subtotal-descontoGlobal);
+  const subEl=document.getElementById('v-subtotal-display');
+  if(subEl)subEl.textContent='R$ '+subtotal.toLocaleString('pt-BR',{minimumFractionDigits:2});
   const el=document.getElementById('v-total-display');
   if(el)el.textContent='R$ '+total.toLocaleString('pt-BR',{minimumFractionDigits:2});
   renderProcedenciaSection();
@@ -3577,19 +3590,21 @@ async function salvarVenda(){
   const data=document.getElementById('v-data').value;
   const obs=document.getElementById('v-obs').value;
   if(!data){toast('Informe a data',true);return;}
-  const itens=[];let totalVenda=0;
+  const itens=[];let subtotalVenda=0;
   (window._vendaRows||[]).forEach((row,i)=>{
     const qtd=parseFloat(document.getElementById('vqtd_'+i)?.value||0);
     if(!qtd)return;
     const unit=parseFloat(document.getElementById('vunit_'+i)?.value||0);
     const desc=parseFloat(document.getElementById('vdesc_'+i)?.value||0);
-    const fin=qtd*(unit-desc);totalVenda+=fin;
+    const fin=qtd*(unit-desc);subtotalVenda+=fin;
     itens.push({produto:row.produto,quantidade:qtd,valor_unitario:unit,desconto_unitario:desc,valor_final:fin});
   });
+  const descontoGlobal=parseFloat(document.getElementById('v-desconto-global')?.value||0);
+  const totalVenda=Math.max(0,subtotalVenda-descontoGlobal);
   if(!itens.length){toast('Adicione ao menos um produto',true);return;}
   let vid;
   {
-    const vRes=await supa.post('vendas',{cliente,cliente_id:parseInt(clidSel)||null,data_venda:data,numero_venda:numero,obs,valor_total:totalVenda,valor_pago:0,status_pagamento:'nao_pago'});
+    const vRes=await supa.post('vendas',{cliente,cliente_id:parseInt(clidSel)||null,data_venda:data,numero_venda:numero,obs,valor_total:totalVenda,desconto_global:descontoGlobal||null,valor_pago:0,status_pagamento:'nao_pago'});
     if(vRes===null)return;
     vid=vRes&&vRes[0]?vRes[0].id:null;
     if(vRes&&vRes[0])vendasC.unshift(vRes[0]);
@@ -3889,78 +3904,100 @@ function imprimirVenda(vid){
       <td class="num">${fmtMoeda(i.valor_final)}</td>
     </tr>`).join('');
 
+  const descontoGlobal=parseFloat(v.desconto_global||0);
+  const subtotalItens=totalComDesconto; // soma dos valor_final (ja com desconto unitario)
+  const totalFinal=Math.max(0,subtotalItens-descontoGlobal);
+
+  const via=(num)=>`
+  <div class="via">
+    <h1>GRANJA SANTA GEMA</h1>
+    <div class="subtitulo">Comprovante de Venda${num===1?' — 1ª Via':' — 2ª Via'}</div>
+    <div class="meta">
+      <div>
+        <div class="meta-label">Cliente</div>
+        <div class="meta-valor">${v.cliente||'Nao informado'}</div>
+      </div>
+      <div>
+        <div class="meta-label">Data da venda</div>
+        <div class="meta-valor">${fmtD(v.data_venda)}</div>
+      </div>
+      <div>
+        <div class="meta-label">Numero da venda</div>
+        <div class="meta-valor">#${vid}</div>
+      </div>
+    </div>
+    <table>
+      <colgroup><col class="c-produto"><col class="c-qtd"><col class="c-unid"><col class="c-vunit"><col class="c-desc"><col class="c-sub"></colgroup>
+      <thead><tr>
+        <th class="left">Produto</th>
+        <th class="num">Qtd</th>
+        <th class="num">Unid.</th>
+        <th class="num">Vl. Unit.</th>
+        <th class="num">Desconto</th>
+        <th class="num">Subtotal</th>
+      </tr></thead>
+      <tbody>${linhasItens}</tbody>
+      <tfoot>
+        <tr class="tfoot-resumo"><td colspan="6">${resumoUnidades}</td></tr>
+        <tr class="tfoot-semdes"><td colspan="5">Subtotal dos itens</td><td>${fmtMoeda(subtotalItens)}</td></tr>
+        ${descontoGlobal>0?`<tr class="tfoot-semdes"><td colspan="5" style="color:#c00">Desconto global</td><td style="color:#c00">- ${fmtMoeda(descontoGlobal)}</td></tr>`:''}
+        <tr class="tfoot-total"><td colspan="5">Total com desconto</td><td>${fmtMoeda(totalFinal)}</td></tr>
+      </tfoot>
+    </table>
+    ${v.obs?`<div class="obs"><strong>Obs:</strong> ${v.obs}</div>`:''}
+    <div class="assinatura">
+      <div class="assinatura-bloco">
+        <div class="assinatura-linha"></div>
+        <div class="assinatura-nome">${v.cliente||'Cliente'}</div>
+        <div class="assinatura-label">Assinatura do cliente</div>
+      </div>
+    </div>
+    <div class="rodape">Granja Santa Gema &nbsp;·&nbsp; Emitido em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</div>
+  </div>`;
+
   const win=window.open('','_blank');
   win.document.write(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
   <title>Venda #${vid} — Granja Santa Gema</title>
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
-    body{font-family:'Segoe UI',Arial,sans-serif;font-size:12px;color:#222;padding:28px;max-width:780px;margin:0 auto}
-    h1{font-size:20px;font-weight:700;color:#2D6A4F;letter-spacing:.04em;margin-bottom:2px;text-align:center}
-    .subtitulo{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.1em;text-align:center;margin-bottom:20px}
-    .meta{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px 32px;border:1.5px solid #ccc;border-radius:8px;padding:12px 16px;margin-bottom:20px}
-    .meta-label{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#888;margin-bottom:1px}
-    .meta-valor{font-size:13px;font-weight:600;color:#1a1a1a}
-    table{width:100%;border-collapse:collapse;margin-bottom:0}
+    body{font-family:'Segoe UI',Arial,sans-serif;font-size:12px;color:#000;padding:12px;max-width:800px;margin:0 auto}
+    h1{font-size:18px;font-weight:700;color:#000;letter-spacing:.04em;margin-bottom:2px;text-align:center}
+    .subtitulo{font-size:11px;color:#333;text-transform:uppercase;letter-spacing:.1em;text-align:center;margin-bottom:12px}
+    .meta{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px 32px;border:2px solid #000;border-radius:4px;padding:10px 14px;margin-bottom:14px}
+    .meta-label{font-size:10px;text-transform:uppercase;letter-spacing:.07em;color:#333;margin-bottom:1px;font-weight:600}
+    .meta-valor{font-size:13px;font-weight:700;color:#000}
+    table{width:100%;border-collapse:collapse;margin-bottom:0;border:1.5px solid #000}
     col.c-produto{width:34%}col.c-qtd{width:9%}col.c-unid{width:9%}col.c-vunit{width:14%}col.c-desc{width:14%}col.c-sub{width:14%}
-    th{background:#2D6A4F;color:#fff;padding:7px 8px;font-size:10px;text-transform:uppercase;letter-spacing:.06em;font-weight:600}
-    th.num,td.num{text-align:right}
-    th.left,td.left{text-align:left}
-    td{padding:7px 8px;border-bottom:1px solid #eee;vertical-align:middle;font-size:12px}
-    tr:nth-child(even) td{background:#f9faf8}
-    .tfoot-resumo td{padding:8px 8px 2px;border-top:2px solid #2D6A4F;border-bottom:none;font-size:11px;color:#666;text-align:right}
-    .tfoot-semdes td{padding:2px 8px;border-bottom:none;text-align:right;font-size:11px;color:#999}
-    .tfoot-total td{padding:6px 8px;border-bottom:none;text-align:right;font-size:14px;font-weight:700;color:#2D6A4F}
-    .assinatura{margin-top:40px;display:flex;justify-content:flex-end}
+    th{background:#000;color:#fff;padding:6px 8px;font-size:10px;text-transform:uppercase;letter-spacing:.06em;font-weight:700}
+    th.num,td.num{text-align:right}th.left,td.left{text-align:left}
+    td{padding:6px 8px;border-bottom:1px solid #999;border-right:1px solid #ddd;vertical-align:middle;font-size:12px;color:#000}
+    td:last-child{border-right:none}
+    tr:nth-child(even) td{background:#eeeeee}
+    .tfoot-resumo td{padding:6px 8px 2px;border-top:2px solid #000;border-bottom:none;font-size:11px;color:#333;text-align:right;font-weight:600}
+    .tfoot-semdes td{padding:2px 8px;border-bottom:none;text-align:right;font-size:11px;color:#333}
+    .tfoot-total td{padding:6px 8px;border-bottom:none;text-align:right;font-size:14px;font-weight:700;color:#000;border-top:2px solid #000}
+    .assinatura{margin-top:24px;display:flex;justify-content:flex-end}
     .assinatura-bloco{text-align:center;width:260px}
-    .assinatura-linha{border-top:1.5px solid #555;margin-bottom:6px}
-    .assinatura-nome{font-size:12px;font-weight:600;color:#1a1a1a}
-    .assinatura-label{font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.07em}
-    .obs{font-size:11px;color:#666;margin:12px 0 0;padding:8px 12px;border-left:3px solid #ccc;background:#fafafa}
-    .rodape{margin-top:24px;padding-top:10px;border-top:1px solid #ddd;font-size:10px;color:#bbb;text-align:center}
-    @media print{body{padding:16px}button{display:none!important}}
+    .assinatura-linha{border-top:2px solid #000;margin-bottom:6px}
+    .assinatura-nome{font-size:12px;font-weight:700;color:#000}
+    .assinatura-label{font-size:10px;color:#333;text-transform:uppercase;letter-spacing:.07em;font-weight:600}
+    .obs{font-size:11px;color:#333;margin:10px 0 0;padding:6px 10px;border-left:3px solid #000;background:#f0f0f0}
+    .rodape{margin-top:14px;padding-top:8px;border-top:1.5px solid #999;font-size:10px;color:#333;text-align:center}
+    .corte{border:none;border-top:2px dashed #555;margin:16px 0;position:relative}
+    .corte::after{content:'✂ Recorte aqui';position:absolute;top:-9px;left:50%;transform:translateX(-50%);background:#fff;padding:0 8px;font-size:10px;color:#333;font-family:monospace;font-weight:700}
+    .via{padding:4px 0}
+    @media print{
+      body{padding:4px}
+      button{display:none!important}
+      .corte{margin:12px 0}
+      th{-webkit-print-color-adjust:exact;print-color-adjust:exact;background:#000!important;color:#fff!important}
+      tr:nth-child(even) td{-webkit-print-color-adjust:exact;print-color-adjust:exact;background:#eeeeee!important}
+      .obs{-webkit-print-color-adjust:exact;print-color-adjust:exact;background:#f0f0f0!important}
+    }
   </style></head><body>
-  <h1>GRANJA SANTA GEMA</h1>
-  <div class="subtitulo">Comprovante de Venda</div>
-  <div class="meta">
-    <div>
-      <div class="meta-label">Cliente</div>
-      <div class="meta-valor">${v.cliente||'Nao informado'}</div>
-    </div>
-    <div>
-      <div class="meta-label">Data da venda</div>
-      <div class="meta-valor">${fmtD(v.data_venda)}</div>
-    </div>
-    <div>
-      <div class="meta-label">Numero da venda</div>
-      <div class="meta-valor">#${vid}</div>
-    </div>
-  </div>
-  <table>
-    <colgroup><col class="c-produto"><col class="c-qtd"><col class="c-unid"><col class="c-vunit"><col class="c-desc"><col class="c-sub"></colgroup>
-    <thead><tr>
-      <th class="left">Produto</th>
-      <th class="num">Qtd</th>
-      <th class="num">Unid.</th>
-      <th class="num">Vl. Unit.</th>
-      <th class="num">Desconto</th>
-      <th class="num">Subtotal</th>
-    </tr></thead>
-    <tbody>${linhasItens}</tbody>
-    <tfoot>
-      <tr class="tfoot-resumo"><td colspan="6">${resumoUnidades}</td></tr>
-      <tr class="tfoot-semdes"><td colspan="5">Total sem desconto</td><td>${fmtMoeda(totalSemDesconto)}</td></tr>
-      <tr class="tfoot-total"><td colspan="5">Total com desconto</td><td>${fmtMoeda(totalComDesconto)}</td></tr>
-    </tfoot>
-  </table>
-  ${v.obs?`<div class="obs"><strong>Obs:</strong> ${v.obs}</div>`:''}
-  <div class="assinatura">
-    <div class="assinatura-bloco">
-      <div class="assinatura-linha"></div>
-      <div class="assinatura-nome">${v.cliente||'Cliente'}</div>
-      <div class="assinatura-label">Assinatura do cliente</div>
-    </div>
-  </div>
-  <div class="rodape">Granja Santa Gema &nbsp;·&nbsp; Emitido em ${new Date().toLocaleDateString('pt-BR')} às ${new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</div>
+  ${via(1)}
+  <hr class="corte">
+  ${via(2)}
   <script>window.onload=()=>{window.print();}<\/script>
   </body></html>`);
   win.document.close();
