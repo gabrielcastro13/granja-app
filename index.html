@@ -3653,9 +3653,325 @@ async function salvarVenda(){
   }finally{window._salvandoVenda=false;}
 }
 
+function abrirRelatorioVendas(el){
+  el.innerHTML='';
+  const back=document.createElement('button');back.className='back-btn';back.textContent='← Voltar';
+  back.onclick=()=>renderVendasLista();el.appendChild(back);
+
+  const card=document.createElement('div');card.className='form-card';
+  card.innerHTML='<div class="form-card-title"><span class="dot" style="background:var(--green)"></span>Relatorio de Vendas</div>'
+    +'<div class="field-row">'
+    +'<div class="field-group"><div class="field-label">Data inicio</div><input class="field-input" id="rel-inicio" type="date"></div>'
+    +'<div class="field-group"><div class="field-label">Data fim</div><input class="field-input" id="rel-fim" type="date"></div>'
+    +'</div>';
+  el.appendChild(card);
+
+  const hoje=new Date();
+  const primeiroDia=new Date(hoje.getFullYear(),hoje.getMonth(),1).toISOString().slice(0,10);
+  const ultimoDia=hoje.toISOString().slice(0,10);
+  setTimeout(()=>{
+    const ini=document.getElementById('rel-inicio');const fim=document.getElementById('rel-fim');
+    if(ini)ini.value=primeiroDia;if(fim)fim.value=ultimoDia;
+  },50);
+
+  const btnRow=document.createElement('div');btnRow.style.cssText='display:flex;gap:8px;margin-top:4px';
+
+  const detBtn=document.createElement('button');detBtn.className='submit-btn';detBtn.style.cssText='flex:1';detBtn.textContent='📄 Detalhado';
+  detBtn.onclick=()=>{
+    const ini=document.getElementById('rel-inicio')?.value;
+    const fim=document.getElementById('rel-fim')?.value;
+    if(!ini||!fim){toast('Selecione o periodo',true);return;}
+    if(ini>fim){toast('Data inicio deve ser anterior a data fim',true);return;}
+    gerarRelatorioVendas(ini,fim);
+  };
+
+  const resBtn=document.createElement('button');resBtn.className='submit-btn';resBtn.style.cssText='flex:1;background:var(--blue)';resBtn.textContent='📋 Resumido';
+  resBtn.onclick=()=>{
+    const ini=document.getElementById('rel-inicio')?.value;
+    const fim=document.getElementById('rel-fim')?.value;
+    if(!ini||!fim){toast('Selecione o periodo',true);return;}
+    if(ini>fim){toast('Data inicio deve ser anterior a data fim',true);return;}
+    gerarRelatorioResumido(ini,fim);
+  };
+
+  btnRow.appendChild(detBtn);btnRow.appendChild(resBtn);
+  el.appendChild(btnRow);
+}
+
+function gerarRelatorioResumido(dataIni,dataFim){
+  const fmtMoeda=n=>'R$ '+parseFloat(n||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const fmtData=d=>{if(!d)return'';const[y,m,dd]=d.split('-');return dd+'/'+m+'/'+y;};
+
+  // Filtrar vendas do período
+  const vendasPeriodo=vendasC.filter(v=>{
+    const dv=(v.data_venda||'').slice(0,10);return dv>=dataIni&&dv<=dataFim;
+  });
+
+  // Agrupar por cliente (alfabético)
+  const porCliente={};
+  vendasPeriodo.forEach(v=>{
+    const cli=v.cliente||'Cliente nao informado';
+    if(!porCliente[cli])porCliente[cli]={vendas:[],caixas:0,pentes:0,valor:0};
+    porCliente[cli].vendas.push(v);
+    const itens=vendasItensC.filter(i=>i.venda_id===v.id);
+    itens.forEach(i=>{
+      if((i.produto||'').includes('Caixa'))porCliente[cli].caixas+=parseFloat(i.quantidade||0);
+      else if((i.produto||'').includes('Pente'))porCliente[cli].pentes+=parseFloat(i.quantidade||0);
+      porCliente[cli].valor+=parseFloat(i.valor_final||0);
+    });
+  });
+
+  // Subtotais globais
+  let subCaixas=0,subPentes=0,subValor=0;
+
+  // Procedência global agrupada por lote/galpao
+  const procGlobal={};
+  vendasPeriodo.forEach(v=>{
+    vendaProcedenciaC.filter(p=>p.venda_id===v.id).forEach(p=>{
+      const chave=(p.lote_codigo||'')+'|'+(p.galpao_id||'');
+      if(!procGlobal[chave])procGlobal[chave]={lote:p.lote_codigo||'',galpao:(p.galpao_id||'').toUpperCase(),caixas:0,pentes:0,valor:0};
+      // Determinar unidade via venda_itens
+      const vi=vendasItensC.find(i=>i.id===p.venda_item_id);
+      const unid=vi?(vi.produto||''):'';
+      if(unid.includes('Caixa'))procGlobal[chave].caixas+=parseFloat(p.quantidade||0);
+      else if(unid.includes('Pente'))procGlobal[chave].pentes+=parseFloat(p.quantidade||0);
+      procGlobal[chave].valor+=parseFloat(p.valor||0);
+    });
+  });
+
+  // Linhas de clientes
+  const fmtQtd=(c,p)=>{
+    const parts=[];
+    if(c>0)parts.push(c.toLocaleString('pt-BR')+' cx');
+    if(p>0)parts.push(p.toLocaleString('pt-BR')+' pt');
+    return parts.join(' + ')||'—';
+  };
+
+  let linhasClientes='';
+  Object.entries(porCliente).sort(([a],[b])=>a.localeCompare(b)).forEach(([cli,d])=>{
+    subCaixas+=d.caixas;subPentes+=d.pentes;subValor+=d.valor;
+    linhasClientes+=`<tr>
+      <td style="padding:5px 8px;border-bottom:1px solid #ccc;font-family:monospace;text-align:center">${fmtQtd(d.caixas,d.pentes)}</td>
+      <td style="padding:5px 8px;border-bottom:1px solid #ccc;font-weight:600">${cli}</td>
+      <td style="padding:5px 8px;border-bottom:1px solid #ccc;text-align:right;font-family:monospace">${fmtMoeda(d.valor)}</td>
+    </tr>`;
+  });
+
+  // Linhas de procedência
+  let linhasProc='';
+  Object.values(procGlobal).sort((a,b)=>a.lote.localeCompare(b.lote)).forEach(p=>{
+    linhasProc+=`<tr>
+      <td style="padding:5px 8px;border-bottom:1px solid #ccc;font-family:monospace;text-align:center">${fmtQtd(p.caixas,p.pentes)}</td>
+      <td style="padding:5px 8px;border-bottom:1px solid #ccc">${p.lote}${p.galpao?' ('+p.galpao+')':''}</td>
+      <td style="padding:5px 8px;border-bottom:1px solid #ccc;text-align:right;font-family:monospace">${fmtMoeda(p.valor)}</td>
+    </tr>`;
+  });
+
+  const cabecalho=`
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px;border-bottom:2px solid #000;padding-bottom:10px">
+    <div>
+      <div style="font-size:15px;font-weight:700;text-transform:uppercase;letter-spacing:.05em">GRANJA SANTA GEMA</div>
+      <div style="font-size:11px;color:#333;margin-top:2px">Relatorio de Vendas — Resumido</div>
+      <div style="font-size:11px;color:#333;margin-top:1px">Periodo: <strong>${fmtData(dataIni)} a ${fmtData(dataFim)}</strong></div>
+      <div style="font-size:10px;color:#666;margin-top:1px">Emitido em: ${new Date().toLocaleDateString('pt-BR')} as ${new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</div>
+    </div>
+    <div style="text-align:center">
+      <div style="font-size:9px;color:#666;margin-bottom:3px;text-transform:uppercase;letter-spacing:.05em">Relatorio N°</div>
+      <div style="width:64px;height:34px;border:2px solid #000;border-radius:3px"></div>
+    </div>
+  </div>`;
+
+  const thStyle='padding:5px 8px;background:#000;color:#fff;font-size:10px;text-transform:uppercase;letter-spacing:.04em;font-weight:700';
+
+  const win=window.open('','_blank');
+  win.document.write(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
+  <title>Relatorio Resumido — ${fmtData(dataIni)} a ${fmtData(dataFim)}</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:'Segoe UI',Arial,sans-serif;font-size:11px;color:#000;padding:14px;max-width:148mm;margin:0 auto}
+    table{width:100%;border-collapse:collapse}
+    @media print{
+      body{padding:8px;max-width:148mm}
+      button{display:none!important}
+      th{-webkit-print-color-adjust:exact;print-color-adjust:exact;background:#000!important;color:#fff!important}
+      @page{size:A4 portrait;margin:10mm}
+    }
+  </style></head><body>
+  ${cabecalho}
+
+  <!-- Vendas -->
+  <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;color:#333">Vendas</div>
+  <table style="margin-bottom:0">
+    <thead><tr>
+      <th style="${thStyle};width:26%;text-align:center">Quantidade</th>
+      <th style="${thStyle};width:48%">Cliente</th>
+      <th style="${thStyle};width:26%;text-align:right">Valor</th>
+    </tr></thead>
+    <tbody>${linhasClientes}</tbody>
+    <tfoot><tr>
+      <td style="padding:6px 8px;text-align:center;font-weight:700;border-top:2px solid #000;font-family:monospace;font-size:11px">${fmtQtd(subCaixas,subPentes)}</td>
+      <td style="padding:6px 8px;font-weight:700;border-top:2px solid #000">SUBTOTAL</td>
+      <td style="padding:6px 8px;text-align:right;font-weight:700;border-top:2px solid #000;font-family:monospace">${fmtMoeda(subValor)}</td>
+    </tr></tfoot>
+  </table>
+
+  ${Object.keys(procGlobal).length?`
+  <!-- Procedência -->
+  <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin:12px 0 4px;color:#333">Procedencia</div>
+  <table>
+    <thead><tr>
+      <th style="${thStyle};width:26%;text-align:center">Quantidade</th>
+      <th style="${thStyle};width:48%">Procedencia</th>
+      <th style="${thStyle};width:26%;text-align:right">Valor</th>
+    </tr></thead>
+    <tbody>${linhasProc}</tbody>
+  </table>`:''}
+
+  <script>window.onload=()=>{window.print();}<\/script>
+  </body></html>`);
+  win.document.close();
+}
+
+function gerarRelatorioVendas(dataIni,dataFim){
+  const fmtMoeda=n=>'R$ '+parseFloat(n||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const fmtData=d=>{if(!d)return'';const[y,m,dd]=d.split('-');return dd+'/'+m+'/'+y;};
+  const fmtDataBR=d=>{if(!d)return'';if(d.includes('/'))return d;const[y,m,dd]=d.split('-');return dd+'/'+m+'/'+y;};
+
+  // Filtrar vendas do período
+  const vendasPeriodo=vendasC.filter(v=>{
+    const dv=(v.data_venda||'').slice(0,10);return dv>=dataIni&&dv<=dataFim;
+  }).sort((a,b)=>(a.data_venda||'').localeCompare(b.data_venda||''));
+
+  // Agrupar por cliente
+  const porCliente={};
+  vendasPeriodo.forEach(v=>{
+    const cli=v.cliente||'Cliente nao informado';
+    if(!porCliente[cli])porCliente[cli]=[];
+    porCliente[cli].push(v);
+  });
+
+  // Construir HTML do relatório
+  let corpoHTML='';
+  let totalGeralReceita=0;
+
+  Object.entries(porCliente).sort(([a],[b])=>a.localeCompare(b)).forEach(([cliente,vendas])=>{
+    // Agrupar itens por tipo+unidade de todas as vendas do cliente
+    const tiposCliente={};
+    let totalCliente=0;
+    vendas.forEach(v=>{
+      const itens=vendasItensC.filter(i=>i.venda_id===v.id);
+      itens.forEach(i=>{
+        let nome=i.produto||'';
+        let unidade='Ovo';
+        if(nome.includes('Caixa'))unidade='Caixa';
+        else if(nome.includes('Pente'))unidade='Pente';
+        nome=nome.replace(/\s*\(Caixa \(360 ovos\)\)/g,'').replace(/\s*\(Pente \(30 ovos\)\)/g,'').replace(/\s*\(ovo\)/gi,'').trim();
+        const chave=nome+'|'+unidade;
+        if(!tiposCliente[chave])tiposCliente[chave]={nome,unidade,quantidade:0,valor:0};
+        tiposCliente[chave].quantidade+=parseFloat(i.quantidade||0);
+        tiposCliente[chave].valor+=parseFloat(i.valor_final||0);
+      });
+      totalCliente+=parseFloat(v.valor_total||0);
+    });
+    totalGeralReceita+=totalCliente;
+
+    // Linhas de tipo
+    const linhasTipo=Object.values(tiposCliente).map(t=>
+      `<tr><td style="padding:4px 8px;color:#555">${t.nome}</td>`
+      +`<td style="padding:4px 8px;text-align:right">${t.quantidade.toLocaleString('pt-BR')} ${t.unidade}${t.quantidade!==1?'s':''}</td>`
+      +`<td style="padding:4px 8px;text-align:right;font-family:monospace">${fmtMoeda(t.valor)}</td></tr>`
+    ).join('');
+
+    // Procedências por venda
+    let procHTML='';
+    vendas.forEach(v=>{
+      const procs=vendaProcedenciaC.filter(p=>p.venda_id===v.id);
+      if(!procs.length)return;
+      const totalProc=procs.reduce((a,p)=>a+(parseFloat(p.valor)||0),0);
+      procHTML+=`<div style="margin-top:6px;padding:6px 10px;border-left:3px solid #999;background:#f5f5f5">`
+        +`<div style="font-size:11px;color:#666;margin-bottom:4px;font-weight:600">Procedencia — Venda de ${fmtDataBR(v.data_venda)}</div>`
+        +procs.map(p=>`<div style="display:flex;justify-content:space-between;font-size:11px;padding:1px 0">`
+          +`<span style="color:#555">${p.lote_codigo||''} ${p.galpao_id?'('+p.galpao_id.toUpperCase()+')':''}</span>`
+          +`<span style="font-family:monospace">${fmtMoeda(p.valor)}</span></div>`).join('')
+        +`<div style="display:flex;justify-content:space-between;font-size:11px;font-weight:700;border-top:1px solid #ccc;margin-top:3px;padding-top:3px">`
+          +`<span>Total procedencia</span><span style="font-family:monospace">${fmtMoeda(totalProc)}</span></div>`
+        +`</div>`;
+    });
+
+    corpoHTML+=`
+    <div style="margin-bottom:18px;border:1.5px solid #000;border-radius:4px;overflow:hidden">
+      <div style="background:#000;color:#fff;padding:7px 12px;font-weight:700;font-size:13px">${cliente}</div>
+      <table style="width:100%;border-collapse:collapse">
+        <thead><tr>
+          <th style="padding:5px 8px;text-align:left;background:#e0e0e0;font-size:11px;border-bottom:1px solid #999">Produto</th>
+          <th style="padding:5px 8px;text-align:right;background:#e0e0e0;font-size:11px;border-bottom:1px solid #999">Quantidade</th>
+          <th style="padding:5px 8px;text-align:right;background:#e0e0e0;font-size:11px;border-bottom:1px solid #999">Valor</th>
+        </tr></thead>
+        <tbody>${linhasTipo}</tbody>
+        <tfoot><tr>
+          <td colspan="2" style="padding:6px 8px;text-align:right;font-weight:700;border-top:2px solid #000">Total</td>
+          <td style="padding:6px 8px;text-align:right;font-weight:700;font-family:monospace;border-top:2px solid #000">${fmtMoeda(totalCliente)}</td>
+        </tr></tfoot>
+      </table>
+      ${procHTML?`<div style="padding:8px 10px">${procHTML}</div>`:''}
+    </div>`;
+  });
+
+  if(!corpoHTML){
+    corpoHTML='<div style="text-align:center;padding:40px;color:#666">Nenhuma venda encontrada no periodo selecionado.</div>';
+  }
+
+  const win=window.open('','_blank');
+  win.document.write(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
+  <title>Relatorio de Vendas — ${fmtData(dataIni)} a ${fmtData(dataFim)}</title>
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:'Segoe UI',Arial,sans-serif;font-size:12px;color:#000;padding:16px;max-width:800px;margin:0 auto}
+    @media print{body{padding:8px}button{display:none!important}
+      th{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+      thead tr th{background:#e0e0e0!important}
+    }
+  </style></head><body>
+
+  <!-- Cabecalho -->
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px;border-bottom:2px solid #000;padding-bottom:12px">
+    <div>
+      <div style="font-size:18px;font-weight:700;text-transform:uppercase;letter-spacing:.05em">GRANJA SANTA GEMA</div>
+      <div style="font-size:12px;color:#333;margin-top:3px">Relatorio de Vendas</div>
+      <div style="font-size:12px;color:#333;margin-top:2px">Periodo: <strong>${fmtData(dataIni)} a ${fmtData(dataFim)}</strong></div>
+      <div style="font-size:11px;color:#666;margin-top:2px">Emitido em: ${new Date().toLocaleDateString('pt-BR')} as ${new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</div>
+    </div>
+    <div style="text-align:center">
+      <div style="font-size:10px;color:#666;margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em">Relatorio N°</div>
+      <div style="width:72px;height:40px;border:2px solid #000;border-radius:4px"></div>
+    </div>
+  </div>
+
+  <!-- Corpo -->
+  ${corpoHTML}
+
+  <!-- Total geral -->
+  <div style="border:2px solid #000;border-radius:4px;padding:10px 14px;margin-top:8px;display:flex;justify-content:space-between;align-items:center">
+    <span style="font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:.04em">Total Geral do Periodo</span>
+    <span style="font-size:16px;font-weight:700;font-family:monospace">${fmtMoeda(totalGeralReceita)}</span>
+  </div>
+
+  <script>window.onload=()=>{window.print();}<\/script>
+  </body></html>`);
+  win.document.close();
+}
+
 function renderVendasLista(){
   const el=document.getElementById('fpanel-vendas');if(!el)return;
   el.innerHTML='';
+
+  // Botao relatorio
+  const relBtn=document.createElement('button');
+  relBtn.className='g-btn';
+  relBtn.style.cssText='width:100%;margin-bottom:12px;background:var(--green-pale);color:var(--green);border:1.5px solid var(--green);font-weight:600';
+  relBtn.textContent='📄 Relatorio de vendas';
+  relBtn.onclick=()=>abrirRelatorioVendas(el);
+  el.appendChild(relBtn);
 
   const stCfg={
     nao_pago:{border:'var(--red)',bg:'var(--red-pale)',color:'var(--red)',label:'Nao pago'},
@@ -7085,6 +7401,9 @@ function abrirModalEmpenho(data,estoqueOvos,editEmp){
     const panel=document.getElementById('tab-producao')?.querySelector('div:last-child');
     if(panel){const c2=panel.querySelector('div:last-child');if(c2)renderEntDiario(c2);}
     renderProducao();
+    // Atualizar picker de empenhos em Financeiro caso a secao ja esteja aberta
+    const empSec=document.getElementById('v-empenho-section');
+    if(empSec&&empSec.style.display!=='none')renderVendaEmpenhos();
   };
   row.appendChild(cancelBtn);row.appendChild(saveBtn);box.appendChild(row);
   overlay.appendChild(box);document.body.appendChild(overlay);
@@ -7558,6 +7877,8 @@ function abrirModalEmpenhoMatriz(data,estoqueOvos,editEmp){
       toast('Empenho registrado!');
     }
     document.body.removeChild(overlay);renderProducao();
+    const empSecM=document.getElementById('v-empenho-section');
+    if(empSecM&&empSecM.style.display!=='none')renderVendaEmpenhos();
   };
   row.appendChild(cancelBtn);row.appendChild(saveBtn);box.appendChild(row);
   overlay.appendChild(box);document.body.appendChild(overlay);
