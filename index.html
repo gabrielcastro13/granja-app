@@ -66,14 +66,16 @@ body{font-family:var(--font);background:#f5f6f4;color:var(--text);min-height:100
 /* Mobile: sidebar vira bottom nav */
 @media(max-width:640px){
   body{flex-direction:column}
-  .sidebar{width:100%;min-height:auto;position:fixed;bottom:0;top:auto;flex-direction:row;z-index:100;border-top:1px solid rgba(255,255,255,.1)}
+  .sidebar{width:100%;min-height:auto;position:fixed;top:0;bottom:auto;flex-direction:row;z-index:100;border-bottom:1px solid rgba(255,255,255,.1)}
   .sidebar-brand,.sidebar-nav,.sidebar-footer{display:none}
-  .sidebar-mobile-nav{display:flex!important;width:100%;justify-content:space-around;padding:6px 0}
-  .sidebar-mobile-item{display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 8px;border:none;background:none;color:rgba(255,255,255,.55);font-size:9px;font-family:var(--font);cursor:pointer}
+  .sidebar-mobile-nav{display:flex!important;width:100%;justify-content:flex-start;padding:8px 6px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .sidebar-mobile-nav::-webkit-scrollbar{display:none}
+  .sidebar-mobile-item{display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 14px;border:none;background:none;color:rgba(255,255,255,.55);font-size:10px;font-family:var(--font);cursor:pointer;flex:0 0 auto;white-space:nowrap}
   .sidebar-mobile-item.active{color:#fff}
-  .sidebar-mobile-item i{font-size:18px}
-  .main-content{margin-left:0;padding-bottom:72px}
+  .sidebar-mobile-item i{font-size:24px}
+  .main-content{margin-left:0;padding-top:64px}
   .page-content{padding:14px}
+  .topbar{top:64px}
 }
 .header-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px}
 .header-brand{font-size:20px;font-weight:700;letter-spacing:-.01em;color:var(--green);font-family:var(--font)}
@@ -280,7 +282,7 @@ select.field-input{cursor:pointer}
   </div>
   <div class="sidebar-nav" id="sidebar-nav"></div>
   <div class="sidebar-footer">
-    <button onclick="sair()"><i class="ti ti-logout" aria-hidden="true"></i> Sair</button>
+    <button onclick="logout()"><i class="ti ti-logout" aria-hidden="true"></i> Sair</button>
   </div>
   <!-- Mobile nav (hidden on desktop) -->
   <div class="sidebar-mobile-nav" style="display:none" id="sidebar-mobile-nav"></div>
@@ -742,7 +744,7 @@ async function _carregarDadosPesadosBackground(){
     if(ente_db!==null)entrepostoEmpenhoC=ente_db;
 
     // Atualizar telas que dependem desses dados, se estiverem abertas
-    const tabAtiva=window._activeTab||'inicio';
+    const tabAtiva=window._activeTab||primeiraAbaDisponivel();
     if(tabAtiva==='postura'){
       const sub=window._posturaSubTab||'registrar';
       if(sub==='historico')renderHist();
@@ -8508,6 +8510,12 @@ function podeAcessar(aba){
   return false; // default deny
 }
 
+function primeiraAbaDisponivel(){
+  const ordem=['inicio','postura','producao','racao','produtos','financeiro','centrocusto','deptopessoal','tarefas'];
+  for(const id of ordem){if(podeAcessar(id))return id;}
+  return 'inicio';
+}
+
 async function carregarLogin(){
   // Load usuarios and permissoes for login screen
   const [users, perms, formula_login, clientes_login, forn_login] = await Promise.all([
@@ -8576,7 +8584,7 @@ function buildTabsForUser(){
   if(mobileNav)mobileNav.innerHTML='';
 
   allTabs.forEach(({id,label,icon,subs})=>{
-    if(id!=='inicio'&&!podeAcessar(id))return;
+    if(!podeAcessar(id))return;
 
     // Sidebar item
     const btn=document.createElement('button');
@@ -8611,7 +8619,7 @@ function buildTabsForUser(){
       nav.appendChild(subWrap);
     }
 
-    // Mobile bottom nav
+    // Mobile top nav
     if(mobileNav){
       const mbtn=document.createElement('button');mbtn.className='sidebar-mobile-item';mbtn.dataset.tab=id;
       mbtn.innerHTML='<i class="ti '+icon+'" aria-hidden="true"></i><span>'+label.split(' ')[0]+'</span>';
@@ -8620,8 +8628,16 @@ function buildTabsForUser(){
     }
   });
 
+  // Botao Sair no menu mobile
+  if(mobileNav){
+    const mSair=document.createElement('button');mSair.className='sidebar-mobile-item';
+    mSair.innerHTML='<i class="ti ti-logout" aria-hidden="true"></i><span>Sair</span>';
+    mSair.onclick=logout;
+    mobileNav.appendChild(mSair);
+  }
+
   // Ativar tab inicial
-  const activeTab=window._activeTab||'inicio';
+  const activeTab=window._activeTab||primeiraAbaDisponivel();
   setTab(activeTab);
 }
 
@@ -8657,7 +8673,7 @@ function renderUsuariosAtivos(panel){
 }
 
 function renderNiveis(panel){
-  const ABAS=[['postura','Postura'],['usuarios','Usuarios'],['racao','Racoes'],['produtos','Produtos'],['financeiro','Financeiro']];
+  const ABAS=[['inicio','Pagina Inicial'],['postura','Postura'],['producao','Producao'],['racao','Racoes'],['produtos','Produtos'],['financeiro','Financeiro'],['centrocusto','Centro de Custo'],['deptopessoal','Dep. Pessoal'],['tarefas','Tarefas Recorrentes'],['usuarios','Usuarios']];
   const NIVEIS=[[1,'Administrador','var(--red)','var(--red-pale)'],[2,'Supervisor','var(--amber)','var(--amber-pale)'],[3,'Colaborador','var(--green)','var(--green-pale)']];
   panel.innerHTML='';
   const senhaCard=document.createElement('div');senhaCard.className='form-card';senhaCard.style.marginBottom='12px';
