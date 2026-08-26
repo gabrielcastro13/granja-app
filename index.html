@@ -2790,7 +2790,10 @@ function setProdTab(t){
 // registra quem fez, sem vincular a lote/venda.
 
 function _qrTextoProduto(pid,entreposto){
-  const base=window.location.origin+window.location.pathname;
+  // URL fixa de producao: as etiquetas precisam apontar sempre pro site publicado,
+  // mesmo quando quem gera a etiqueta abriu o index.html localmente no computador
+  // (nesse caso window.location.origin vira "file://" e o celular nao consegue abrir).
+  const base='https://cerulean-kitten-f3919c.netlify.app/';
   return base+'?retirar='+pid+(entreposto?'&dep='+entreposto:'');
 }
 
@@ -2800,11 +2803,18 @@ function gerarQRDataURL(texto,tamanho){
   tmp.style.cssText='position:fixed;left:-9999px;top:-9999px';
   document.body.appendChild(tmp);
   new QRCode(tmp,{text:texto,width:tamanho,height:tamanho,correctLevel:QRCode.CorrectLevel.M});
+  // IMPORTANTE: ler do <canvas> primeiro, nao do <img> automatico da lib.
+  // O qrcodejs desenha no canvas de forma sincrona (fillRect), mas atualiza
+  // o <img> espelhado de forma ASSINCRONA (faz um teste de suporte a
+  // data-URI carregando um gif de 1x1 antes de copiar a imagem real pro
+  // img.src). Ler o img.src logo em seguida pega esse gif de teste em vez
+  // do QR code de verdade — bug conhecido da lib. O canvas nao tem esse
+  // problema: já está pintado com o QR correto assim que o construtor retorna.
   let dataUrl='';
-  const img=tmp.querySelector('img');
   const canvas=tmp.querySelector('canvas');
-  if(img&&img.src&&img.src.indexOf('data:')===0)dataUrl=img.src;
-  else if(canvas)dataUrl=canvas.toDataURL('image/png');
+  const img=tmp.querySelector('img');
+  if(canvas)dataUrl=canvas.toDataURL('image/png');
+  else if(img&&img.src&&img.src.indexOf('data:')===0)dataUrl=img.src;
   document.body.removeChild(tmp);
   return dataUrl;
 }
