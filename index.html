@@ -674,7 +674,7 @@ async function init(){
 
 async function loadAll(){
   // ── FASE 1: tabelas rápidas — app fica funcional em ~300ms ──────────────
-  const[aves,lotes,resps,usuarios,racao,prods,comps,vends,vitens,vpags,tarefas,tarefasExec]=await Promise.all([
+  const[aves,lotes,resps,usuarios,racao,prods,comps,vends,vitens,vpags,tarefas,tarefasExec,lembretes]=await Promise.all([
     supa.get('galpoes?select=*'),
     supa.get('lotes?order=created_at.desc'),
     supa.get('lote_responsaveis?order=created_at.desc'),
@@ -687,6 +687,7 @@ async function loadAll(){
     supa.getAll('venda_pagamentos?order=created_at.desc'),
     supa.get('tarefas_recorrentes?order=proxima_data.asc'),
     supa.getAll('tarefas_execucoes?order=data_conclusao.desc'),
+    supa.getAll('lembretes?order=created_at.desc'),
   ]);
   const[perms,formula_db,clientes_db,forn_db,desp_db,sal_db,proc_db,func_db,entd_db]=await Promise.all([
     supa.get('nivel_permissoes?order=nivel.asc'),
@@ -712,6 +713,7 @@ async function loadAll(){
   if(vpags!==null)vendasPagamentosC=vpags;
   if(tarefas!==null)tarefasC=tarefas;
   if(tarefasExec!==null)tarefasExecucoesC=tarefasExec;
+  if(lembretes!==null)lembretesC=lembretes;
   if(desp_db)despesasC=desp_db;
   if(sal_db)salariosC=sal_db;
   if(proc_db)vendaProcedenciaC=proc_db;
@@ -1131,7 +1133,7 @@ function addColeta(){
   coletaCnt++;const id='col_'+coletaCnt;const now=new Date();
   const t=now.getHours().toString().padStart(2,'0')+ ':'+now.getMinutes().toString().padStart(2,'0');
   const w=document.getElementById('coletas-wrap');const r=document.createElement('div');r.className='coleta-row';
-  r.innerHTML='<div class="coleta-label">Coleta '+coletaCnt+'<br><span style="font-size:10px;font-family:var(--mono);color:var(--muted)">'+t+'</span></div><div class="num-input-wrap"><button class="num-btn" onclick="stepC(\''+id+'\',-1)">-</button><input class="num-val" id="'+id+'" type="number" value="0" min="0" oninput="updOvos()"><button class="num-btn" onclick="stepC(\''+id+'\',1)">+</button></div><div class="coleta-calc" id="cc_'+id+'">= 0 ovos</div>';
+  r.innerHTML='<div class="coleta-label">Coleta '+coletaCnt+'<br><span style="font-size:10px;font-family:var(--mono);color:var(--muted)">'+t+'</span></div><div class="num-input-wrap"><button class="num-btn" onclick="stepC(\''+id+'\',-1)">-</button><input class="num-val" id="'+id+'" type="number" placeholder="0" min="0" oninput="updOvos()"><button class="num-btn" onclick="stepC(\''+id+'\',1)">+</button></div><div class="coleta-calc" id="cc_'+id+'">= 0 ovos</div>';
   w.appendChild(r);coletas.push({id,time:t});
 }
 function stepC(id,d){const e=document.getElementById(id);e.value=Math.max(0,parseInt(e.value||0)+d);updOvos();}
@@ -1214,7 +1216,12 @@ async function salvar(){
     let avesNoDia=avesReais[selGalpao]??0;
     if(isOnline){
       const todosP=await supa.getAll('registros?galpao_id=eq.'+selGalpao+'&select=data_registro,aves_restantes,id');
-      const antP=(todosP||[])
+      if(todosP===null){
+        toast('Não foi possível confirmar a contagem de galinhas do dia anterior (falha de conexão). Alteração NÃO salva — tente novamente.',true);
+        btn.disabled=false;btn.textContent='Salvar registro';
+        return;
+      }
+      const antP=todosP
         .filter(r=>toISOP(r.data_registro)<dataISOp)
         .sort((x,y)=>toISOP(y.data_registro).localeCompare(toISOP(x.data_registro)));
       if(antP.length)avesNoDia=parseFloat(antP[0].aves_restantes||avesNoDia);
@@ -1277,7 +1284,12 @@ async function salvar(){
   let a=avesReais[selGalpao]??0;
   if(isOnline){
     const todos=await supa.getAll('registros?galpao_id=eq.'+selGalpao+'&select=data_registro,aves_restantes');
-    const antD=(todos||[])
+    if(todos===null){
+      toast('Não foi possível confirmar a contagem de galinhas do dia anterior (falha de conexão). Registro NÃO salvo — tente novamente.',true);
+      btn.disabled=false;btn.textContent='Salvar registro';
+      return;
+    }
+    const antD=todos
       .filter(r=>toISO(r.data_registro)<dataISO)
       .sort((x,y)=>toISO(y.data_registro).localeCompare(toISO(x.data_registro)));
     if(antD.length)a=parseFloat(antD[0].aves_restantes||a);
@@ -1663,7 +1675,7 @@ function imprimirHistMes(gid,activeMonth){
   <title>Postura — ${g?g.nome:gid} — ${mesNome} ${year}</title>
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
-    body{font-family:'Courier New',monospace;font-size:12px;padding:20px;color:#000}
+    body{font-family:'Courier New',monospace;font-size:12px;padding:20px;color:#000;font-weight:500}
     h1{font-size:15px;font-weight:700;margin-bottom:14px;color:#000;text-transform:uppercase;letter-spacing:.05em}
     .header-grid{display:grid;grid-template-columns:1fr 1fr;gap:4px 40px;border:2px solid #000;border-radius:4px;padding:10px 14px;margin-bottom:14px;font-size:12px}
     .header-grid span{color:#333;font-weight:600}
@@ -1674,13 +1686,22 @@ function imprimirHistMes(gid,activeMonth){
     tr:nth-child(even) td{background:#f0f0f0}
     tr.futuro td{color:#aaa}
     tfoot tr td{background:#e0e0e0;font-weight:700;border-top:2px solid #000;color:#000}
-    .resumo{display:flex;gap:12px}
-    .resumo-item{border:2px solid #000;border-radius:4px;padding:8px 12px;flex:1;text-align:center}
-    .resumo-label{font-size:10px;color:#333;margin-bottom:2px;font-weight:600;text-transform:uppercase}
-    .resumo-value{font-size:15px;font-weight:700;color:#000}
+    .ficha-resumo{display:flex;gap:12px}
+    .ficha-resumo-item{border:2px solid #000;border-radius:4px;padding:8px 12px;flex:1;text-align:center}
+    .ficha-resumo-label{font-size:10px;color:#333;margin-bottom:2px;font-weight:600;text-transform:uppercase}
+    .ficha-resumo-value{font-size:15px;font-weight:700;color:#000}
     @media print{
-      body{padding:8px}
+      @page{size:A4 portrait;margin:8mm}
+      body{padding:0;font-weight:600}
       button{display:none!important}
+      h1{margin-bottom:6px}
+      .header-grid{padding:6px 10px;margin-bottom:6px;gap:2px 30px}
+      table{margin-bottom:6px}
+      th{padding:3px 6px}
+      td{padding:2px 6px}
+      .ficha-resumo{margin-top:6px!important}
+      .ficha-resumo-item{padding:5px 10px}
+      tr{page-break-inside:avoid}
       th{-webkit-print-color-adjust:exact;print-color-adjust:exact;background:#000!important;color:#fff!important}
       tfoot tr td{-webkit-print-color-adjust:exact;print-color-adjust:exact;background:#e0e0e0!important}
       tr:nth-child(even) td{-webkit-print-color-adjust:exact;print-color-adjust:exact;background:#f0f0f0!important}
@@ -1731,7 +1752,7 @@ let fornecedoresC=[];
 let despesasC=[];
 let salariosC=[];
 let funcionariosC=[];
-let tarefasC=[],tarefasExecucoesC=[];
+let tarefasC=[],tarefasExecucoesC=[],lembretesC=[];
 function renderRacao(){
   const el=document.getElementById('tab-racao');if(!el)return;
   const rt=window._racaoTab||'registrar';
@@ -3442,12 +3463,19 @@ function renderInicioTarefas(){
   el.appendChild(buildMiniCalendarioTarefas(window._inicioCalAno,window._inicioCalMes,
     (a,m)=>{window._inicioCalAno=a;window._inicioCalMes=m;renderInicioTarefas();},
     (d)=>{window._tarCalSelDia=d;window._tarefasSub='calendario';setTab('tarefas');}));
-  const pendentes=tarefasC.filter(t=>t.ativa!==false).map(t=>({t,st:tarefaStatus(t)})).filter(x=>x.st.nivel!=='ok').sort((a,b)=>a.t.proxima_data<b.t.proxima_data?-1:1);
+  const pendTarefas=tarefasC.filter(t=>t.ativa!==false).map(t=>({t,st:tarefaStatus(t)})).filter(x=>x.st.nivel!=='ok').map(x=>({data:x.t.proxima_data,createdAt:'',card:()=>makeTarefaCard(x.t)}));
+  const pendLembretes=lembretesC.filter(l=>!l.resolvido).map(l=>({data:l.data,createdAt:l.created_at||'',card:()=>makeLembreteCard(l)}));
+  const itensPendentes=[...pendTarefas,...pendLembretes].sort((a,b)=>{
+    if(a.data&&b.data)return a.data<b.data?-1:1;
+    if(a.data)return -1;
+    if(b.data)return 1;
+    return a.createdAt<b.createdAt?-1:1;
+  });
   const listWrap=document.createElement('div');listWrap.style.cssText='margin-top:12px';
-  if(!pendentes.length){
-    listWrap.innerHTML='<div class="history-empty">Nenhuma tarefa próxima ou atrasada.</div>';
+  if(!itensPendentes.length){
+    listWrap.innerHTML='<div class="history-empty">Nenhuma tarefa ou lembrete pendente.</div>';
   }else{
-    pendentes.forEach(x=>listWrap.appendChild(makeTarefaCard(x.t)));
+    itensPendentes.forEach(x=>listWrap.appendChild(x.card()));
   }
   el.appendChild(listWrap);
 }
@@ -3556,7 +3584,7 @@ function renderRegistrar(panel){
           <div class="field-label">Mortes hoje</div>
           <div class="num-input-wrap">
             <button class="num-btn" onclick="stepNum('mortes',-1)">-</button>
-            <input class="num-val" id="mortes" type="number" value="0" min="0" oninput="updateRest()">
+            <input class="num-val" id="mortes" type="number" placeholder="0" min="0" oninput="updateRest()">
             <button class="num-btn" onclick="stepNum('mortes',1)">+</button>
           </div>
         </div>
@@ -4193,10 +4221,10 @@ function gerarRelatorioResumido(dataIni,dataFim){
   <title>Relatório Resumido — ${fmtData(dataIni)} a ${fmtData(dataFim)}</title>
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
-    body{font-family:'Segoe UI',Arial,sans-serif;font-size:11px;color:#000;padding:14px;max-width:148mm;margin:0 auto}
+    body{font-family:'Segoe UI',Arial,sans-serif;font-size:11px;color:#000;padding:14px;max-width:148mm;margin:0 auto;font-weight:500}
     table{width:100%;border-collapse:collapse}
     @media print{
-      body{padding:8px;max-width:148mm}
+      body{padding:8px;max-width:148mm;font-weight:600}
       button{display:none!important}
       th{-webkit-print-color-adjust:exact;print-color-adjust:exact;background:#000!important;color:#fff!important}
       @page{size:A4 portrait;margin:10mm}
@@ -4332,8 +4360,8 @@ function gerarRelatorioVendas(dataIni,dataFim){
   <title>Relatório de Vendas — ${fmtData(dataIni)} a ${fmtData(dataFim)}</title>
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
-    body{font-family:'Segoe UI',Arial,sans-serif;font-size:12px;color:#000;padding:16px;max-width:800px;margin:0 auto}
-    @media print{body{padding:8px}button{display:none!important}
+    body{font-family:'Segoe UI',Arial,sans-serif;font-size:12px;color:#000;padding:16px;max-width:800px;margin:0 auto;font-weight:500}
+    @media print{body{padding:8px;font-weight:600}button{display:none!important}
       th{-webkit-print-color-adjust:exact;print-color-adjust:exact}
       thead tr th{background:#e0e0e0!important}
     }
@@ -4683,7 +4711,7 @@ function imprimirVenda(vid){
   <title>Venda #${vid} — Granja Santa Gema</title>
   <style>
     *{margin:0;padding:0;box-sizing:border-box}
-    body{font-family:'Segoe UI',Arial,sans-serif;font-size:12px;color:#000;padding:12px;max-width:800px;margin:0 auto}
+    body{font-family:'Segoe UI',Arial,sans-serif;font-size:12px;color:#000;padding:12px;max-width:800px;margin:0 auto;font-weight:500}
     h1{font-size:18px;font-weight:700;color:#000;letter-spacing:.04em;margin-bottom:2px;text-align:center}
     .subtitulo{font-size:11px;color:#333;text-transform:uppercase;letter-spacing:.1em;text-align:center;margin-bottom:12px}
     .meta{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px 32px;border:2px solid #000;border-radius:4px;padding:10px 14px;margin-bottom:14px}
@@ -4710,7 +4738,7 @@ function imprimirVenda(vid){
     .corte::after{content:'✂ Recorte aqui';position:absolute;top:-9px;left:50%;transform:translateX(-50%);background:#fff;padding:0 8px;font-size:10px;color:#333;font-family:'Courier New',monospace;font-weight:700}
     .via{padding:4px 0}
     @media print{
-      body{padding:4px}
+      body{padding:4px;font-weight:600}
       button{display:none!important}
       .corte{margin:12px 0}
       th{-webkit-print-color-adjust:exact;print-color-adjust:exact;background:#000!important;color:#fff!important}
@@ -6739,7 +6767,7 @@ function renderTarefasTab(){
   panel.innerHTML='';
   const subSub=window._tarefasSub||'criar';
   const tabRow=document.createElement('div');tabRow.style.cssText='display:flex;gap:4px;margin-bottom:16px';
-  [['criar','Criar tarefa'],['lista','Lista de tarefas'],['calendario','Calendário']].forEach(([id,label])=>{
+  [['criar','Criar tarefa'],['lista','Lista de tarefas'],['calendario','Calendário'],['lembretes','Lembretes']].forEach(([id,label])=>{
     const btn=document.createElement('button');
     btn.style.cssText='flex:1;padding:8px;font-size:11px;border-radius:10px;border:none;cursor:pointer;font-family:var(--font);font-weight:500;background:'+(subSub===id?'var(--card)':'var(--border)')+';color:'+(subSub===id?'var(--green)':'var(--muted)')+(subSub===id?';box-shadow:var(--shadow)':'');
     btn.textContent=label;btn.onclick=()=>{window._tarefasSub=id;renderTarefasTab();};
@@ -6749,7 +6777,8 @@ function renderTarefasTab(){
   const content=document.createElement('div');panel.appendChild(content);
   if(subSub==='criar')renderTarefaForm(content);
   else if(subSub==='lista')renderTarefaLista(content);
-  else renderTarefaCalendario(content);
+  else if(subSub==='calendario')renderTarefaCalendario(content);
+  else renderLembretesTab(content);
 }
 
 function renderTarefaForm(el){
@@ -6974,6 +7003,108 @@ function renderTarefaCalendario(el){
     }
     el.appendChild(wrap);
   }
+}
+
+function renderLembretesTab(el){
+  el.innerHTML='';
+  const formCard=document.createElement('div');formCard.className='form-card';formCard.style.cssText='margin-bottom:14px';
+  formCard.innerHTML='<div class="form-card-title"><span class="dot" style="background:var(--purple)"></span>Novo lembrete</div>'
+    +'<div class="field-group"><div class="field-label">Título</div><input class="field-input" id="lb-titulo" placeholder="Ex: Ligar pro fornecedor de ração"></div>'
+    +'<div class="field-group"><div class="field-label">Descrição (opcional)</div><input class="field-input" id="lb-desc" placeholder="Detalhes do lembrete"></div>'
+    +'<div class="field-group"><div class="field-label">Data (opcional)</div><input class="field-input" id="lb-data" type="date"></div>'
+    +'<button class="submit-btn" onclick="salvarLembrete()">Salvar lembrete</button>';
+  el.appendChild(formCard);
+
+  const buscaWrap=document.createElement('div');buscaWrap.style.cssText='margin-bottom:14px';
+  buscaWrap.innerHTML='<input class="field-input" id="lb-busca" placeholder="Buscar por título ou descrição...">';
+  el.appendChild(buscaWrap);
+
+  const listaEl=document.createElement('div');
+  el.appendChild(listaEl);
+  document.getElementById('lb-busca').oninput=(e)=>renderLembretesLista(listaEl,e.target.value);
+  renderLembretesLista(listaEl,'');
+}
+
+function renderLembretesLista(el,busca){
+  el.innerHTML='';
+  const q=(busca||'').trim().toLowerCase();
+  const filtro=l=>!q||l.titulo.toLowerCase().includes(q)||(l.descricao||'').toLowerCase().includes(q);
+  const pendentes=lembretesC.filter(l=>!l.resolvido&&filtro(l)).sort((a,b)=>{
+    if(a.data&&b.data)return a.data<b.data?-1:1;
+    if(a.data)return -1;
+    if(b.data)return 1;
+    return (a.created_at||'')<(b.created_at||'')?-1:1;
+  });
+  const resolvidos=lembretesC.filter(l=>l.resolvido&&filtro(l)).sort((a,b)=>(b.resolvido_em||'')<(a.resolvido_em||'')?-1:1);
+  if(!pendentes.length&&!resolvidos.length){
+    el.innerHTML='<div class="history-empty">Nenhum lembrete encontrado.</div>';return;
+  }
+  if(pendentes.length){
+    const lbl=document.createElement('div');lbl.style.cssText='font-size:11px;font-family:var(--mono);color:var(--purple);font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px';lbl.textContent='Pendentes';el.appendChild(lbl);
+    pendentes.forEach(l=>el.appendChild(makeLembreteCard(l)));
+  }
+  if(resolvidos.length){
+    const lbl=document.createElement('div');lbl.style.cssText='font-size:11px;font-family:var(--mono);color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.06em;margin:12px 0 8px';lbl.textContent='Resolvidos';el.appendChild(lbl);
+    resolvidos.forEach(l=>el.appendChild(makeLembreteCard(l)));
+  }
+}
+
+function makeLembreteCard(l){
+  const card=document.createElement('div');card.className='history-item';card.style.cssText='margin-bottom:8px';
+  const hoje=new Date().toISOString().slice(0,10);
+  const atrasado=!l.resolvido&&l.data&&l.data<hoje;
+  card.innerHTML='<div class="history-header">'
+    +'<div class="history-galpao">'+l.titulo+'</div>'
+    +'<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">'
+    +'<span style="font-size:10px;padding:2px 7px;border-radius:10px;background:var(--purple-pale);color:var(--purple);font-family:var(--mono)">Lembrete</span>'
+    +(l.resolvido?'<span style="font-size:11px;padding:2px 8px;border-radius:10px;background:var(--green-pale);color:var(--green)">Resolvido</span>':(atrasado?'<span style="font-size:11px;padding:2px 8px;border-radius:10px;background:var(--red-pale);color:var(--red)">Atrasado</span>':''))
+    +'</div>'
+    +'</div>'
+    +(l.descricao?'<div style="font-size:12px;color:var(--muted);margin-bottom:6px">'+l.descricao+'</div>':'')
+    +(l.data?'<div class="history-tags"><span class="tag" style="background:var(--bg)">'+(l.resolvido?'Prazo era ':'Prazo: ')+fmtD(l.data)+'</span></div>':'')
+    +'<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap" id="lembrete-actions-'+l.id+'"></div>';
+  const actions=card.querySelector('#lembrete-actions-'+l.id);
+  if(!l.resolvido){
+    const btnResolver=document.createElement('button');btnResolver.className='g-btn g-btn-edit';btnResolver.textContent='Resolvido';
+    btnResolver.onclick=(e)=>{e.stopPropagation();resolverLembrete(l.id);};
+    actions.appendChild(btnResolver);
+  }else{
+    const btnReabrir=document.createElement('button');btnReabrir.className='g-btn';btnReabrir.style.cssText='background:var(--border);color:var(--muted)';btnReabrir.textContent='Reabrir';
+    btnReabrir.onclick=(e)=>{e.stopPropagation();reabrirLembrete(l.id);};
+    actions.appendChild(btnReabrir);
+  }
+  return card;
+}
+
+async function salvarLembrete(){
+  const titulo=document.getElementById('lb-titulo').value.trim();
+  const descricao=document.getElementById('lb-desc').value.trim();
+  const data=document.getElementById('lb-data').value;
+  if(!titulo){toast('Preencha o título do lembrete',true);return;}
+  const res=await supa.post('lembretes',{titulo,descricao:descricao||null,data:data||null,resolvido:false});
+  if(res===null)return;
+  if(res&&res[0])lembretesC.unshift(res[0]);
+  toast('Lembrete criado!');
+  window._tarefasSub='lembretes';
+  renderTarefasTab();
+}
+
+async function resolverLembrete(lid){
+  const l=lembretesC.find(x=>x.id===lid);if(!l)return;
+  const agora=new Date().toISOString();
+  const res=await supa.patch('lembretes?id=eq.'+lid,{resolvido:true,resolvido_em:agora});
+  if(res===null)return;
+  lembretesC=lembretesC.map(x=>x.id===lid?{...x,resolvido:true,resolvido_em:agora}:x);
+  toast('Lembrete marcado como resolvido!');
+  refreshTarefasView();
+}
+
+async function reabrirLembrete(lid){
+  const res=await supa.patch('lembretes?id=eq.'+lid,{resolvido:false,resolvido_em:null});
+  if(res===null)return;
+  lembretesC=lembretesC.map(x=>x.id===lid?{...x,resolvido:false,resolvido_em:null}:x);
+  toast('Lembrete reaberto');
+  refreshTarefasView();
 }
 
 function renderDPFuncionarios(panel){
@@ -8848,7 +8979,7 @@ function buildTabsForUser(){
     {id:'financeiro',label:'Financeiro',icon:'ti-coin',subs:[['vendas','Vendas'],['despesas','Despesas']]},
     {id:'centrocusto',label:'Centro de Custo',icon:'ti-chart-bar',subs:[['galpoes','Galpões'],['dre','DRE']]},
     {id:'deptopessoal',label:'Dep. Pessoal',icon:'ti-users',subs:[['funcionarios','Funcionários'],['salarios','Salários'],['usuarios','Usuários']]},
-    {id:'tarefas',label:'Tarefas',icon:'ti-checklist',subs:[['criar','Criar tarefa'],['lista','Lista de tarefas'],['calendario','Calendário']]},
+    {id:'tarefas',label:'Tarefas',icon:'ti-checklist',subs:[['criar','Criar tarefa'],['lista','Lista de tarefas'],['calendario','Calendário'],['lembretes','Lembretes']]},
   ];
 
   // Rebuild sidebar nav
