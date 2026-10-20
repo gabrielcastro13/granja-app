@@ -409,7 +409,27 @@ select.field-input{cursor:pointer}
     <div class="field-group"><div class="field-label">Motivo / observação</div><textarea class="field-input" id="encerrar-motivo" placeholder="Ex: Descarte por fim de ciclo"></textarea></div>
     <div class="modal-actions">
       <button class="modal-btn modal-btn-cancel" onclick="closeModal('modal-encerrar')">Cancelar</button>
-      <button class="modal-btn modal-btn-danger" onclick="confirmarEncerramento()">Encerrar lote</button>
+      <button class="modal-btn modal-btn-danger" id="encerrar-save-btn" onclick="confirmarEncerramento(this)">Encerrar lote</button>
+    </div>
+  </div>
+</div>
+<div class="modal-overlay hidden" id="modal-saida-abate">
+  <div class="modal-sheet">
+    <h3 id="sa-modal-title">Registrar saída para abate</h3>
+    <input type="hidden" id="sa-lote-id">
+    <input type="hidden" id="sa-id">
+    <div style="font-size:12px;font-family:var(--mono);color:var(--muted);margin-bottom:12px" id="sa-disponivel"></div>
+    <div class="field-group"><div class="field-label">Data</div><input class="field-input" id="sa-data" type="date"></div>
+    <div class="field-group"><div class="field-label">Quantidade</div><input class="field-input" id="sa-quantidade" type="number" min="1" step="1" placeholder="Nº de aves" oninput="atualizarValorTotalAbate()"></div>
+    <div class="field-group"><div class="field-label">Valor unitário (por ave)</div><input class="field-input" id="sa-valor-unitario" type="number" min="0" step="0.01" placeholder="R$ por ave" oninput="atualizarValorTotalAbate()"></div>
+    <div class="field-group"><div class="field-label">Valor total</div><div class="field-input" id="sa-valor-total" style="background:var(--bg);font-family:var(--mono);font-weight:600">R$ 0,00</div></div>
+    <div class="field-group"><div class="field-label">Cliente (destino)</div>
+      <select class="field-input" id="sa-cliente-id"><option value="">Selecione...</option></select>
+    </div>
+    <div class="field-group"><div class="field-label">Observação</div><textarea class="field-input" id="sa-obs" placeholder="Opcional"></textarea></div>
+    <div class="modal-actions">
+      <button class="modal-btn modal-btn-cancel" onclick="closeModal('modal-saida-abate')">Cancelar</button>
+      <button class="modal-btn modal-btn-save" id="sa-save-btn" onclick="salvarSaidaAbate(this)">Registrar saída</button>
     </div>
   </div>
 </div>
@@ -715,7 +735,7 @@ async function loadAll(){
     supa.getAll('tarefas_execucoes?order=data_conclusao.desc'),
     supa.getAll('lembretes?order=created_at.desc'),
   ]);
-  const[perms,formula_db,clientes_db,forn_db,desp_db,sal_db,proc_db,func_db,entd_db]=await Promise.all([
+  const[perms,formula_db,clientes_db,forn_db,desp_db,sal_db,proc_db,func_db,entd_db,saidasAbate_db]=await Promise.all([
     supa.get('nivel_permissoes?order=nivel.asc'),
     supa.get('formula_racao?tipo=eq.Postura&order=ingrediente.asc'),
     supa.get('clientes?order=nome.asc'),
@@ -725,6 +745,7 @@ async function loadAll(){
     supa.get('venda_procedencia?order=created_at.desc'),
     supa.get('funcionarios?order=nome_completo.asc'),
     supa.getAll('entreposto_diario?order=data.desc'),
+    supa.get('saidas_abate?order=data.desc'),
   ]);
   // lote_documentos carregado sob demanda ao abrir detalhes do lote
   if(aves&&aves.length){aves.forEach(g=>{avesReais[g.galpao_id]=g.aves_atuais;});LS.set('g_aves',avesReais);}
@@ -747,6 +768,7 @@ async function loadAll(){
   if(clientes_db)clientesC=clientes_db;
   if(forn_db)fornecedoresC=forn_db;
   if(entd_db)entrepostoDiarioC=entd_db;
+  if(saidasAbate_db)saidasAbateC=saidasAbate_db;
   if(perms){perms.forEach(p=>{if(!nivelPermissoes[p.nivel])nivelPermissoes[p.nivel]={};nivelPermissoes[p.nivel][p.aba]=p.permitido;});}
   setSS('online');
   buildTabsForUser();
@@ -924,7 +946,8 @@ function abrirModalEditarLote(loteId){
       obs:document.getElementById('el-obs').value
     };
     if(!payload.raca){toast('Informe a raça',true);return;}
-    await supa.patch('lotes?id=eq.'+loteId,payload);
+    const res=await supa.patch('lotes?id=eq.'+loteId,payload);
+    if(res===null)return; // erro ja mostrado pelo supa.patch — nao finge sucesso se o PATCH falhou
     lotesC=lotesC.map(l=>l.id===loteId?{...l,...payload}:l);
     document.body.removeChild(overlay);
     toast('Lote atualizado!');
@@ -954,10 +977,11 @@ async function renderDetail(gid, loteId){
   const aves=avesReais[gid]??g?.cap??0;
   const sem=calcSem(lote.nascimento);
   const semCls=sem>=90?'critico':sem>=85?'aviso':'ok';
-  const docs_db=await supa.get('lote_documentos?lote_id=eq.'+lote.id+'&order=created_at.desc');
+  const docs_db=await supa.get('lote_documentos?lote_id=eq.'+lote.id+'&select=id,lote_id,tipo,nome,obs,created_at&order=created_at.desc');
   if(docs_db!==null)docsC=docsC.filter(d=>d.lote_id!==lote.id).concat(docs_db);
   const docs=docsC.filter(d=>d.lote_id===lote.id);
   const resps=respsC.filter(r=>r.lote_id===lote.id);
+  const saidasAbate=saidasAbateC.filter(s=>s.lote_id===lote.id).sort((a,b)=>new Date(b.data)-new Date(a.data));
   viewGalpaoId=gid;
 
   const d=document.getElementById('galpao-detail-view');d.style.display='block';
@@ -992,17 +1016,44 @@ async function renderDetail(gid, loteId){
     html+=docs.map(dd=>'<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">'
       +'<div><span class="tag">'+dd.tipo+'</span> '+dd.nome+'</div>'
       +'<div style="display:flex;gap:6px;align-items:center">'
-      +(dd.url?(dd.url.startsWith('data:')?'<a class="doc-link" href="'+dd.url+'" download="'+dd.nome+'">baixar</a>':'<a class="doc-link" href="'+dd.url+'" target="_blank">abrir</a>'):'')
-      +'<button onclick="excluirDoc('+dd.id+')" style="font-size:10px;background:var(--red-pale);color:var(--red);border:none;border-radius:4px;padding:2px 6px;cursor:pointer">×</button>'
+      +'<button class="doc-link" style="background:none;border:none;cursor:pointer;padding:0;font:inherit" onclick="baixarDocLote('+dd.id+',this)">abrir</button>'
+      +'<button onclick="delDoc('+dd.id+')" style="font-size:10px;background:var(--red-pale);color:var(--red);border:none;border-radius:4px;padding:2px 6px;cursor:pointer">×</button>'
       +'</div></div>').join('');
   } else {
     html+='<div style="font-size:13px;color:var(--muted);margin-bottom:8px">Nenhum documento.</div>';
   }
   if(isAtivo)html+='<button class="g-btn g-btn-edit" style="margin-top:8px" onclick="abrirModalDoc('+lote.id+')">+ Adicionar documento</button>';
 
+  // Saidas para abate
+  html+='<div class="form-card-title" style="margin-top:16px"><span class="dot" style="background:var(--red)"></span>Saídas para abate</div>';
+  if(saidasAbate.length){
+    html+=saidasAbate.map(sa=>{
+      const cli=clientesC.find(c=>c.id===sa.cliente_id);
+      return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">'
+        +'<div>'+fmtD(sa.data)+' — '+parseInt(sa.quantidade).toLocaleString('pt-BR')+' aves'
+        +'<div style="font-size:11px;font-family:var(--mono);color:var(--muted)">'+(cli?cli.nome:'Cliente não encontrado')+' · R$ '+parseFloat(sa.valor_unitario||0).toLocaleString('pt-BR',{minimumFractionDigits:2})+'/ave</div></div>'
+        +'<div style="display:flex;gap:6px;align-items:center">'
+        +'<span style="font-family:var(--mono);font-weight:600;color:var(--green)">R$ '+parseFloat(sa.valor_total||0).toLocaleString('pt-BR',{minimumFractionDigits:2})+'</span>'
+        +(isAtivo?('<button class="doc-link" style="background:none;border:none;cursor:pointer;padding:0;font:inherit" onclick="abrirModalEditarSaidaAbate('+sa.id+')">editar</button>'
+        +'<button onclick="excluirSaidaAbate('+sa.id+')" style="font-size:10px;background:var(--red-pale);color:var(--red);border:none;border-radius:4px;padding:2px 6px;cursor:pointer">×</button>'):'')
+        +'</div>'
+        +'</div>';
+    }).join('');
+  } else {
+    html+='<div style="font-size:13px;color:var(--muted);margin-bottom:8px">Nenhuma saída registrada.</div>';
+  }
+  if(isAtivo&&aves>0)html+='<button class="g-btn" style="margin-top:8px;background:var(--red-pale);color:var(--red)" onclick="abrirModalSaidaAbate('+lote.id+')">Registrar saída para abate</button>';
+  if(isAtivo&&aves===0)html+='<div style="font-size:12px;font-family:var(--mono);color:var(--amber);background:var(--amber-pale);padding:8px;border-radius:8px;margin-top:8px">Este lote está com 0 aves — já pode ser encerrado.</div>';
+
   // Ações do lote
   html+='<div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">';
-  if(isAtivo)html+='<button class="g-btn" style="background:var(--red-pale);color:var(--red)" onclick="abrirEncerrar('+lote.id+')">Encerrar lote</button>';
+  if(isAtivo){
+    if(aves===0){
+      html+='<button class="g-btn" style="background:var(--red-pale);color:var(--red)" onclick="abrirEncerrar('+lote.id+')">Encerrar lote</button>';
+    } else {
+      html+='<button class="g-btn" style="background:var(--border);color:var(--muted);cursor:not-allowed" disabled title="É preciso zerar as aves (registrar saída para abate) antes de encerrar o lote">Encerrar lote ('+aves.toLocaleString('pt-BR')+' aves restantes)</button>';
+    }
+  }
   html+='<button class="g-btn g-btn-edit" id="btn-ficha-old">Ficha mensal</button>';
   html+='<button class="g-btn" style="background:var(--amber-pale);color:var(--amber)" id="btn-editar-lote">Editar dados do lote</button>';
   html+='</div>';
@@ -1056,7 +1107,15 @@ async function salvarLote(){
   if(!id){
     const prefix=gid==='pb'?'PB':gid.toUpperCase().replace('G','G');
     const existing=lotesC.filter(l=>l.galpao_id===gid&&l.codigo);
-    let maxSeq=existing.reduce((m,l)=>{const s=parseInt((l.codigo||'').replace(/^[A-Z]+/,''));return s>m?s:m;},0);
+    // Remove o prefixo completo (ex: "G1", nao so a letra "G") antes de ler a sequencia —
+    // senao, pra galpoes cujo id ja tem um numero (g1/g2/g3), a sequencia salva fica colada
+    // ao numero do galpao (bug do "G11002").
+    let maxSeq=existing.reduce((m,l)=>{
+      const cod=l.codigo||'';
+      const resto=cod.startsWith(prefix)?cod.slice(prefix.length):cod.replace(/^[A-Z]+/,'');
+      const s=parseInt(resto)||0;
+      return s>m?s:m;
+    },0);
     codigo=prefix+String(maxSeq+1).padStart(3,'0');
   }
   const payload={galpao_id:gid,galpao_nome:gNome,raca,nascimento:nasc||null,data_chegada:cheg||null,responsavel_atual:resp,aves_iniciais:aves,valor_unitario_ave:valorAve,status:'ativo',obs,...(codigo?{codigo}:{})};
@@ -1087,14 +1146,225 @@ async function salvarLote(){
   buildGReg();renderGTab();renderAlerts();
   if(viewGalpaoId)renderDetail(viewGalpaoId);
 }
-function abrirEncerrar(lid){editLoteId=lid;document.getElementById('encerrar-data').value=new Date().toISOString().slice(0,10);document.getElementById('encerrar-motivo').value='';document.getElementById('modal-encerrar').classList.remove('hidden');}
-async function confirmarEncerramento(){
+function abrirEncerrar(lid){
+  const lote=lotesC.find(l=>l.id===lid);if(!lote)return;
+  const aves=avesReais[lote.galpao_id]??0;
+  if(aves>0){toast('Só é possível encerrar o lote quando a quantidade de aves for 0. Restam '+aves.toLocaleString('pt-BR')+' aves — registre a saída para abate antes de encerrar.',true);return;}
+  editLoteId=lid;
+  document.getElementById('encerrar-data').value=new Date().toISOString().slice(0,10);
+  document.getElementById('encerrar-motivo').value='';
+  const ebtn=document.getElementById('encerrar-save-btn');if(ebtn){ebtn.disabled=false;ebtn.textContent='Encerrar lote';}
+  document.getElementById('modal-encerrar').classList.remove('hidden');
+}
+async function confirmarEncerramento(btn){
+  if(btn){if(btn.disabled)return;btn.disabled=true;btn.textContent='Encerrando...';}
+  const reEnable=()=>{if(btn){btn.disabled=false;btn.textContent='Encerrar lote';}};
+  const lote=lotesC.find(l=>l.id===editLoteId);
+  if(!lote){toast('Lote não encontrado',true);reEnable();return;}
+  const gid=lote.galpao_id;
+  const aves=avesReais[gid]??0;
+  if(aves>0){toast('Só é possível encerrar o lote quando a quantidade de aves for 0. Restam '+aves.toLocaleString('pt-BR')+' aves.',true);reEnable();return;}
   const data=document.getElementById('encerrar-data').value;
-  const motivo=document.getElementById('encerrar-motivo').value;
-  await supa.patch('lotes?id=eq.'+editLoteId,{status:'encerrado',data_encerramento:data,motivo_encerramento:motivo});
+  const motivo=document.getElementById('encerrar-motivo').value.trim();
+  if(!data){toast('Informe a data de encerramento',true);reEnable();return;}
+  const res=await supa.patch('lotes?id=eq.'+editLoteId,{status:'encerrado',data_encerramento:data,motivo_encerramento:motivo});
+  if(res===null){reEnable();return;}
   lotesC=lotesC.map(l=>l.id===editLoteId?{...l,status:'encerrado',data_encerramento:data,motivo_encerramento:motivo}:l);
-  LS.set('g_lotes',lotesC);closeModal('modal-encerrar');toast('Lote encerrado e arquivado');
-  buildGReg();renderGTab();renderAlerts();if(viewGalpaoId)renderDetail(viewGalpaoId);
+  LS.set('g_lotes',lotesC);
+  // Sincronizacao defensiva: a regra acima ja garante aves=0, mas se o cache de galpoes.aves_atuais
+  // no banco estiver desatualizado por algum motivo, zera explicitamente ao encerrar.
+  if((avesReais[gid]??0)!==0){
+    avesReais[gid]=0;LS.set('g_aves',avesReais);
+    await supa.patch('galpoes?galpao_id=eq.'+gid,{aves_atuais:0});
+  }
+  closeModal('modal-encerrar');
+  toast('Lote encerrado e arquivado');
+  buildGReg();renderGTab();renderAlerts();
+  if(viewGalpaoId)renderDetail(gid,editLoteId);
+}
+
+function abrirModalSaidaAbate(loteId){
+  const lote=lotesC.find(l=>l.id===loteId);if(!lote)return;
+  document.getElementById('sa-id').value='';
+  const saTitle=document.getElementById('sa-modal-title');if(saTitle)saTitle.textContent='Registrar saída para abate';
+  const saBtn=document.getElementById('sa-save-btn');if(saBtn){saBtn.disabled=false;saBtn.textContent='Registrar saída';}
+  document.getElementById('sa-lote-id').value=loteId;
+  document.getElementById('sa-data').value=new Date().toISOString().slice(0,10);
+  document.getElementById('sa-quantidade').value='';
+  document.getElementById('sa-valor-unitario').value='';
+  document.getElementById('sa-valor-total').textContent='R$ 0,00';
+  document.getElementById('sa-obs').value='';
+  const disp=avesReais[lote.galpao_id]??0;
+  document.getElementById('sa-disponivel').textContent='Disponível: '+disp.toLocaleString('pt-BR')+' aves';
+  const sel=document.getElementById('sa-cliente-id');
+  sel.innerHTML='<option value="">Selecione...</option>'+clientesC.map(cl=>'<option value="'+cl.id+'">'+cl.nome+'</option>').join('');
+  document.getElementById('modal-saida-abate').classList.remove('hidden');
+}
+function atualizarValorTotalAbate(){
+  const q=parseFloat(document.getElementById('sa-quantidade').value||0);
+  const vu=parseFloat(document.getElementById('sa-valor-unitario').value||0);
+  document.getElementById('sa-valor-total').textContent='R$ '+(q*vu).toLocaleString('pt-BR',{minimumFractionDigits:2});
+}
+async function salvarSaidaAbate(btn){
+  const idRaw=document.getElementById('sa-id').value;
+  const isEdit=!!idRaw;
+  if(btn){if(btn.disabled)return;btn.disabled=true;btn.textContent=isEdit?'Salvando...':'Registrando...';}
+  const reEnable=()=>{if(btn){btn.disabled=false;btn.textContent=isEdit?'Salvar alterações':'Registrar saída';}};
+  try{
+  const saAntiga=isEdit?saidasAbateC.find(s=>s.id===parseInt(idRaw)):null;
+  if(isEdit&&!saAntiga){toast('Saída não encontrada',true);reEnable();return;}
+  const loteId=parseInt(document.getElementById('sa-lote-id').value);
+  const lote=lotesC.find(l=>l.id===loteId);
+  if(!lote){toast('Lote não encontrado',true);reEnable();return;}
+  if(lote.status!=='ativo'){toast('Este lote já foi encerrado — não é possível registrar/editar saídas para abate dele.',true);reEnable();return;}
+  const gid=lote.galpao_id;
+  const dataVal=document.getElementById('sa-data').value;
+  const quantidade=parseInt(document.getElementById('sa-quantidade').value||0);
+  const valorUnitario=parseFloat(document.getElementById('sa-valor-unitario').value||0);
+  const clienteId=parseInt(document.getElementById('sa-cliente-id').value||0)||null;
+  const obs=document.getElementById('sa-obs').value;
+  if(!dataVal){toast('Informe a data',true);reEnable();return;}
+  if(!quantidade||quantidade<=0){toast('Informe a quantidade',true);reEnable();return;}
+  // Ao editar, a quantidade antiga desta mesma saida ainda esta contabilizada como "ja saiu" — devolve ela antes de validar o novo valor
+  const disponivel=(avesReais[gid]??0)+(isEdit?parseFloat(saAntiga.quantidade||0):0);
+  if(quantidade>disponivel){toast('Quantidade maior que o disponível ('+disponivel.toLocaleString('pt-BR')+' aves)',true);reEnable();return;}
+  if(!valorUnitario||valorUnitario<=0){toast('Informe o valor unitário',true);reEnable();return;}
+  if(!clienteId){toast('Selecione o cliente (destino)',true);reEnable();return;}
+  const valorTotal=quantidade*valorUnitario;
+  const dp=dataVal.split('-');const dataReg=dp[2]+'/'+dp[1]+'/'+dp[0];
+  const ano=parseInt(dp[0]),mes=parseInt(dp[1]);
+  const toISOp=(dr)=>{const p=dr.split('/');return p[2]+'-'+p[1]+'-'+p[0];};
+
+  // Se for edicao, reverte primeiro o efeito da saida antiga no dia antigo dela
+  let dataAntigaISO=null;
+  if(isEdit){
+    dataAntigaISO=(saAntiga.data||'').slice(0,10);
+    if(saAntiga.registro_id){
+      let regAntigo=histCache.find(r=>r.id===saAntiga.registro_id);
+      if(!regAntigo){
+        const chk=await supa.get('registros?id=eq.'+saAntiga.registro_id);
+        if(chk&&chk.length)regAntigo=chk[0];
+      }
+      if(regAntigo){
+        const saidaAbateRevertida=Math.max(0,parseFloat(regAntigo.saida_abate||0)-parseFloat(saAntiga.quantidade||0));
+        const avesRestRevertido=Math.max(0,parseFloat(regAntigo.aves_no_dia||0)-parseFloat(regAntigo.mortes||0)-saidaAbateRevertida);
+        const rRev=await supa.patch('registros?id=eq.'+regAntigo.id,{saida_abate:saidaAbateRevertida,aves_restantes:avesRestRevertido});
+        if(rRev===null){reEnable();return;}
+        histCache=histCache.map(r=>r.id===regAntigo.id?{...r,saida_abate:saidaAbateRevertida,aves_restantes:avesRestRevertido}:r);
+        LS.set('g_hist',histCache);
+      }
+    }
+  }
+
+  // 1) Encontrar ou criar o registro do dia (com o novo valor), para debitar a baixa na mesma cascata de aves
+  let regDia=histCache.find(r=>r.galpao_id===gid&&r.data_registro===dataReg);
+  if(!regDia){
+    const check=await supa.get('registros?galpao_id=eq.'+gid+'&data_registro=eq.'+encodeURIComponent(dataReg));
+    if(check===null){toast('Erro ao verificar registro do dia',true);reEnable();return;}
+    if(check.length)regDia=check[0];
+  }
+  let registroId;
+  if(regDia){
+    const novaSaidaAbate=parseFloat(regDia.saida_abate||0)+quantidade;
+    const avesRestantes=Math.max(0,parseFloat(regDia.aves_no_dia||0)-parseFloat(regDia.mortes||0)-novaSaidaAbate);
+    const res=await supa.patch('registros?id=eq.'+regDia.id,{saida_abate:novaSaidaAbate,aves_restantes:avesRestantes});
+    if(res===null){reEnable();return;}
+    registroId=regDia.id;
+    histCache=histCache.map(r=>r.id===regDia.id?{...r,saida_abate:novaSaidaAbate,aves_restantes:avesRestantes}:r);
+  } else {
+    // Escopado ao lote (nao o galpao inteiro) — um lote novo comeca do zero com suas
+    // aves iniciais, nao deve herdar o ultimo valor de um lote anterior ja encerrado.
+    const todos=await supa.getAll('registros?galpao_id=eq.'+gid+'&lote_id=eq.'+loteId+'&select=data_registro,aves_restantes');
+    if(todos===null){toast('Erro ao buscar histórico do lote',true);reEnable();return;}
+    const anteriores=todos.filter(r=>toISOp(r.data_registro)<dataVal).sort((x,y)=>toISOp(y.data_registro).localeCompare(toISOp(x.data_registro)));
+    const avesNoDia=anteriores.length?parseFloat(anteriores[0].aves_restantes||0):parseFloat(lote.aves_iniciais||avesReais[gid]||0);
+    const avesRestantes=Math.max(0,avesNoDia-quantidade);
+    const g=GALPOES.find(x=>x.id===gid);
+    const now=new Date();
+    const novoReg={data_registro:dataReg,horario:now.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}),colaborador:currentUser?(currentUser.adm?'ADM':currentUser.nome||''):'',galpao_id:gid,galpao_nome:g?g.nome:gid,lote_id:loteId,aves_no_dia:avesNoDia,mortes:0,saida_abate:quantidade,aves_restantes:avesRestantes,causa_morte:'',total_pentes:0,total_ovos:0,taxa_postura:0,coletas:'[]',silos:'[]',tratos:'[]',obs:'Saída para abate'};
+    const res=await supa.post('registros',novoReg);
+    if(res===null){reEnable();return;}
+    if(res&&res[0]){histCache.unshift(res[0]);registroId=res[0].id;}
+  }
+  LS.set('g_hist',histCache);
+
+  // 2) Gravar a saida em si — cria nova ou atualiza a existente
+  const payload={lote_id:loteId,galpao_id:gid,cliente_id:clienteId,registro_id:registroId||null,data:dataVal,quantidade,valor_unitario:valorUnitario,valor_total:valorTotal,ano,mes,obs};
+  if(isEdit){
+    const resSaida=await supa.patch('saidas_abate?id=eq.'+saAntiga.id,payload);
+    if(resSaida===null){reEnable();return;}
+    saidasAbateC=saidasAbateC.map(s=>s.id===saAntiga.id?{...s,...payload}:s);
+  } else {
+    const resSaida=await supa.post('saidas_abate',payload);
+    if(resSaida===null){reEnable();return;}
+    if(resSaida&&resSaida[0])saidasAbateC.unshift(resSaida[0]);
+  }
+
+  // 3) Propagar pelos dias seguintes a partir do mais antigo entre a data antiga (se editou) e a nova
+  const earliestISO=(dataAntigaISO&&dataAntigaISO<dataVal)?dataAntigaISO:dataVal;
+  const ep=earliestISO.split('-');const earliestDMY=ep[2]+'/'+ep[1]+'/'+ep[0];
+  toast((isEdit?'Saída atualizada!':'Saída registrada!')+' Recalculando dias seguintes...');
+  await recalcularCascataAves(gid,loteId,earliestDMY);
+
+  closeModal('modal-saida-abate');
+  if(viewGalpaoId)renderDetail(gid,loteId);
+  buildGReg();renderGTab();
+  }catch(e){console.error(e);toast('Erro ao salvar saída para abate',true);reEnable();}
+}
+
+function abrirModalEditarSaidaAbate(id){
+  const sa=saidasAbateC.find(s=>s.id===id);if(!sa)return;
+  const lote=lotesC.find(l=>l.id===sa.lote_id);if(!lote)return;
+  if(lote.status!=='ativo'){toast('Este lote já foi encerrado — não é possível editar as saídas para abate dele.',true);return;}
+  document.getElementById('sa-id').value=sa.id;
+  document.getElementById('sa-lote-id').value=sa.lote_id;
+  document.getElementById('sa-data').value=(sa.data||'').slice(0,10);
+  document.getElementById('sa-quantidade').value=sa.quantidade;
+  document.getElementById('sa-valor-unitario').value=sa.valor_unitario;
+  document.getElementById('sa-obs').value=sa.obs||'';
+  const disponivelSemEsta=(avesReais[lote.galpao_id]??0)+parseFloat(sa.quantidade||0);
+  document.getElementById('sa-disponivel').textContent='Disponível: '+disponivelSemEsta.toLocaleString('pt-BR')+' aves (já considerando esta saída revertida)';
+  const sel=document.getElementById('sa-cliente-id');
+  sel.innerHTML='<option value="">Selecione...</option>'+clientesC.map(cl=>'<option value="'+cl.id+'"'+(cl.id===sa.cliente_id?' selected':'')+'>'+cl.nome+'</option>').join('');
+  atualizarValorTotalAbate();
+  const h3=document.getElementById('sa-modal-title');if(h3)h3.textContent='Editar saída para abate';
+  const saBtn=document.getElementById('sa-save-btn');if(saBtn){saBtn.disabled=false;saBtn.textContent='Salvar alterações';}
+  document.getElementById('modal-saida-abate').classList.remove('hidden');
+}
+
+async function excluirSaidaAbate(id){
+  const sa=saidasAbateC.find(s=>s.id===id);if(!sa)return;
+  const loteSa=lotesC.find(l=>l.id===sa.lote_id);
+  if(loteSa&&loteSa.status!=='ativo'){toast('Este lote já foi encerrado — não é possível excluir saídas para abate dele.',true);return;}
+  if(!confirm('Excluir esta saída de '+parseInt(sa.quantidade).toLocaleString('pt-BR')+' aves em '+fmtD(sa.data)+'? As aves voltam a contar como disponíveis no lote.'))return;
+  const gid=sa.galpao_id;
+  if(sa.registro_id){
+    let reg=histCache.find(r=>r.id===sa.registro_id);
+    if(!reg){
+      const chk=await supa.get('registros?id=eq.'+sa.registro_id);
+      if(chk&&chk.length)reg=chk[0];
+    }
+    if(reg){
+      const novaSaidaAbate=Math.max(0,parseFloat(reg.saida_abate||0)-parseFloat(sa.quantidade||0));
+      const avesRest=Math.max(0,parseFloat(reg.aves_no_dia||0)-parseFloat(reg.mortes||0)-novaSaidaAbate);
+      const res=await supa.patch('registros?id=eq.'+reg.id,{saida_abate:novaSaidaAbate,aves_restantes:avesRest});
+      if(res===null)return;
+      histCache=histCache.map(r=>r.id===reg.id?{...r,saida_abate:novaSaidaAbate,aves_restantes:avesRest}:r);
+      LS.set('g_hist',histCache);
+    }
+  }
+  const resDel=await supa.del('saidas_abate?id=eq.'+id);
+  if(resDel===null)return;
+  saidasAbateC=saidasAbateC.filter(s=>s.id!==id);
+  const dp=(sa.data||'').slice(0,10).split('-');
+  if(dp.length===3){
+    toast('Saída excluída! Recalculando dias seguintes...');
+    await recalcularCascataAves(gid,sa.lote_id,dp[2]+'/'+dp[1]+'/'+dp[0]);
+  } else {
+    toast('Saída excluída!');
+  }
+  if(viewGalpaoId)renderDetail(gid,sa.lote_id);
+  buildGReg();renderGTab();
 }
 function abrirModalResp(lid){document.getElementById('modal-resp-lote-id').value=lid;document.getElementById('resp-novo').value='';document.getElementById('resp-data').value=new Date().toISOString().slice(0,10);document.getElementById('modal-resp').classList.remove('hidden');}
 async function salvarResponsavel(){
@@ -1145,14 +1415,27 @@ async function salvarDoc(){
   const res=await supa.post('lote_documentos',{lote_id:lid,tipo,nome,url:url||null,obs:obs||null});
   if(btn){btn.disabled=false;btn.textContent='Salvar';}
   if(res===null){return;} // error shown by supa.query
-  if(res&&res[0]){docsC.unshift(res[0]);LS.set('g_docs',docsC);}
+  if(res&&res[0]){docsC.unshift(res[0]);}
   else{const fr=await supa.get('lote_documentos?lote_id=eq.'+lid+'&order=created_at.desc&limit=1');if(fr&&fr[0])docsC.unshift(fr[0]);}
   closeModal('modal-doc');toast('Documento adicionado');if(viewGalpaoId)renderDetail(viewGalpaoId);
+}
+async function baixarDocLote(id,btn){
+  const original=btn.textContent;
+  btn.textContent='...';btn.disabled=true;
+  const res=await supa.get('lote_documentos?id=eq.'+id+'&select=url,nome');
+  btn.disabled=false;btn.textContent=original;
+  if(!res||!res[0]||!res[0].url){toast('Documento sem arquivo ou link anexado',true);return;}
+  const url=res[0].url,nome=res[0].nome;
+  if(url.startsWith('data:')){
+    const a=document.createElement('a');a.href=url;a.download=nome||'documento';document.body.appendChild(a);a.click();a.remove();
+  }else{
+    window.open(url,'_blank');
+  }
 }
 async function delDoc(did){
   if(!confirm('Remover documento?'))return;
   await supa.del('lote_documentos?id=eq.'+did);
-  docsC=docsC.filter(d=>d.id!==did);LS.set('g_docs',docsC);if(viewGalpaoId)renderDetail(viewGalpaoId);
+  docsC=docsC.filter(d=>d.id!==did);if(viewGalpaoId)renderDetail(viewGalpaoId);
 }
 
 function addColeta(){
@@ -1185,17 +1468,19 @@ async function recalcularAvesGalpao(gid,loteId){
   if(!lote){toast('Lote não encontrado',true);return;}
   const avesIniciais=parseFloat(lote.aves_iniciais||0);
   if(!avesIniciais){toast('Lote sem aves iniciais definidas',true);return;}
-  if(!confirm('Recalcular as aves de hoje somando todas as mortes registradas desde a chegada do lote? Isso vai sobrescrever o valor atual ('+ (avesReais[gid]??0).toLocaleString('pt-BR') +').'))return;
-  // Buscar todos os registros do galpao vinculados a este lote (ou todos do galpao, se nao houver lote_id preenchido em alguns)
-  const regs=await supa.get('registros?galpao_id=eq.'+gid+'&select=mortes,lote_id,data_registro');
+  if(!confirm('Recalcular as aves de hoje somando todas as mortes e saídas para abate registradas deste lote? Isso vai sobrescrever o valor atual ('+ (avesReais[gid]??0).toLocaleString('pt-BR') +').'))return;
+  // Escopado so pelo lote_id (nao o galpao inteiro) — um lote novo nao deve herdar mortes/abates
+  // de um lote anterior ja encerrado no mesmo galpao.
+  const regs=await supa.get('registros?galpao_id=eq.'+gid+'&lote_id=eq.'+loteId+'&select=mortes,saida_abate,data_registro');
   if(regs===null){toast('Erro ao buscar registros',true);return;}
   const totalMortes=regs.reduce((sum,r)=>sum+(parseFloat(r.mortes)||0),0);
-  const avesCalculadas=Math.max(0,avesIniciais-totalMortes);
+  const totalAbate=regs.reduce((sum,r)=>sum+(parseFloat(r.saida_abate)||0),0);
+  const avesCalculadas=Math.max(0,avesIniciais-totalMortes-totalAbate);
   const ex=await supa.get('galpoes?galpao_id=eq.'+gid);
   if(ex&&ex.length)await supa.patch('galpoes?galpao_id=eq.'+gid,{aves_atuais:avesCalculadas});
   else await supa.post('galpoes',{galpao_id:gid,aves_atuais:avesCalculadas});
   avesReais[gid]=avesCalculadas;LS.set('g_aves',avesReais);
-  toast('Recalculado: '+avesCalculadas.toLocaleString('pt-BR')+' aves ('+avesIniciais.toLocaleString('pt-BR')+' iniciais − '+totalMortes.toLocaleString('pt-BR')+' mortes)');
+  toast('Recalculado: '+avesCalculadas.toLocaleString('pt-BR')+' aves ('+avesIniciais.toLocaleString('pt-BR')+' iniciais − '+totalMortes.toLocaleString('pt-BR')+' mortes − '+totalAbate.toLocaleString('pt-BR')+' abate)');
   await renderDetail(gid,loteId);
 }
 function openModalAves(gid,e){if(e)e.stopPropagation();editGalpaoId=gid;const g=GALPOES.find(x=>x.id===gid);document.getElementById('modal-aves-title').textContent='Galinhas - '+g.nome;document.getElementById('modal-aves-input').value=avesReais[gid]??g.cap;openModal('modal-aves');}
@@ -1210,7 +1495,7 @@ async function saveAves(){
   else if(window._posturaSubTab==='galpoes')renderGTab();
   updateRest();
 }
-['modal-aves','modal-lote','modal-doc','modal-encerrar','modal-resp','modal-usuario','modal-edit-reg','modal-produto-detail','modal-despesa','modal-edit-venda'].forEach(id=>{document.getElementById(id).onclick=function(e){if(e.target===this)closeModal(id);};});
+['modal-aves','modal-lote','modal-doc','modal-encerrar','modal-saida-abate','modal-resp','modal-usuario','modal-edit-reg','modal-produto-detail','modal-despesa','modal-edit-venda'].forEach(id=>{document.getElementById(id).onclick=function(e){if(e.target===this)closeModal(id);};});
 
 async function salvar(){
   if(!selGalpao){toast('Selecione o galpão',true);return;}
@@ -1238,10 +1523,14 @@ async function salvar(){
     const dataReg=dataObj.toLocaleDateString('pt-BR');
     const toISOP=(dr)=>{const p=dr.split('/');return p[2]+'-'+p[1]+'-'+p[0];};
     const dataISOp=toISOP(dataReg);
-    // Buscar SEMPRE do banco o dia anterior para garantir aves_no_dia correto
-    let avesNoDia=avesReais[selGalpao]??0;
+    // Buscar SEMPRE do banco o dia anterior para garantir aves_no_dia correto — escopado ao
+    // mesmo lote deste registro, pra nao herdar o valor de um lote diferente (ex: se este
+    // registro for de um lote ja encerrado, ou se um lote novo ja tiver comecado depois dele).
+    let avesNoDia=parseFloat(existente.aves_no_dia||(avesReais[selGalpao]??0));
     if(isOnline){
-      const todosP=await supa.getAll('registros?galpao_id=eq.'+selGalpao+'&select=data_registro,aves_restantes,id');
+      let qP='registros?galpao_id=eq.'+selGalpao+'&select=data_registro,aves_restantes,id';
+      if(existente.lote_id)qP+='&lote_id=eq.'+existente.lote_id;
+      const todosP=await supa.getAll(qP);
       if(todosP===null){
         toast('Não foi possível confirmar a contagem de galinhas do dia anterior (falha de conexão). Alteração NÃO salva — tente novamente.',true);
         btn.disabled=false;btn.textContent='Salvar registro';
@@ -1252,7 +1541,7 @@ async function salvar(){
         .sort((x,y)=>toISOP(y.data_registro).localeCompare(toISOP(x.data_registro)));
       if(antP.length)avesNoDia=parseFloat(antP[0].aves_restantes||avesNoDia);
     }
-    const avesRestantes=Math.max(0,avesNoDia-m);
+    const avesRestantes=Math.max(0,avesNoDia-m-parseFloat(existente.saida_abate||0));
     const taxaPostura=avesNoDia>0?parseFloat((to/avesNoDia*100).toFixed(1)):0;
     const mortesAntigas=parseFloat(existente.mortes||0);
     const patchData={total_pentes:tp,total_ovos:to,mortes:m,causa_morte:causa,obs,coletas:JSON.stringify(cd),aves_no_dia:avesNoDia,aves_restantes:avesRestantes,taxa_postura:taxaPostura,editado_em:new Date().toISOString()};
@@ -1275,7 +1564,7 @@ async function salvar(){
     // Se mortes ou aves_no_dia mudaram, recalcular cascata a partir deste dia
     const avesNoDiaAntigo=parseFloat(existente.aves_no_dia||0);
     if((m!==mortesAntigas||avesNoDia!==avesNoDiaAntigo)&&isOnline){
-      await recalcularCascataAves(selGalpao,dataReg);
+      await recalcularCascataAves(selGalpao,existente.lote_id,dataReg);
     } else {
       // Mesmo sem cascata, atualizar galpoes.aves_atuais se for o registro mais recente
       const todosGalpao=histCache.filter(r=>r.galpao_id===selGalpao).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
@@ -1305,11 +1594,17 @@ async function salvar(){
   const toISO=(dr)=>{const p=dr.split('/');return p[2]+'-'+p[1]+'-'+p[0];};
   const dataISO=toISO(dataReg);
 
-  // Determinar aves_no_dia correto buscando SEMPRE do banco o dia imediatamente anterior.
-  // Nao depende do histCache (limitado a 200 registros) nem de avesReais (valor atual do galpao).
-  let a=avesReais[selGalpao]??0;
+  // Determinar aves_no_dia correto buscando SEMPRE do banco o dia imediatamente anterior
+  // DESTE MESMO LOTE — escopado por lote_id, nao so por galpao_id. Um lote novo comeca do
+  // zero com as proprias aves iniciais; ele nunca deve herdar o ultimo valor de um lote
+  // anterior ja encerrado no mesmo galpao (mesma causa raiz das "quedas fantasma", so que
+  // na virada de lote em vez de num lancamento retroativo).
+  const loteAtivo=lotesC.find(l=>l.galpao_id===selGalpao&&l.status==='ativo');
+  let a=loteAtivo?parseFloat(loteAtivo.aves_iniciais||0):(avesReais[selGalpao]??0);
   if(isOnline){
-    const todos=await supa.getAll('registros?galpao_id=eq.'+selGalpao+'&select=data_registro,aves_restantes');
+    let qD='registros?galpao_id=eq.'+selGalpao+'&select=data_registro,aves_restantes';
+    if(loteAtivo)qD+='&lote_id=eq.'+loteAtivo.id;
+    const todos=await supa.getAll(qD);
     if(todos===null){
       toast('Não foi possível confirmar a contagem de galinhas do dia anterior (falha de conexão). Registro NÃO salvo — tente novamente.',true);
       btn.disabled=false;btn.textContent='Salvar registro';
@@ -1323,7 +1618,6 @@ async function salvar(){
 
   const ar=Math.max(0,a-m);
   const tp2=a>0?parseFloat((to/a*100).toFixed(1)):0;
-  const loteAtivo=lotesC.find(l=>l.galpao_id===selGalpao&&l.status==='ativo');
   const silos=[];
   const tratos=[];
   const rec={id:Date.now(),created_at:now.toISOString(),data_registro:dataReg,horario:now.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}),colaborador:currentUser?(currentUser.adm?'ADM':currentUser.nome||'Não informado'):'Não informado',galpao_id:selGalpao,galpao_nome:gp.nome,lote_id:loteAtivo?loteAtivo.id:null,aves_no_dia:a,mortes:m,aves_restantes:ar,causa_morte:document.getElementById('causa').value,coletas:JSON.stringify(cd),total_pentes:tp,total_ovos:to,taxa_postura:tp2,silos:JSON.stringify(silos),tratos:JSON.stringify(tratos),obs:document.getElementById('obs_geral').value};
@@ -1337,7 +1631,7 @@ async function salvar(){
     const ultimoRegPos=histCache.filter(r=>r.galpao_id===selGalpao).sort((x,y)=>toISO(y.data_registro).localeCompare(toISO(x.data_registro)))[0];
     const ultimoISOPos=ultimoRegPos?toISO(ultimoRegPos.data_registro):'';
     if(ultimoISOPos&&dataISO<ultimoISOPos){
-      await recalcularCascataAves(selGalpao,dataReg);
+      await recalcularCascataAves(selGalpao,loteAtivo?loteAtivo.id:null,dataReg);
       toast('Registro retroativo salvo! Cascata recalculada.');
     } else {
       toast(saved?'Registro salvo!':'Salvo - sera sincronizado');
@@ -1779,6 +2073,7 @@ let despesasC=[];
 let salariosC=[];
 let funcionariosC=[];
 let tarefasC=[],tarefasExecucoesC=[],lembretesC=[],docGranjaC=[];
+let saidasAbateC=[];
 function renderRacao(){
   const el=document.getElementById('tab-racao');if(!el)return;
   const rt=window._racaoTab||'registrar';
@@ -1798,6 +2093,7 @@ function renderRacao(){
 function setRacaoTab(tab){window._racaoTab=tab;renderRacao();}
 function renderRacaoForm(){
   const el=document.getElementById('rpanel-registrar');if(!el)return;
+  _racaoPersItens=[];
   const tiposFormula=Object.keys(formulasDB).length?Object.keys(formulasDB):['Postura','Crescimento'];
   const tipoOpts=tiposFormula.map(t=>'<option value="'+t+'">'+t+'</option>').join('')+'<option value="Outro">Outro (Personalizar)</option>';
   el.innerHTML='<div class="form-card"><div class="form-card-title"><span class="dot" style="background:#52B788"></span>Nova fabricação</div>'
@@ -1807,6 +2103,8 @@ function renderRacaoForm(){
     +'<div class="field-group"><div class="field-label">Peso total (kg)</div><div style="font-size:22px;font-weight:600;font-family:var(--mono);color:var(--green);padding:6px 0" id="r-peso-display">1.015,84 kg</div><div style="font-size:11px;color:var(--muted);font-family:var(--mono)" id="r-peso-note">1 mistura = 1.015,84 kg (peso real da fórmula)</div></div>'
     +'<div class="field-group"><div class="field-label">Galpão de destino</div><select class="field-input" id="r-galpao"><option value="">Selecione...</option>'+GALPOES.map(g=>'<option value="'+g.id+'">'+g.nome+'</option>').join('')+'</select></div>'
     +'<div class="trato-row" id="r-corante-wrap" style="padding:12px 0;display:flex"><span class="trato-label" style="font-size:13px">Com corante</span><label class="toggle-wrap"><input type="checkbox" id="r-corante" checked onchange="atualizaPreviewEstoque()"><span class="toggle-track"></span></label></div>'
+    +'<div class="trato-row" id="r-personalizar-wrap" style="padding:12px 0;display:flex"><span class="trato-label" style="font-size:13px">Personalizar ingredientes desta fabricação</span><label class="toggle-wrap"><input type="checkbox" id="r-personalizar" onchange="toggleRacaoPersonalizar()"><span class="toggle-track"></span></label></div>'
+    +'<div id="r-personalizar-area" style="display:none"></div>'
     +'<div class="form-card-title" style="margin-top:4px"><span class="dot" style="background:#748CAB"></span>Valor da fabricação</div>'
     +'<div style="display:flex;gap:12px;margin-bottom:10px">'
     +'<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="radio" name="r-valor-modo" value="peps" checked onchange="toggleValorModoRacao()"> Calcular por PEPS (automático)</label>'
@@ -1821,7 +2119,7 @@ function renderRacaoForm(){
     +'</div>'
     +'<div class="field-group"><div class="field-label">Observações</div><textarea class="field-input" id="r-obs" placeholder="Opcional"></textarea></div>'
     +'<div id="r-preview-estoque" style="margin:12px 0"></div>'
-    +'<button class="submit-btn" onclick="salvarRacao()">Salvar fabricação</button></div>'
+    +'<button class="submit-btn" onclick="salvarRacao(this)">Salvar fabricação</button></div>'
     // Outro form (hidden initially)
     +'<div id="r-form-outro" style="display:none"></div>'
     +'</div>';
@@ -1832,6 +2130,10 @@ function onTipoRacaoChange(){
   const tipo=document.getElementById('r-tipo')?.value;
   const normal=document.getElementById('r-form-normal');
   const outro=document.getElementById('r-form-outro');
+  // Trocar de tipo invalida a lista de ingredientes personalizados em andamento (era baseada
+  // na formula do tipo anterior) — desliga e volta pro preview padrao.
+  const persChk=document.getElementById('r-personalizar');
+  if(persChk&&persChk.checked){persChk.checked=false;toggleRacaoPersonalizar();}
   if(tipo==='Outro'){
     if(normal)normal.style.display='none';
     if(outro){outro.style.display='block';renderFormOutro(outro);}
@@ -1840,6 +2142,146 @@ function onTipoRacaoChange(){
     if(outro)outro.style.display='none';
     calcPesoTotal();
   }
+}
+
+// ── Personalizar ingredientes de UMA fabricacao (sem alterar a formula padrao do tipo) ────
+let _racaoPersItens=[]; // [{produto_id, nome, unidade, quantidade}]
+
+function toggleRacaoPersonalizar(){
+  const chk=document.getElementById('r-personalizar');
+  const area=document.getElementById('r-personalizar-area');
+  const preview=document.getElementById('r-preview-estoque');
+  const corWrap=document.getElementById('r-corante-wrap');
+  const misturasInp=document.getElementById('r-misturas');
+  const noteEl=document.getElementById('r-peso-note');
+  if(!chk||!area)return;
+  if(chk.checked){
+    const tipo=document.getElementById('r-tipo')?.value||'Postura';
+    const misturas=parseFloat(document.getElementById('r-misturas')?.value||1);
+    const comCorante=document.getElementById('r-corante')?.checked!==false;
+    const formula=getFormulaTipo(tipo);
+    _racaoPersItens=Object.entries(formula)
+      .filter(([nome,q])=>!(nome==='Corante'&&!comCorante)&&parseFloat(q)>0)
+      .map(([nome,q])=>{
+        const prod=produtosC.find(p=>p.descricao===nome);
+        return {produto_id:prod?prod.id:null,nome,unidade:prod?prod.unidade:'kg',quantidade:parseFloat((parseFloat(q)*misturas).toFixed(4))};
+      });
+    if(preview){preview.innerHTML='';preview.style.display='none';}
+    if(corWrap)corWrap.style.display='none';
+    if(misturasInp)misturasInp.disabled=true;
+    if(noteEl)noteEl.textContent='Peso calculado pelos ingredientes ajustados abaixo — só vale pra esta fabricação.';
+    area.style.display='block';
+    _renderRacaoPersArea();
+  } else {
+    area.innerHTML='';area.style.display='none';
+    _racaoPersItens=[];
+    if(preview)preview.style.display='';
+    if(corWrap)corWrap.style.display='flex';
+    if(misturasInp)misturasInp.disabled=false;
+    calcPesoTotal();
+  }
+}
+
+function _renderRacaoPersArea(){
+  const area=document.getElementById('r-personalizar-area');if(!area)return;
+  let html='<div style="background:var(--bg);border-radius:10px;padding:12px;margin-bottom:12px">'
+    +'<div style="font-size:11px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Ingredientes desta fabricação (ajuste vale só pra esta vez)</div>';
+  if(!_racaoPersItens.length){
+    html+='<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Nenhum ingrediente — adicione abaixo.</div>';
+  } else {
+    _racaoPersItens.forEach((item,i)=>{
+      const prod=item.produto_id?produtosC.find(p=>p.id===item.produto_id):null;
+      const est=prod?parseFloat(prod.estoque_atual||0):null;
+      const insuf=est!==null&&est<item.quantidade;
+      html+='<div style="display:flex;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);gap:8px">'
+        +'<span style="font-size:13px;flex:1'+(insuf?';color:var(--red)':'')+'">'+item.nome+'</span>'
+        +'<input type="number" min="0" step="0.01" value="'+item.quantidade+'" id="r-pers-qtd-'+i+'" oninput="_updateRacaoPersQtd('+i+',this.value)" '
+        +'style="width:90px;font-family:var(--mono);font-size:13px;border:1.5px solid var(--border);border-radius:6px;padding:4px 6px;text-align:right">'
+        +'<span style="font-size:11px;font-family:var(--mono);color:var(--muted)">'+(item.unidade||'kg')+'</span>'
+        +(insuf&&est!==null?'<span style="font-size:10px;font-family:var(--mono);color:var(--red)">(est: '+est+')</span>':'')
+        +'<button onclick="_removerRacaoPersItem('+i+')" style="font-size:11px;background:var(--red-pale);color:var(--red);border:none;border-radius:4px;padding:2px 6px;cursor:pointer">×</button>'
+        +'</div>';
+    });
+  }
+  const total=_racaoPersItens.reduce((a,i)=>a+(parseFloat(i.quantidade)||0),0);
+  html+='<div style="display:flex;justify-content:space-between;padding:9px 0;font-family:var(--mono);font-size:12px;font-weight:600;color:var(--green)">'
+    +'<span>Peso total desta fabricação</span><span id="r-pers-total">'+total.toFixed(2)+' kg</span></div>';
+  const jaUsados=_racaoPersItens.map(i=>i.produto_id).filter(Boolean);
+  html+='<div style="display:flex;gap:6px;margin-top:8px">'
+    +'<select id="r-pers-add-nome" class="field-input" style="flex:2;font-size:12px"><option value="">Adicionar ingrediente...</option>'
+    +produtosC.filter(p=>p.tipo==='Insumo racao'&&!jaUsados.includes(p.id)).map(p=>'<option value="'+p.id+'">'+p.descricao+'</option>').join('')
+    +'</select>'
+    +'<input id="r-pers-add-qtd" class="field-input" type="number" min="0" step="0.01" placeholder="kg" style="flex:1;font-size:12px">'
+    +'<button onclick="_addRacaoPersItem()" style="padding:8px 10px;border-radius:8px;border:none;background:var(--green-pale);color:var(--green);cursor:pointer;font-size:14px;font-weight:700;flex-shrink:0">+</button>'
+    +'</div></div>';
+  area.innerHTML=html;
+  const pesoDisplay=document.getElementById('r-peso-display');
+  if(pesoDisplay)pesoDisplay.textContent=total.toLocaleString('pt-BR',{minimumFractionDigits:2})+' kg';
+}
+
+function _updateRacaoPersQtd(i,val){
+  if(!_racaoPersItens[i])return;
+  _racaoPersItens[i].quantidade=parseFloat(val||0);
+  const total=_racaoPersItens.reduce((a,it)=>a+(parseFloat(it.quantidade)||0),0);
+  const totalSpan=document.getElementById('r-pers-total');if(totalSpan)totalSpan.textContent=total.toFixed(2)+' kg';
+  const pesoDisplay=document.getElementById('r-peso-display');if(pesoDisplay)pesoDisplay.textContent=total.toLocaleString('pt-BR',{minimumFractionDigits:2})+' kg';
+}
+
+function _removerRacaoPersItem(i){
+  _racaoPersItens.splice(i,1);
+  _renderRacaoPersArea();
+}
+
+function _addRacaoPersItem(){
+  const sel=document.getElementById('r-pers-add-nome');const qtdEl=document.getElementById('r-pers-add-qtd');
+  if(!sel||!qtdEl)return;
+  const pid=parseInt(sel.value);const qtd=parseFloat(qtdEl.value||0);
+  if(!pid){toast('Selecione um ingrediente',true);return;}
+  if(!qtd||qtd<=0){toast('Informe a quantidade',true);return;}
+  const prod=produtosC.find(p=>p.id===pid);if(!prod)return;
+  _racaoPersItens.push({produto_id:pid,nome:prod.descricao,unidade:prod.unidade,quantidade:qtd});
+  _renderRacaoPersArea();
+}
+
+// Debita do estoque (PEPS ou manual) uma lista explicita de itens — usado quando uma
+// fabricacao tem ingredientes personalizados (ajuste pontual, nao a formula padrao do tipo).
+async function _debitarItensRacaoPeps(itens,fabId,dataFabricacao,modo,valorManualTotal){
+  let custoTotal=modo==='manual'?parseFloat(valorManualTotal||0):0;
+  const produtosAfetados=[];
+  for(const item of itens){
+    const prod=item.produto_id?produtosC.find(p=>p.id===item.produto_id):null;
+    if(!prod)continue;
+    const qt=parseFloat(item.quantidade||0);if(qt<=0)continue;
+    let custoProd=0;
+    if(modo==='peps'){
+      const lotes=comprasC.filter(x=>x.produto_id===prod.id&&parseFloat(x.quantidade_restante||0)>0).sort((a,b)=>new Date(a.data_transacao)-new Date(b.data_transacao));
+      let qtRest=qt;
+      for(const lote of lotes){
+        if(qtRest<=0)break;
+        const usar=Math.min(qtRest,parseFloat(lote.quantidade_restante||0));
+        custoProd+=usar*parseFloat(lote.custo_unitario||0);
+        qtRest-=usar;
+      }
+      if(qtRest>0&&lotes.length>0){
+        custoProd+=qtRest*parseFloat(lotes[lotes.length-1].custo_unitario||0);
+      } else if(qtRest>0&&lotes.length===0){
+        const precoRef=parseFloat(prod.preco_referencia||prod.custo_medio||0);
+        custoProd+=qtRest*precoRef;
+      }
+      custoTotal+=custoProd;
+    }
+    await supa.post('estoque_movimentos',{produto_id:prod.id,produto_nome:prod.descricao,tipo_movimento:'saida',origem:'fabricacao_racao',origem_id:fabId,quantidade:qt,unidade:prod.unidade||'kg',created_at:dataFabricacao?dataFabricacao+'T12:00:00':undefined});
+    produtosAfetados.push(prod.id);
+  }
+  await recalcularEstoqueEPeps(produtosAfetados);
+  for(const pid of new Set(produtosAfetados)){
+    const prod=produtosC.find(p=>p.id===pid);if(!prod)continue;
+    const nextLote=comprasC.filter(x=>x.produto_id===pid&&parseFloat(x.quantidade_restante||0)>0).sort((a,b)=>new Date(a.data_transacao)-new Date(b.data_transacao))[0];
+    const novoCusto=nextLote?parseFloat(nextLote.custo_unitario):(parseFloat(prod.preco_referencia)||parseFloat(prod.custo_medio||0));
+    await supa.patch('produtos?id=eq.'+pid,{custo_medio:parseFloat(novoCusto.toFixed(4))});
+    produtosC=produtosC.map(p=>p.id===pid?{...p,custo_medio:novoCusto}:p);
+  }
+  return custoTotal;
 }
 // ── RACAO PERSONALIZADA (Outro) ───────────────────────────────────────────────
 let _outroItens=[]; // [{produto_id, nome, unidade, quantidade}]
@@ -1969,9 +2411,13 @@ async function salvarRacaoOutro(btn){
     const gNomeDest=isOutroDestino?destinoCustomTexto:(GALPOES.find(g=>g.id===gidDest)||{}).nome||'';
     const modo=document.querySelector('input[name="outro-valor-modo"]:checked')?.value||'peps';
     const obs=document.getElementById('outro-obs')?.value||'';
-    const loteDestino=isOutroDestino?null:lotesC.find(l=>l.galpao_id===gidDest&&l.status==='ativo');
+    let loteIdOutro=null;
+    if(!isOutroDestino&&gidDest){
+      try{const mapaOutro=await resolverLotesPorData([{galpaoId:gidDest,data}]);loteIdOutro=mapaOutro[gidDest]??null;}
+      catch(e){reEnable();return;}
+    }
     // Salvar fabricação
-    const res=await supa.post('fabricacao_racao',{tipo:'Outro',data_fabricacao:data,num_misturas:1,peso_total_kg:parseFloat(pesoTotal.toFixed(4)),galpao_destino_id:isOutroDestino?null:gidDest,galpao_destino_nome:gNomeDest,lote_id:loteDestino?.id||null,valor_mistura:null,com_corante:false,obs:obs||null});
+    const res=await supa.post('fabricacao_racao',{tipo:'Outro',data_fabricacao:data,num_misturas:1,peso_total_kg:parseFloat(pesoTotal.toFixed(4)),galpao_destino_id:isOutroDestino?null:gidDest,galpao_destino_nome:gNomeDest,lote_id:loteIdOutro,valor_mistura:null,com_corante:false,obs:obs||null});
     if(!res){toast('Erro ao salvar',true);reEnable();return;}
     const fabId=res[0]?.id;
     if(res[0])racaoCache.unshift(res[0]);
@@ -1980,6 +2426,7 @@ async function salvarRacaoOutro(btn){
     if(modo==='manual'){
       custoTotal=parseFloat(document.getElementById('outro-valor-total')?.value||0);
     }
+    const produtosAfetadosOutro=[];
     for(const item of _outroItens){
       const prod=produtosC.find(p=>p.id===item.produto_id);if(!prod)continue;
       const qt=item.quantidade;
@@ -1992,9 +2439,6 @@ async function salvarRacaoOutro(btn){
           const usar=Math.min(qtRest,parseFloat(lote.quantidade_restante||0));
           custoProd+=usar*parseFloat(lote.custo_unitario||0);
           qtRest-=usar;
-          const novaQtRest=parseFloat(lote.quantidade_restante||0)-usar;
-          await supa.patch('compras?id=eq.'+lote.id,{quantidade_restante:parseFloat(novaQtRest.toFixed(4))});
-          comprasC=comprasC.map(x=>x.id===lote.id?{...x,quantidade_restante:novaQtRest}:x);
         }
         if(qtRest>0&&lotes.length>0){
           custoProd+=qtRest*parseFloat(lotes[lotes.length-1].custo_unitario||0);
@@ -2004,13 +2448,16 @@ async function salvarRacaoOutro(btn){
         }
         custoTotal+=custoProd;
       }
-      // Atualizar estoque
-      const novoEst=Math.max(0,(parseFloat(prod.estoque_atual||0))-qt);
-      const nextLote=comprasC.filter(x=>x.produto_id===prod.id&&parseFloat(x.quantidade_restante||0)>0).sort((a,b)=>new Date(a.data_transacao)-new Date(b.data_transacao))[0];
-      const novoCusto=nextLote?parseFloat(nextLote.custo_unitario):(parseFloat(prod.preco_referencia)||parseFloat(prod.custo_medio||0));
-      await supa.patch('produtos?id=eq.'+prod.id,{estoque_atual:parseFloat(novoEst.toFixed(4)),custo_medio:parseFloat(novoCusto.toFixed(4))});
       await supa.post('estoque_movimentos',{produto_id:prod.id,produto_nome:prod.descricao,tipo_movimento:'saida',origem:'fabricacao_racao',origem_id:fabId,quantidade:qt,unidade:prod.unidade,created_at:data+'T12:00:00'});
-      produtosC=produtosC.map(p=>p.id===prod.id?{...p,estoque_atual:novoEst,custo_medio:novoCusto}:p);
+      produtosAfetadosOutro.push(prod.id);
+    }
+    await recalcularEstoqueEPeps(produtosAfetadosOutro);
+    for(const pid of new Set(produtosAfetadosOutro)){
+      const prod=produtosC.find(p=>p.id===pid);if(!prod)continue;
+      const nextLote=comprasC.filter(x=>x.produto_id===pid&&parseFloat(x.quantidade_restante||0)>0).sort((a,b)=>new Date(a.data_transacao)-new Date(b.data_transacao))[0];
+      const novoCusto=nextLote?parseFloat(nextLote.custo_unitario):(parseFloat(prod.preco_referencia)||parseFloat(prod.custo_medio||0));
+      await supa.patch('produtos?id=eq.'+pid,{custo_medio:parseFloat(novoCusto.toFixed(4))});
+      produtosC=produtosC.map(p=>p.id===pid?{...p,custo_medio:novoCusto}:p);
     }
     // Atualizar valor_mistura
     if(fabId)await supa.patch('fabricacao_racao?id=eq.'+fabId,{valor_mistura:parseFloat(custoTotal.toFixed(2))});
@@ -2142,30 +2589,131 @@ function atualizaPreviewEstoque(){
   });
   el.innerHTML='<div style="background:var(--bg);border-radius:10px;padding:12px;margin-bottom:4px"><div style="font-size:11px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Dedução do estoque</div>'+rows+(alerta?'<div style="font-size:11px;color:var(--red);margin-top:8px;font-family:var(--mono)">Estoque insuficiente para alguns produtos</div>':'')+'</div>';
 }
-// Estorna ao estoque tudo que foi debitado para uma fabricacao de racao,
-// usando as movimentacoes reais registradas (nao recalcula pela formula,
-// para refletir exatamente o que foi debitado originalmente).
-async function _estornarRacaoEstoque(fabId){
-  const movs=await supa.get('estoque_movimentos?origem=eq.fabricacao_racao&origem_id=eq.'+fabId);
-  if(!movs||!movs.length)return;
-  for(const mv of movs){
-    if(mv.tipo_movimento!=='saida')continue;
-    const prod=produtosC.find(p=>p.id===mv.produto_id);
-    if(!prod)continue;
-    const novoEst=parseFloat(prod.estoque_atual||0)+parseFloat(mv.quantidade||0);
-    await supa.patch('produtos?id=eq.'+prod.id,{estoque_atual:parseFloat(novoEst.toFixed(4))});
-    produtosC=produtosC.map(p=>p.id===prod.id?{...p,estoque_atual:novoEst}:p);
+// ============================================================
+// RECALCULO CENTRAL DE ESTOQUE — fonte unica de verdade
+// ============================================================
+// Toda acao que muda estoque (compra, racao, correcao, retirada QR, empenho,
+// transferencia) grava a(s) movimentacao(oes) em estoque_movimentos e depois
+// chama recalcularEstoqueProduto/recalcularPepsProduto — nunca mais calcula
+// e aplica um delta isolado direto em produtos.estoque_atual/compras.quantidade_restante.
+// Isso elimina a classe de bug onde um PATCH incremental (em cima de um cache local
+// que pode estar desatualizado, ou de uma reversao que nao sabia o que veio depois)
+// ia dessincronizando o total do que o historico realmente diz.
+//
+// Saldo pode ficar NEGATIVO de proposito (decisao tomada com o usuario): negativo e
+// sinal real de lancamento faltando ou fora de ordem — nunca e escondido atras de um
+// Math.max(0,...). A UI mostra negativo em vermelho com aviso, nao trava o numero em zero.
+
+// Recalcula produtos.estoque_atual (ou estoque_grota/estoque_matriz) de um produto,
+// somando do zero TODAS as movimentacoes nao-canceladas daquele produto, em vez de
+// aplicar mais um delta isolado em cima do valor atual.
+async function recalcularEstoqueProduto(produtoId){
+  const p=produtosC.find(x=>x.id===produtoId);if(!p)return null;
+  const isInsProd=p.tipo==='Insumo producao'||p.natureza==='Insumos producao';
+  const movs=await supa.getAll('estoque_movimentos?produto_id=eq.'+produtoId+'&cancelado=eq.false&select=tipo_movimento,quantidade,entreposto');
+  if(movs===null){toast('Não foi possível recalcular o estoque (falha de conexão). Tente novamente.',true);return null;}
+  if(isInsProd){
+    let saldoGrota=0,saldoMatriz=0;
+    movs.forEach(m=>{
+      const delta=m.tipo_movimento==='entrada'?parseFloat(m.quantidade||0):-parseFloat(m.quantidade||0);
+      if((m.entreposto||'grota')==='matriz')saldoMatriz+=delta;else saldoGrota+=delta;
+    });
+    saldoGrota=parseFloat(saldoGrota.toFixed(4));saldoMatriz=parseFloat(saldoMatriz.toFixed(4));
+    const res=await supa.patch('produtos?id=eq.'+produtoId,{estoque_grota:saldoGrota,estoque_matriz:saldoMatriz});
+    if(res===null)return null;
+    produtosC=produtosC.map(x=>x.id===produtoId?{...x,estoque_grota:saldoGrota,estoque_matriz:saldoMatriz}:x);
+    return{estoque_grota:saldoGrota,estoque_matriz:saldoMatriz};
   }
-  // Remover as movimentacoes antigas (serao recriadas no debito novo)
-  await supa.del('estoque_movimentos?origem=eq.fabricacao_racao&origem_id=eq.'+fabId);
+  let saldo=0;
+  movs.forEach(m=>{saldo+=m.tipo_movimento==='entrada'?parseFloat(m.quantidade||0):-parseFloat(m.quantidade||0);});
+  saldo=parseFloat(saldo.toFixed(4));
+  const res=await supa.patch('produtos?id=eq.'+produtoId,{estoque_atual:saldo});
+  if(res===null)return null;
+  produtosC=produtosC.map(x=>x.id===produtoId?{...x,estoque_atual:saldo}:x);
+  return{estoque_atual:saldo};
+}
+
+// Reconstroi compras.quantidade_restante (PEPS) do zero: substitui o modelo antigo
+// (cada consumo decrementava incrementalmente, e uma reversao nunca devolvia) por um
+// replay completo do historico — compras entram como lotes na ordem de data_transacao,
+// e TODA movimentacao de saida nao-cancelada (racao, correcao, retirada QR, empenho,
+// transferencia — qualquer origem) consome dos lotes mais antigos primeiro, na ordem
+// cronologica real dos eventos. Um lote especifico nunca fica negativo (nao faz sentido
+// um lote "dever"); se sobrar saida sem lote disponivel, o deficit aparece no total do
+// produto via recalcularEstoqueProduto, que esse sim pode ficar negativo.
+// Para Insumo producao (que tem estoque por entreposto), o PEPS e calculado separado
+// por entreposto (grota e matriz nao compartilham lote).
+async function recalcularPepsProduto(produtoId){
+  const p=produtosC.find(x=>x.id===produtoId);if(!p)return null;
+  const isInsProd=p.tipo==='Insumo producao'||p.natureza==='Insumos producao';
+  const compras=await supa.getAll('compras?produto_id=eq.'+produtoId+'&select=id,quantidade,data_transacao,entreposto');
+  if(compras===null){toast('Não foi possível recalcular o PEPS (falha de conexão). Tente novamente.',true);return null;}
+  const saidas=await supa.getAll('estoque_movimentos?produto_id=eq.'+produtoId+'&tipo_movimento=eq.saida&cancelado=eq.false&select=quantidade,created_at,entreposto');
+  if(saidas===null){toast('Não foi possível recalcular o PEPS (falha de conexão). Tente novamente.',true);return null;}
+  const grupos=isInsProd?['grota','matriz']:[null];
+  const lotesTodos=[];
+  for(const ent of grupos){
+    const comprasGrupo=ent?compras.filter(c=>(c.entreposto||'grota')===ent):compras;
+    const saidasGrupo=ent?saidas.filter(s=>(s.entreposto||'grota')===ent):saidas;
+    const lotes=comprasGrupo.map(c=>({id:c.id,restante:parseFloat(c.quantidade||0),ts:new Date(c.data_transacao+'T00:00:00').getTime()}));
+    const eventos=[
+      ...lotes.map(l=>({tipo:'lote',ts:l.ts,lote:l})),
+      ...saidasGrupo.map(s=>({tipo:'saida',ts:new Date(s.created_at).getTime(),qtd:parseFloat(s.quantidade||0)}))
+    ].sort((a,b)=>a.ts-b.ts);
+    const disponiveis=[];
+    eventos.forEach(ev=>{
+      if(ev.tipo==='lote'){disponiveis.push(ev.lote);}
+      else{
+        let qtRest=ev.qtd;
+        for(const lote of disponiveis){
+          if(qtRest<=0)break;
+          const usar=Math.min(qtRest,lote.restante);
+          lote.restante=parseFloat((lote.restante-usar).toFixed(4));
+          qtRest-=usar;
+        }
+        // sobra (qtRest>0): deficit do produto nesse ponto — nenhum lote fica negativo por causa disso.
+      }
+    });
+    lotesTodos.push(...lotes);
+  }
+  for(const lote of lotesTodos){
+    await supa.patch('compras?id=eq.'+lote.id,{quantidade_restante:lote.restante});
+    comprasC=comprasC.map(x=>x.id===lote.id?{...x,quantidade_restante:lote.restante}:x);
+  }
+  return lotesTodos;
+}
+
+// Recalcula estoque + PEPS de varios produtos de uma vez (helper usado por toda acao
+// que mexe em mais de um produto — racao, empenho de insumos etc).
+async function recalcularEstoqueEPeps(produtoIds){
+  for(const pid of new Set(produtoIds)){
+    await recalcularPepsProduto(pid);
+    await recalcularEstoqueProduto(pid);
+  }
+}
+
+// Estorna (cancela) tudo que foi debitado para uma fabricacao de racao. Em vez de apagar
+// as movimentacoes (o que destruia o historico — foi exatamente isso que causou o "buraco"
+// de 3kg no TM 700, uma movimentacao de racao apagada sem deixar rastro), marca as
+// movimentacoes como canceladas (somem do calculo, mas continuam na tela de histórico pra
+// auditoria) e recalcula estoque+PEPS dos produtos afetados a partir do historico real.
+async function _estornarRacaoEstoque(fabId){
+  const movs=await supa.get('estoque_movimentos?origem=eq.fabricacao_racao&origem_id=eq.'+fabId+'&cancelado=eq.false');
+  if(!movs||!movs.length)return;
+  await supa.patch('estoque_movimentos?origem=eq.fabricacao_racao&origem_id=eq.'+fabId,{cancelado:true});
+  await recalcularEstoqueEPeps(movs.map(m=>m.produto_id));
 }
 
 // Debita do estoque os ingredientes da formula (PEPS), igual ao fluxo de criacao.
 // Usado tanto na criacao quanto, apos estornar, na edicao de uma fabricacao existente.
+// O custo por ingrediente continua estimado pelo cache local de compras (comprasC) — mesma
+// logica de antes — mas a persistencia do estoque e do PEPS agora e feita só pelo
+// recalculo central, nunca mais por PATCH incremental isolado.
 async function _debitarRacaoEstoque(fabId,tipo,misturas,comCorante,dataFabricacao){
   const formula=getFormulaTipo(tipo);
   let custoTotalFab=0;
   const createdAtMov=dataFabricacao?dataFabricacao+'T12:00:00':undefined;
+  const produtosAfetados=[];
   for(const[nome,q]of Object.entries(formula)){
     if(nome==='Corante'&&!comCorante)continue;if(q===0)continue;
     const qt=q*misturas;
@@ -2180,9 +2728,6 @@ async function _debitarRacaoEstoque(fabId,tipo,misturas,comCorante,dataFabricaca
       const usar=Math.min(qtRestante,parseFloat(lote.quantidade_restante||0));
       custoIngrediente+=usar*parseFloat(lote.custo_unitario||0);
       qtRestante-=usar;
-      const novaQtRest=parseFloat(lote.quantidade_restante||0)-usar;
-      await supa.patch('compras?id=eq.'+lote.id,{quantidade_restante:parseFloat(novaQtRest.toFixed(4))});
-      comprasC=comprasC.map(x=>x.id===lote.id?{...x,quantidade_restante:novaQtRest}:x);
     }
     if(qtRestante>0&&lotes.length>0){
       custoIngrediente+=qtRestante*parseFloat(lotes[lotes.length-1].custo_unitario||0);
@@ -2192,18 +2737,73 @@ async function _debitarRacaoEstoque(fabId,tipo,misturas,comCorante,dataFabricaca
       custoIngrediente+=qtRestante*precoRef;
     }
     custoTotalFab+=custoIngrediente;
-    const novoEst=Math.max(0,(parseFloat(prod.estoque_atual)||0)-qt);
-    const nextLote=comprasC.filter(x=>x.produto_id===prod.id&&parseFloat(x.quantidade_restante||0)>0).sort((a,b)=>new Date(a.data_transacao)-new Date(b.data_transacao))[0];
-    const novoCusto=nextLote?parseFloat(nextLote.custo_unitario):(parseFloat(prod.preco_referencia)||parseFloat(prod.custo_medio||0));
-    await supa.patch('produtos?id=eq.'+prod.id,{estoque_atual:novoEst,custo_medio:parseFloat(novoCusto.toFixed(4))});
     await supa.post('estoque_movimentos',{produto_id:prod.id,produto_nome:prod.descricao,tipo_movimento:'saida',origem:'fabricacao_racao',origem_id:fabId,quantidade:qt,unidade:'kg',created_at:createdAtMov});
-    produtosC=produtosC.map(p=>p.id===prod.id?{...p,estoque_atual:novoEst,custo_medio:novoCusto}:p);
+    produtosAfetados.push(prod.id);
+  }
+  await recalcularEstoqueEPeps(produtosAfetados);
+  // Custo medio = custo do proximo lote disponivel apos o recalculo (ou preco de referencia, sem lote)
+  for(const pid of new Set(produtosAfetados)){
+    const prod=produtosC.find(p=>p.id===pid);if(!prod)continue;
+    const nextLote=comprasC.filter(x=>x.produto_id===pid&&parseFloat(x.quantidade_restante||0)>0).sort((a,b)=>new Date(a.data_transacao)-new Date(b.data_transacao))[0];
+    const novoCusto=nextLote?parseFloat(nextLote.custo_unitario):(parseFloat(prod.preco_referencia)||parseFloat(prod.custo_medio||0));
+    await supa.patch('produtos?id=eq.'+pid,{custo_medio:parseFloat(novoCusto.toFixed(4))});
+    produtosC=produtosC.map(p=>p.id===pid?{...p,custo_medio:novoCusto}:p);
   }
   return custoTotalFab;
 }
 
-async function salvarRacao(){
+async function salvarRacao(btn){
+  if(btn){if(btn.disabled)return;btn.disabled=true;btn.textContent='Salvando...';}
+  const reEnable=()=>{if(btn){btn.disabled=false;btn.textContent='Salvar fabricação';}};
+  try{
   const tipo=document.getElementById('r-tipo').value;const data=document.getElementById('r-data').value;
+  // Fabricação com ingredientes personalizados (ajuste pontual — não altera a fórmula padrão do tipo)
+  if(!window._editRacaoId&&document.getElementById('r-personalizar')?.checked&&tipo!=='Outro'){
+    if(!data){toast('Informe a data',true);reEnable();return;}
+    if(!_racaoPersItens.length){toast('Adicione ao menos um ingrediente',true);reEnable();return;}
+    const misturasPers=parseFloat(document.getElementById('r-misturas')?.value||1);
+    const gidDestPers=document.getElementById('r-galpao').value;
+    const gNomeDestPers=gidDestPers?(GALPOES.find(g=>g.id===gidDestPers)||{}).nome||'':'';
+    const valorModoPers=document.querySelector('input[name="r-valor-modo"]:checked')?.value||'peps';
+    const obsPers=document.getElementById('r-obs').value;
+    let loteIdPers=null;
+    if(gidDestPers){
+      try{const mapaPers=await resolverLotesPorData([{galpaoId:gidDestPers,data}]);loteIdPers=mapaPers[gidDestPers]??null;}
+      catch(e){reEnable();return;}
+    }
+    const pesoPers=_racaoPersItens.reduce((a,i)=>a+(parseFloat(i.quantidade)||0),0);
+    let valorManualPers=null;
+    if(valorModoPers==='manual'){
+      const vKgPers=parseFloat(document.getElementById('r-valor-kg')?.value||0);
+      valorManualPers=parseFloat((vKgPers*pesoPers).toFixed(2));
+    } else {
+      // Validar estoque antes de salvar (apenas no modo PEPS)
+      const faltantePers=_racaoPersItens.find(item=>{
+        if(!item.produto_id)return false;
+        const prod=produtosC.find(p=>p.id===item.produto_id);
+        if(!prod)return false;
+        return parseFloat(prod.estoque_atual||0)<parseFloat(item.quantidade||0);
+      });
+      if(faltantePers){
+        const prodF=produtosC.find(p=>p.id===faltantePers.produto_id);
+        alert('Sua solicitação não pode ser atendida. Não há estoque suficiente do produto: '+faltantePers.nome+'\n\nEstoque disponível: '+parseFloat(prodF?.estoque_atual||0).toLocaleString('pt-BR',{minimumFractionDigits:2})+' kg\nQuantidade necessária: '+parseFloat(faltantePers.quantidade||0).toLocaleString('pt-BR',{minimumFractionDigits:2})+' kg');
+        reEnable();return;
+      }
+    }
+    const resPers=await supa.post('fabricacao_racao',{tipo,data_fabricacao:data,num_misturas:parseFloat(misturasPers.toFixed(4)),peso_total_kg:parseFloat(pesoPers.toFixed(4)),galpao_destino_id:gidDestPers||null,galpao_destino_nome:gNomeDestPers||null,lote_id:loteIdPers,com_corante:_racaoPersItens.some(i=>i.nome==='Corante'),obs:obsPers||null,valor_modo:valorModoPers,personalizada:true,itens_personalizados:JSON.stringify(_racaoPersItens)});
+    if(!resPers){toast('Erro ao salvar fabricação. Verifique a conexão.',true);reEnable();return;}
+    const fabIdPers=resPers&&resPers[0]?resPers[0].id:null;
+    if(resPers&&resPers[0])racaoCache.unshift(resPers[0]);
+    const custoTotalPers=await _debitarItensRacaoPeps(_racaoPersItens,fabIdPers,data,valorModoPers,valorManualPers);
+    const custoPorMisturaPers=misturasPers>0?parseFloat((custoTotalPers/misturasPers).toFixed(2)):parseFloat(custoTotalPers.toFixed(2));
+    if(fabIdPers)await supa.patch('fabricacao_racao?id=eq.'+fabIdPers,{valor_mistura:custoPorMisturaPers});
+    if(resPers&&resPers[0])racaoCache[0]={...racaoCache[0],valor_mistura:custoPorMisturaPers};
+    toast('Fabricação personalizada registrada! Custo: R$ '+custoPorMisturaPers.toFixed(2)+(misturasPers>1?'/mistura':''));
+    refreshProducaoIfActive();
+    window._racaoTab='historico';
+    renderRacao();
+    return;
+  }
   // Check if editing existing
   if(window._editRacaoId){
     const rid=window._editRacaoId;
@@ -2215,6 +2815,13 @@ async function salvarRacao(){
     const gNomeDest=gidDest?(GALPOES.find(g=>g.id===gidDest)||{}).nome||'':'';
     const comCorante=document.getElementById('r-corante')?.checked!==false;
     const valorModoEdit=document.querySelector('input[name="r-valor-modo"]:checked')?.value||'peps';
+    // Resolve o lote pela data ANTES de tocar no estoque — se o usuário cancelar a
+    // escolha (gap entre lotes), nada deve ter sido estornado ainda.
+    let loteIdEdit=null;
+    if(gidDest){
+      try{const mapaEdit=await resolverLotesPorData([{galpaoId:gidDest,data}]);loteIdEdit=mapaEdit[gidDest]??null;}
+      catch(e){reEnable();return;}
+    }
     // Estorna o estoque debitado anteriormente, depois debita de novo com os valores atualizados
     await _estornarRacaoEstoque(rid);
     let custoPorMisturaEdit=null;
@@ -2235,13 +2842,13 @@ async function salvarRacao(){
           // Reverter estorno — reaplica o debito original
           await _debitarRacaoEstoque(rid,tipo,misturas,comCorante,data);
           alert('Sua solicitação não pode ser atendida. Não há estoque suficiente do produto: '+nome+'\n\nEstoque disponível: '+estoqueDisp.toLocaleString('pt-BR',{minimumFractionDigits:2})+' kg\nQuantidade necessária: '+qtNecessaria.toLocaleString('pt-BR',{minimumFractionDigits:2})+' kg');
-          window._editRacaoId=null;setRacaoTab('historico');return;
+          window._editRacaoId=null;reEnable();setRacaoTab('historico');return;
         }
       }
       const custoTotalFab=await _debitarRacaoEstoque(rid,tipo,misturas,comCorante,data);
       custoPorMisturaEdit=misturas>0?parseFloat((custoTotalFab/misturas).toFixed(2)):0;
     }
-    const payloadEdit={tipo,data_fabricacao:data,num_misturas:misturas,peso_total_kg:peso,galpao_destino_id:gidDest||null,galpao_destino_nome:gNomeDest||null,com_corante:comCorante,valor_mistura:custoPorMisturaEdit,valor_modo:valorModoEdit};
+    const payloadEdit={tipo,data_fabricacao:data,num_misturas:misturas,peso_total_kg:peso,galpao_destino_id:gidDest||null,galpao_destino_nome:gNomeDest||null,lote_id:loteIdEdit,com_corante:comCorante,valor_mistura:custoPorMisturaEdit,valor_modo:valorModoEdit};
     await supa.patch('fabricacao_racao?id=eq.'+rid,payloadEdit);
     racaoCache=racaoCache.map(x=>x.id===rid?{...x,...payloadEdit}:x);
     window._editRacaoId=null;
@@ -2266,8 +2873,12 @@ async function salvarRacao(){
   }
   const obs=document.getElementById('r-obs').value;
   const comCorante=document.getElementById('r-corante')?.checked!==false;
-  if(!data){toast('Informe a data',true);return;}
-  const loteDestino=gidDest?lotesC.find(l=>l.galpao_id===gidDest&&l.status==='ativo'):null;
+  if(!data){toast('Informe a data',true);reEnable();return;}
+  let loteIdDestino=null;
+  if(gidDest){
+    try{const mapaDest=await resolverLotesPorData([{galpaoId:gidDest,data}]);loteIdDestino=mapaDest[gidDest]??null;}
+    catch(e){reEnable();return;}
+  }
 
   // Validar estoque antes de salvar (apenas no modo PEPS)
   if(valorModo!=='manual'){
@@ -2283,14 +2894,14 @@ async function salvarRacao(){
       const estoqueDisp=parseFloat(prod.estoque_atual||0);
       if(estoqueDisp<qtNecessaria){
         alert('Sua solicitação não pode ser atendida. Não há estoque suficiente do produto: '+nome+'\n\nEstoque disponível: '+estoqueDisp.toLocaleString('pt-BR',{minimumFractionDigits:2})+' kg\nQuantidade necessária: '+qtNecessaria.toLocaleString('pt-BR',{minimumFractionDigits:2})+' kg');
-        const btn=document.querySelector('.submit-btn');if(btn){btn.disabled=false;btn.textContent='Registrar fabricação';}
+        reEnable();
         return;
       }
     }
   }
 
-  const res=await supa.post('fabricacao_racao',{tipo,data_fabricacao:data,num_misturas:parseFloat(misturas.toFixed(4)),peso_total_kg:parseFloat(peso.toFixed(4)),galpao_destino_id:gidDest||null,galpao_destino_nome:gNomeDest||null,lote_id:loteDestino?.id||null,valor_mistura:valorManual,com_corante:comCorante,obs:obs||null,valor_modo:valorModo});
-  if(!res){toast('Erro ao salvar fabricação. Verifique a conexão.',true);return;}
+  const res=await supa.post('fabricacao_racao',{tipo,data_fabricacao:data,num_misturas:parseFloat(misturas.toFixed(4)),peso_total_kg:parseFloat(peso.toFixed(4)),galpao_destino_id:gidDest||null,galpao_destino_nome:gNomeDest||null,lote_id:loteIdDestino,valor_mistura:valorManual,com_corante:comCorante,obs:obs||null,valor_modo:valorModo});
+  if(!res){toast('Erro ao salvar fabricação. Verifique a conexão.',true);reEnable();return;}
   const fabId=res&&res[0]?res[0].id:null;
   if(res&&res[0])racaoCache.unshift(res[0]);
   // If manual valor: skip PEPS deduction
@@ -2306,11 +2917,13 @@ async function salvarRacao(){
   }
   const formula=getFormulaTipo(tipo);
   let custoTotalFab=0;
+  const produtosAfetados=[];
   for(const[nome,q]of Object.entries(formula)){
     if(nome==='Corante'&&!comCorante)continue;if(q===0)continue;
     const qt=q*misturas;
     const prod=produtosC.find(p=>p.descricao===nome);if(!prod)continue;
-    // PEPS: deduct from oldest lots with quantidade_restante > 0
+    // PEPS: estima custo pelos lotes mais antigos com quantidade_restante > 0
+    // (o estoque e o quantidade_restante reais sao recalculados abaixo via recalcularEstoqueEPeps)
     const lotes=comprasC
       .filter(x=>x.produto_id===prod.id&&parseFloat(x.quantidade_restante||0)>0)
       .sort((a,b)=>new Date(a.data_transacao)-new Date(b.data_transacao));
@@ -2321,9 +2934,6 @@ async function salvarRacao(){
       const usar=Math.min(qtRestante,parseFloat(lote.quantidade_restante||0));
       custoIngrediente+=usar*parseFloat(lote.custo_unitario||0);
       qtRestante-=usar;
-      const novaQtRest=parseFloat(lote.quantidade_restante||0)-usar;
-      await supa.patch('compras?id=eq.'+lote.id,{quantidade_restante:parseFloat(novaQtRest.toFixed(4))});
-      comprasC=comprasC.map(x=>x.id===lote.id?{...x,quantidade_restante:novaQtRest}:x);
     }
     // If stock ran out, use last known price for remainder
     if(qtRestante>0&&lotes.length>0){
@@ -2334,13 +2944,17 @@ async function salvarRacao(){
       custoIngrediente+=qtRestante*precoRef;
     }
     custoTotalFab+=custoIngrediente;
-    // Update estoque_atual and custo_medio (next lot price)
-    const novoEst=Math.max(0,(parseFloat(prod.estoque_atual)||0)-qt);
-    const nextLote=comprasC.filter(x=>x.produto_id===prod.id&&parseFloat(x.quantidade_restante||0)>0).sort((a,b)=>new Date(a.data_transacao)-new Date(b.data_transacao))[0];
-    const novoCusto=nextLote?parseFloat(nextLote.custo_unitario):(parseFloat(prod.preco_referencia)||parseFloat(prod.custo_medio||0));
-    await supa.patch('produtos?id=eq.'+prod.id,{estoque_atual:novoEst,custo_medio:parseFloat(novoCusto.toFixed(4))});
     await supa.post('estoque_movimentos',{produto_id:prod.id,produto_nome:prod.descricao,tipo_movimento:'saida',origem:'fabricacao_racao',origem_id:fabId,quantidade:qt,unidade:'kg',created_at:data+'T12:00:00'});
-    produtosC=produtosC.map(p=>p.id===prod.id?{...p,estoque_atual:novoEst,custo_medio:novoCusto}:p);
+    produtosAfetados.push(prod.id);
+  }
+  // Recalcula estoque e PEPS a partir do ledger (fonte unica de verdade)
+  await recalcularEstoqueEPeps(produtosAfetados);
+  for(const pid of new Set(produtosAfetados)){
+    const prod=produtosC.find(p=>p.id===pid);if(!prod)continue;
+    const nextLote=comprasC.filter(x=>x.produto_id===pid&&parseFloat(x.quantidade_restante||0)>0).sort((a,b)=>new Date(a.data_transacao)-new Date(b.data_transacao))[0];
+    const novoCusto=nextLote?parseFloat(nextLote.custo_unitario):(parseFloat(prod.preco_referencia)||parseFloat(prod.custo_medio||0));
+    await supa.patch('produtos?id=eq.'+pid,{custo_medio:parseFloat(novoCusto.toFixed(4))});
+    produtosC=produtosC.map(p=>p.id===pid?{...p,custo_medio:novoCusto}:p);
   }
   // Update fabricacao with real PEPS cost
   const custoPorMistura=misturas>0?custoTotalFab/misturas:0;
@@ -2350,6 +2964,7 @@ async function salvarRacao(){
   refreshProducaoIfActive();
   window._racaoTab='historico';
   renderRacao();
+  }catch(e){console.error(e);toast('Erro ao salvar fabricação',true);reEnable();}
 }
 
 function renderRacaoHist(){
@@ -2417,9 +3032,10 @@ function renderRacaoHist(){
       +(r.galpao_destino_nome?'<span class="tag tag-collab">'+r.galpao_destino_nome+'</span>':'')
       +corTag
       +(r.valor_mistura?'<span class="tag" style="background:var(--green-pale);color:var(--green)">R$ '+parseFloat(r.valor_mistura).toFixed(2)+'/mis</span>':'')
+      +(r.personalizada?'<span class="tag" style="background:var(--blue-pale);color:var(--blue)" title="Ingredientes ajustados só para esta fabricação">Personalizada</span>':'')
       +'</div>'
       +'<div style="display:flex;gap:6px;margin-top:6px">'
-      +'<button class="g-btn g-btn-edit" onclick="editarRacao('+r.id+')">Editar</button>'
+      +(r.personalizada?'':'<button class="g-btn g-btn-edit" onclick="editarRacao('+r.id+')">Editar</button>')
       +'<button class="g-btn" style="background:var(--red-pale);color:var(--red)" onclick="deletarRacao('+r.id+')">Excluir</button>'
       +'</div>';
     el.appendChild(div);
@@ -2428,6 +3044,7 @@ function renderRacaoHist(){
 
 function editarRacao(rid){
   const r=racaoCache.find(x=>x.id===rid);if(!r)return;
+  if(r.personalizada){toast('Esta fabricação teve ingredientes personalizados — para alterar, exclua e cadastre novamente.',true);return;}
   const overlay=document.createElement('div');overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:199;display:flex;align-items:flex-end;justify-content:center';
   const box=document.createElement('div');box.style.cssText='background:var(--card);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:600px;max-height:90vh;overflow-y:auto;box-shadow:var(--shadow)';
   box.innerHTML='<h3 style="margin-bottom:16px">Editar Fabricação</h3>';
@@ -2497,19 +3114,46 @@ function editarRacao(rid){
     const peso=misturas*pesoUnit;
     if(!data){toast('Informe a data',true);return;}
     saveBtn.disabled=true;saveBtn.textContent='Salvando...';
-    // Estorna o estoque debitado anteriormente, depois debita de novo com os valores atualizados
-    await _estornarRacaoEstoque(rid);
+    // Resolve o lote pela data ANTES de tocar no estoque — se o usuário cancelar a
+    // escolha (gap entre lotes), nada deve ter sido estornado ainda.
+    let loteIdEr=null;
+    if(gidDest){
+      try{const mapaEr=await resolverLotesPorData([{galpaoId:gidDest,data}]);loteIdEr=mapaEr[gidDest]??null;}
+      catch(e){saveBtn.disabled=false;saveBtn.textContent='Salvar alterações';return;}
+    }
     let valor,valorModoEr;
+    const comCoranteEr=tipo==='Crescimento'?false:comCorante;
     if(valorRaw){
+      // Estorna o estoque debitado anteriormente, depois debita de novo com os valores atualizados
+      await _estornarRacaoEstoque(rid);
       valor=parseFloat(valorRaw);
       valorModoEr='manual';
     } else {
-      const custoTotalFab=await _debitarRacaoEstoque(rid,tipo,misturas,tipo==='Crescimento'?false:comCorante,data);
+      // Valida o estoque projetado (estoque atual + o que esta fabricação antiga devolveria) ANTES de
+      // estornar — assim nenhuma alteração é commitada se faltar estoque (evita deixar a edição "pela metade")
+      const oldMovs=await supa.get('estoque_movimentos?origem=eq.fabricacao_racao&origem_id=eq.'+rid+'&cancelado=eq.false');
+      const devolvidoPorProduto={};
+      (oldMovs||[]).forEach(m=>{devolvidoPorProduto[m.produto_id]=(devolvidoPorProduto[m.produto_id]||0)+(m.tipo_movimento==='saida'?parseFloat(m.quantidade||0):-parseFloat(m.quantidade||0));});
+      const formulaValidar=getFormulaTipo(tipo);
+      for(const[nome,q]of Object.entries(formulaValidar)){
+        if(nome==='Corante'&&!comCoranteEr)continue;if(q===0)continue;
+        const qtNecessaria=q*misturas;
+        const prod=produtosC.find(p=>p.descricao===nome);
+        if(!prod)continue;
+        const estoqueProjetado=parseFloat(prod.estoque_atual||0)+(devolvidoPorProduto[prod.id]||0);
+        if(estoqueProjetado<qtNecessaria){
+          alert('Sua solicitação não pode ser atendida. Não há estoque suficiente do produto: '+nome+'\n\nEstoque disponível (já considerando a devolução desta edição): '+estoqueProjetado.toLocaleString('pt-BR',{minimumFractionDigits:2})+' kg\nQuantidade necessária: '+qtNecessaria.toLocaleString('pt-BR',{minimumFractionDigits:2})+' kg');
+          saveBtn.disabled=false;saveBtn.textContent='Salvar alterações';
+          return;
+        }
+      }
+      await _estornarRacaoEstoque(rid);
+      const custoTotalFab=await _debitarRacaoEstoque(rid,tipo,misturas,comCoranteEr,data);
       valor=misturas>0?parseFloat((custoTotalFab/misturas).toFixed(2)):0;
       valorModoEr='peps';
     }
     const payload={tipo,data_fabricacao:data,num_misturas:misturas,peso_total_kg:peso,
-      galpao_destino_id:gidDest||null,galpao_destino_nome:gNomeDest||null,
+      galpao_destino_id:gidDest||null,galpao_destino_nome:gNomeDest||null,lote_id:loteIdEr,
       com_corante:tipo==='Crescimento'?false:comCorante,valor_mistura:valor,obs:obs||null,valor_modo:valorModoEr};
     await supa.patch('fabricacao_racao?id=eq.'+rid,payload);
     racaoCache=racaoCache.map(x=>x.id===rid?{...x,...payload}:x);
@@ -3005,16 +3649,12 @@ function cancelarRetiradaQR(){
 async function confirmarRetiradaQR(){
   const r=window._qrRetiradaAtual;if(!r)return;
   const p=produtosC.find(x=>x.id===r.produtoId);if(!p)return;
-  const isInsProd=p.tipo==='Insumo producao'||p.natureza==='Insumos producao';
-  const col=(isInsProd&&r.entreposto)?'estoque_'+r.entreposto:'estoque_atual';
   const fator=parseInt(p.qtd_por_pacote)>1?parseInt(p.qtd_por_pacote):1;
   const qtd=r.pacotes*fator;
-  const estAtual=parseFloat(p[col]||0);
-  const novoEst=Math.max(0,estAtual-qtd);
-  await supa.patch('produtos?id=eq.'+p.id,{[col]:novoEst});
-  produtosC=produtosC.map(x=>x.id===p.id?{...x,[col]:novoEst}:x);
   const nomeFuncionario=currentUser?(currentUser.adm?'ADM':currentUser.nome||'Não informado'):'Não informado';
   await supa.post('estoque_movimentos',{produto_id:p.id,produto_nome:p.descricao,tipo_movimento:'saida',origem:'retirada_qr',quantidade:qtd,unidade:p.unidade,entreposto:r.entreposto||null,obs:'Retirado por '+nomeFuncionario+(r.pacotes>1?' ('+r.pacotes+' pacotes)':'')});
+  // Recalcula estoque e PEPS a partir do ledger (fonte unica de verdade)
+  await recalcularEstoqueEPeps([p.id]);
   toast('Retirada registrada: '+qtd+' '+p.unidade+' de '+p.descricao);
   window._qrRetiradaAtual=null;
   renderRetirarQR();
@@ -3026,8 +3666,9 @@ function renderEstoque(){
     el.innerHTML='<div class="history-empty">Nenhum produto cadastrado. Vá em Cadastro para adicionar.</div>';
     return;
   }
+  const isAdmEst=currentUser&&(currentUser.adm||currentUser.nivel===1);
   const grupos={'Insumo racao':'var(--blue)','Insumo producao':'var(--green)'};
-  let html='';
+  let html=isAdmEst?'<button onclick="recalcularTodoEstoque()" id="btn-recalc-estoque" style="width:100%;padding:10px;border-radius:8px;border:1.5px solid var(--blue);background:var(--blue-pale);color:var(--blue);font-family:var(--font);font-size:13px;font-weight:600;cursor:pointer;margin-bottom:14px">⟲ Recalcular estoque e PEPS de todos os produtos</button>':'';
   Object.entries(grupos).forEach(([tipo,color])=>{
     const items=produtosC.filter(p=>p.tipo===tipo);if(!items.length)return;
     html+='<div style="font-size:11px;font-family:var(--mono);color:'+color+';font-weight:600;text-transform:uppercase;letter-spacing:.08em;margin:14px 0 8px">'+tipo+'</div>';
@@ -3064,13 +3705,26 @@ function renderEstoque(){
           +'<div style="font-size:13px;font-weight:600;font-family:var(--mono)">'+(parseFloat(p.custo_medio||0)>0?'R$ '+parseFloat(p.custo_medio).toFixed(2):'—')+'</div></div>'
           +'</div>';
       }
-      html+=(estTotal<=0?'<div style="font-size:11px;color:var(--red);font-family:var(--mono);margin-top:4px">Estoque zerado</div>':baixo?'<div style="font-size:11px;color:var(--amber);font-family:var(--mono);margin-top:4px">Estoque baixo (mínimo: '+estMin.toLocaleString('pt-BR')+' '+p.unidade+')</div>':'')+'</div>';
+      html+=(estTotal<0?'<div style="font-size:11px;color:var(--red);font-family:var(--mono);font-weight:700;margin-top:4px">⚠ Estoque NEGATIVO — confira os lançamentos deste produto</div>':estTotal===0?'<div style="font-size:11px;color:var(--red);font-family:var(--mono);margin-top:4px">Estoque zerado</div>':baixo?'<div style="font-size:11px;color:var(--amber);font-family:var(--mono);margin-top:4px">Estoque baixo (mínimo: '+estMin.toLocaleString('pt-BR')+' '+p.unidade+')</div>':'')+'</div>';
     });
   });
   el.innerHTML=html;
 }
+async function recalcularTodoEstoque(){
+  if(!confirm('Recalcular o estoque e o PEPS de TODOS os produtos a partir do histórico de movimentações? Isso pode levar alguns segundos, dependendo da quantidade de produtos e compras.'))return;
+  const btn=document.getElementById('btn-recalc-estoque');
+  if(btn){btn.disabled=true;btn.textContent='Recalculando estoque e PEPS...';}
+  const ids=produtosC.map(p=>p.id);
+  await recalcularEstoqueEPeps(ids);
+  toast('Estoque e PEPS recalculados para '+ids.length+' produto(s)!');
+  renderEstoque();
+}
 function renderFormCompra(){
   const el=document.getElementById('ppanel-compra');if(!el)return;
+  // Sempre que o formulario e (re)construido do zero, garante que nao sobrou um
+  // estado de edicao "grudado" de uma tela anterior (ver bug: compra nova sobrescrevendo
+  // compra antiga por causa de window._editCompraId nao resetado).
+  window._editCompraId=null;
   const opts=produtosC.map(p=>'<option value="'+p.id+'">'+p.descricao+' ('+p.unidade+')</option>').join('');
   el.innerHTML='<div class="form-card"><div class="form-card-title"><span class="dot" style="background:#3A7CA5"></span>Registrar compra</div>'
     +'<div class="field-group"><div class="field-label">Produto</div><select class="field-input" id="c-produto" onchange="autoUnidade();_toggleEntrepostoCompra()"><option value="">Selecione...</option>'+opts+'</select></div>'
@@ -3082,7 +3736,7 @@ function renderFormCompra(){
     +'<div class="field-group"><div class="field-label">Custos adicionais (R$)</div><input class="field-input" id="c-custos-add" type="number" min="0" step="0.01" placeholder="Frete, taxas..." oninput="calcCustoTotal()"></div>'
     +'<div class="field-group"><div class="field-label">Custo total (R$)</div><div style="font-size:22px;font-weight:600;font-family:var(--mono);color:var(--green);padding:6px 0" id="c-total-display">R$ 0,00</div><div style="font-size:11px;color:var(--muted);font-family:var(--mono)">(custo unit. x qtd) + adicionais</div></div>'
     +'<div class="field-group"><div class="field-label">Observações</div><textarea class="field-input" id="c-obs" placeholder="Fornecedor, NF..."></textarea></div>'
-    +'<button class="submit-btn" onclick="salvarCompra()">Salvar compra</button></div>'
+    +'<div style="display:flex;gap:8px"><button class="submit-btn" id="c-submit-btn" onclick="salvarCompra()" style="flex:1">Salvar compra</button><button class="g-btn" id="c-cancel-edit-btn" onclick="cancelarEdicaoCompra()" style="display:none">Cancelar edição</button></div></div>'
     +'<div id="compras-lista" style="margin-top:4px"></div>';
   renderComprasLista();
 }
@@ -3109,22 +3763,14 @@ async function salvarCompra(){
     const cuAdd=parseFloat(document.getElementById('c-custos-add').value||0);
     const total=qtd*cuUnit+cuAdd;
     const oldCo=comprasC.find(x=>x.id===cid);
-    const diffQtd=qtd-(oldCo?parseFloat(oldCo.quantidade)||0:0);
-    const entreposto=document.getElementById('c-entreposto')?.value||oldCo?.entreposto||null;
-    await supa.patch('compras?id=eq.'+cid,{quantidade:qtd,quantidade_restante:Math.max(0,(parseFloat(oldCo?.quantidade_restante||0)+diffQtd)),unidade,data_transacao:data,custo_unitario:cuUnit,custos_adicionais:cuAdd,custo_total:total,entreposto});
-    comprasC=comprasC.map(x=>x.id===cid?{...x,quantidade:qtd,quantidade_restante:Math.max(0,(parseFloat(x.quantidade_restante||0)+diffQtd)),unidade,data_transacao:data,custo_unitario:cuUnit,custos_adicionais:cuAdd,custo_total:total,entreposto}:x);
-    // Update estoque por entreposto
-    const isInsProd=p.tipo==='Insumo producao'||p.natureza==='Insumos producao';
-    if(isInsProd&&entreposto){
-      const col='estoque_'+entreposto;
-      const novoEst=Math.max(0,(parseFloat(p[col]||0))+diffQtd);
-      await supa.patch('produtos?id=eq.'+pid,{[col]:novoEst});
-      produtosC=produtosC.map(x=>x.id===pid?{...x,[col]:novoEst}:x);
-    } else {
-      const novoEst=(parseFloat(p.estoque_atual)||0)+diffQtd;
-      await supa.patch('produtos?id=eq.'+pid,{estoque_atual:Math.max(0,novoEst)});
-      produtosC=produtosC.map(x=>x.id===pid?{...x,estoque_atual:Math.max(0,novoEst)}:x);
-    }
+    const isInsProdEdit=p.tipo==='Insumo producao'||p.natureza==='Insumos producao';
+    const entreposto=isInsProdEdit?(document.getElementById('c-entreposto')?.value||oldCo?.entreposto||'grota'):null;
+    await supa.patch('compras?id=eq.'+cid,{quantidade:qtd,unidade,data_transacao:data,custo_unitario:cuUnit,custos_adicionais:cuAdd,custo_total:total,entreposto});
+    // Mantem o movimento de entrada ligado a esta compra em sincronia (fonte usada pelo recalculo)
+    await supa.patch('estoque_movimentos?origem=eq.compra&origem_id=eq.'+cid,{quantidade:qtd,entreposto,created_at:data+'T12:00:00'});
+    comprasC=comprasC.map(x=>x.id===cid?{...x,quantidade:qtd,unidade,data_transacao:data,custo_unitario:cuUnit,custos_adicionais:cuAdd,custo_total:total,entreposto}:x);
+    // Recalcula estoque e PEPS a partir do ledger (fonte unica de verdade) — nunca por diferenca
+    await recalcularEstoqueEPeps([pid]);
     window._editCompraId=null;
     toast('Compra atualizada!');renderFormCompra();return;
   }
@@ -3140,23 +3786,15 @@ async function salvarCompra(){
   const res=await supa.post('compras',{produto_id:pid,produto_nome:p.descricao,quantidade:qtd,quantidade_restante:qtd,unidade,data_transacao:data,custo_unitario:cuUnit,custos_adicionais:cuAdd,custo_total:total,fornecedor_id:parseInt(fornSel)||null,fornecedor_nome:fornObj?fornObj.nome:null,obs:document.getElementById('c-obs').value,entreposto});
   if(res===null){if(btn){btn.disabled=false;btn.textContent='Salvar compra';}return;}
   const cid=res&&res[0]?res[0].id:null;
-  await supa.post('estoque_movimentos',{produto_id:pid,produto_nome:p.descricao,tipo_movimento:'entrada',origem:'compra',origem_id:cid,quantidade:qtd,unidade,created_at:data+'T12:00:00'});
-  // Atualizar estoque correto
-  if(isInsProd&&entreposto){
-    const col='estoque_'+entreposto;
-    const novoEst=(parseFloat(p[col]||0))+qtd;
-    const nextLote=comprasC.filter(x=>x.produto_id===pid&&parseFloat(x.quantidade_restante||0)>0).sort((a,b)=>new Date(a.data_transacao)-new Date(b.data_transacao))[0];
-    const novoCusto=nextLote?parseFloat(nextLote.custo_unitario):parseFloat(cuUnit);
-    await supa.patch('produtos?id=eq.'+pid,{[col]:parseFloat(novoEst.toFixed(4)),custo_medio:parseFloat(novoCusto.toFixed(4))});
-    produtosC=produtosC.map(x=>x.id===pid?{...x,[col]:novoEst,custo_medio:novoCusto}:x);
-  } else {
-    const novoEst=(parseFloat(p.estoque_atual)||0)+qtd;
-    const nextLote=comprasC.filter(x=>x.produto_id===pid&&parseFloat(x.quantidade_restante||0)>0).sort((a,b)=>new Date(a.data_transacao)-new Date(b.data_transacao))[0];
-    const novoCusto=nextLote?parseFloat(nextLote.custo_unitario):parseFloat(cuUnit);
-    await supa.patch('produtos?id=eq.'+pid,{estoque_atual:novoEst,custo_medio:parseFloat(novoCusto.toFixed(4))});
-    produtosC=produtosC.map(x=>x.id===pid?{...x,estoque_atual:novoEst,custo_medio:novoCusto}:x);
-  }
+  // entreposto gravado tambem no movimento: sem isso o recalculo nao sabe separar grota/matriz
+  await supa.post('estoque_movimentos',{produto_id:pid,produto_nome:p.descricao,tipo_movimento:'entrada',origem:'compra',origem_id:cid,quantidade:qtd,unidade,entreposto,created_at:data+'T12:00:00'});
   if(comprasC&&res&&res[0])comprasC.unshift({...res[0],entreposto});
+  // Recalcula estoque e PEPS a partir do ledger (fonte unica de verdade)
+  await recalcularEstoqueEPeps([pid]);
+  const nextLote=comprasC.filter(x=>x.produto_id===pid&&parseFloat(x.quantidade_restante||0)>0).sort((a,b)=>new Date(a.data_transacao)-new Date(b.data_transacao))[0];
+  const novoCusto=nextLote?parseFloat(nextLote.custo_unitario):parseFloat(cuUnit);
+  await supa.patch('produtos?id=eq.'+pid,{custo_medio:parseFloat(novoCusto.toFixed(4))});
+  produtosC=produtosC.map(x=>x.id===pid?{...x,custo_medio:novoCusto}:x);
   window._editCompraId=null;
   toast('Compra registrada!');renderFormCompra();
   }catch(e){console.error('salvarCompra error:',e);toast('Erro ao salvar. Tente novamente.',true);if(btn){btn.disabled=false;btn.textContent='Salvar compra';}}
@@ -3252,31 +3890,27 @@ async function editarCompra(cid){
   calcCustoTotal();
   document.getElementById('c-obs').value=co.obs||'';
   window._editCompraId=cid;
-  const btn=document.querySelector('#ppanel-compra .submit-btn');
+  const btn=document.getElementById('c-submit-btn')||document.querySelector('#ppanel-compra .submit-btn');
   if(btn){btn.textContent='Atualizar compra';btn.style.background='var(--amber)';}
+  const cancelBtn=document.getElementById('c-cancel-edit-btn');
+  if(cancelBtn)cancelBtn.style.display='block';
   window.scrollTo(0,0);
+}
+function cancelarEdicaoCompra(){
+  window._editCompraId=null;
+  renderFormCompra();
+  toast('Edição cancelada.');
 }
 async function deletarCompra(cid){
   if(!confirm('Apagar esta compra? O estoque será recalculado.'))return;
   const co=comprasC.find(x=>x.id===cid);if(!co)return;
-  await supa.del('compras?id=eq.'+cid);
-  await supa.del('estoque_movimentos?origem=eq.compra&origem_id=eq.'+cid);
   const pid=co.produto_id;
-  const prod=produtosC.find(p=>p.id===pid);
-  if(prod){
-    const isInsProd=prod.tipo==='Insumo producao'||prod.natureza==='Insumos producao';
-    if(isInsProd&&co.entreposto){
-      const col='estoque_'+co.entreposto;
-      const novoEst=Math.max(0,(parseFloat(prod[col]||0))-(parseFloat(co.quantidade_restante)||0));
-      await supa.patch('produtos?id=eq.'+pid,{[col]:novoEst});
-      produtosC=produtosC.map(p=>p.id===pid?{...p,[col]:novoEst}:p);
-    } else {
-      const novoEst=Math.max(0,(parseFloat(prod.estoque_atual)||0)-(parseFloat(co.quantidade_restante)||0));
-      await supa.patch('produtos?id=eq.'+pid,{estoque_atual:novoEst});
-      produtosC=produtosC.map(p=>p.id===pid?{...p,estoque_atual:novoEst}:p);
-    }
-  }
+  await supa.del('compras?id=eq.'+cid);
+  // Nunca apaga do ledger: marca como cancelado para preservar o historico de auditoria
+  await supa.patch('estoque_movimentos?origem=eq.compra&origem_id=eq.'+cid,{cancelado:true});
   comprasC=comprasC.filter(x=>x.id!==cid);
+  // Recalcula estoque e PEPS a partir do ledger (fonte unica de verdade)
+  await recalcularEstoqueEPeps([pid]);
   toast('Compra apagada!');renderFormCompra();
 }
 function renderFormProduto(){
@@ -5126,10 +5760,21 @@ async function salvarEdicaoRegistro(){
       const check=await supa.get('registros?galpao_id=eq.'+gid+'&data_registro=eq.'+encodeURIComponent(dr));
       if(check&&check.length)existente=check[0];
     }
+    // Se o dia ja tinha uma baixa de abate registrada (registros.saida_abate), ela precisa sobreviver
+    // ao delete+recriacao abaixo — senao a baixa desaparece e as aves "voltam" (mesma classe do bug
+    // das quedas fantasma, por outro caminho). As saidas_abate vinculadas a esse registro tambem
+    // precisam ser re-apontadas pro id novo, senao editar/excluir essa saida depois nao acha mais o registro.
+    let saidaAbatePreservada=0;
+    let saidasVinculadas=[];
     if(existente){
       const ok=confirm('Já existe um registro para este dia, deseja alterá-lo?');
       if(!ok)return;
+      saidaAbatePreservada=parseFloat(existente.saida_abate||0);
       if(isOnline&&existente.id&&typeof existente.id!=='string'){
+        if(saidaAbatePreservada>0){
+          const vinc=await supa.get('saidas_abate?registro_id=eq.'+existente.id+'&select=id');
+          if(vinc)saidasVinculadas=vinc;
+        }
         await supa.del('registros?id=eq.'+existente.id);
       }
       histCache=histCache.filter(r=>!(r.galpao_id===gid&&r.data_registro===dr));
@@ -5144,17 +5789,23 @@ async function salvarEdicaoRegistro(){
       horario:now.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}),
       colaborador:currentUser?(currentUser.adm?'ADM':currentUser.nome||''):'',
       galpao_id:gid,galpao_nome:g?g.nome:gid,
-      lote_id:loteId,aves_no_dia:aves,mortes,aves_restantes:aves-mortes,
+      lote_id:loteId,aves_no_dia:aves,mortes,saida_abate:saidaAbatePreservada,aves_restantes:Math.max(0,aves-mortes-saidaAbatePreservada),
       causa_morte:causa,total_pentes:pentes,total_ovos:ovos,taxa_postura:taxa,
       coletas:'[]',silos:'[]',tratos:'[]',obs
     };
     const res=await supa.post('registros',newRec);
-    if(res&&res[0]){histCache.unshift(res[0]);LS.set('g_hist',histCache);}
+    if(res&&res[0]){
+      histCache.unshift(res[0]);LS.set('g_hist',histCache);
+      if(saidasVinculadas.length){
+        await Promise.all(saidasVinculadas.map(s=>supa.patch('saidas_abate?id=eq.'+s.id,{registro_id:res[0].id})));
+        saidasAbateC=saidasAbateC.map(s=>saidasVinculadas.find(v=>v.id===s.id)?{...s,registro_id:res[0].id}:s);
+      }
+    }
     // Reset modal title
     const h3=document.querySelector('#modal-edit-reg h3');if(h3)h3.textContent='Editar registro';
     closeModal('modal-edit-reg');
-    toast('Registro adicionado! Recalculando dias seguintes...');
-    await recalcularCascataAves(gid,dr);
+    toast('Registro adicionado!'+(saidaAbatePreservada>0?' (saída de '+saidaAbatePreservada.toLocaleString('pt-BR')+' aves pra abate preservada)':'')+' Recalculando dias seguintes...');
+    await recalcularCascataAves(gid,loteId,dr);
     renderHist();
     return;
   }
@@ -5173,7 +5824,7 @@ async function salvarEdicaoRegistro(){
   closeModal('modal-edit-reg');
   if(mortesMudou){
     toast('Registro atualizado! Recalculando dias seguintes...');
-    await recalcularCascataAves(r.galpao_id,dataReg);
+    await recalcularCascataAves(r.galpao_id,r.lote_id,dataReg);
   } else {
     toast('Registro atualizado!');
   }
@@ -5183,30 +5834,36 @@ async function salvarEdicaoRegistro(){
 // Recalcula aves_no_dia/aves_restantes/taxa_postura em cascata a partir de uma data,
 // para todos os registros seguintes do galpao, ate o mais recente. Atualiza tambem
 // galpoes.aves_atuais ao final para refletir o ultimo valor da cadeia.
-async function recalcularCascataAves(gid,dataAPartir){
+async function recalcularCascataAves(gid,loteId,dataAPartir){
   const toISO=(dr)=>{const p=dr.split('/');return p[2]+'-'+p[1]+'-'+p[0];};
   const dataAPartirISO=toISO(dataAPartir);
-  // Buscar TODOS os registros do galpao, ordenados cronologicamente
-  let todos=await supa.getAll('registros?galpao_id=eq.'+gid+'&order=created_at.asc');
+  // Buscar os registros do galpao — escopado ao lote quando ele e conhecido, pra um lote novo
+  // nunca herdar/misturar a cadeia de um lote anterior ja encerrado no mesmo galpao. Sem loteId
+  // (modo de compatibilidade, nao deveria acontecer no fluxo normal), cai no comportamento antigo.
+  let query='registros?galpao_id=eq.'+gid+'&order=created_at.asc';
+  if(loteId)query+='&lote_id=eq.'+loteId;
+  let todos=await supa.getAll(query);
   if(todos===null){toast('Erro ao recalcular: falha ao buscar registros',true);return;}
   todos=todos.sort((a,b)=>toISO(a.data_registro).localeCompare(toISO(b.data_registro)));
   const idxInicio=todos.findIndex(r=>toISO(r.data_registro)>=dataAPartirISO);
   if(idxInicio===-1)return;
   const regsParaRecalcular=todos.slice(idxInicio);
-  // Ponto de partida: aves_restantes do dia ANTERIOR ao primeiro da faixa.
+  // Ponto de partida: aves_restantes do dia ANTERIOR ao primeiro da faixa (dentro do mesmo lote).
   // (nao o aves_no_dia do primeiro registro — isso causaria dupla subtracao das mortes)
   let avesAtual;
   if(idxInicio>0){
     avesAtual=parseFloat(todos[idxInicio-1].aves_restantes||0);
   } else {
-    // Nao ha dia anterior: usa o aves_no_dia do proprio primeiro registro
+    // Nao ha dia anterior deste lote: usa o aves_no_dia do proprio primeiro registro
+    // (que ja deveria ter sido gravado a partir das aves_iniciais do lote)
     avesAtual=parseFloat(regsParaRecalcular[0].aves_no_dia||0);
   }
   const updates=[];
   for(const reg of regsParaRecalcular){
     const mortesD=parseFloat(reg.mortes||0);
+    const saidaAbateD=parseFloat(reg.saida_abate||0);
     const avesNoDia=avesAtual;
-    const avesRestantes=Math.max(0,avesNoDia-mortesD);
+    const avesRestantes=Math.max(0,avesNoDia-mortesD-saidaAbateD);
     const taxaD=avesNoDia>0?parseFloat((parseFloat(reg.total_ovos||0)/avesNoDia*100).toFixed(1)):0;
     updates.push({id:reg.id,aves_no_dia:avesNoDia,aves_restantes:avesRestantes,taxa_postura:taxaD});
     avesAtual=avesRestantes;
@@ -5217,13 +5874,105 @@ async function recalcularCascataAves(gid,dataAPartir){
   const byId={};updates.forEach(u=>byId[u.id]=u);
   histCache=histCache.map(x=>byId[x.id]?{...x,aves_no_dia:byId[x.id].aves_no_dia,aves_restantes:byId[x.id].aves_restantes,taxa_postura:byId[x.id].taxa_postura}:x);
   LS.set('g_hist',histCache);
-  // Atualizar galpoes.aves_atuais com o valor final da cadeia (o ultimo aves_restantes calculado)
+  // So sincroniza galpoes.aves_atuais se este ainda for o lote ATIVO do galpao (ou se nao
+  // soubermos o lote — compatibilidade). Recalcular o historico de um lote ja encerrado nao
+  // deve alterar a contagem atual, que pertence ao lote vigente.
   const valorFinal=updates[updates.length-1].aves_restantes;
-  avesReais[gid]=valorFinal;LS.set('g_aves',avesReais);
-  const ex=await supa.get('galpoes?galpao_id=eq.'+gid);
-  if(ex&&ex.length)await supa.patch('galpoes?galpao_id=eq.'+gid,{aves_atuais:valorFinal});
-  else await supa.post('galpoes',{galpao_id:gid,aves_atuais:valorFinal});
-  toast(updates.length+' dia(s) recalculado(s). Total atual: '+valorFinal.toLocaleString('pt-BR')+' aves.');
+  const loteAlvo=loteId?lotesC.find(l=>l.id===loteId):null;
+  const deveSincronizarGalpao=!loteId||(loteAlvo&&loteAlvo.status==='ativo');
+  if(deveSincronizarGalpao){
+    avesReais[gid]=valorFinal;LS.set('g_aves',avesReais);
+    const ex=await supa.get('galpoes?galpao_id=eq.'+gid);
+    if(ex&&ex.length)await supa.patch('galpoes?galpao_id=eq.'+gid,{aves_atuais:valorFinal});
+    else await supa.post('galpoes',{galpao_id:gid,aves_atuais:valorFinal});
+    toast(updates.length+' dia(s) recalculado(s). Total atual: '+valorFinal.toLocaleString('pt-BR')+' aves.');
+  } else {
+    toast(updates.length+' dia(s) recalculado(s) no histórico deste lote encerrado (contagem atual do galpão não foi alterada).');
+  }
+}
+
+// =============================================
+// RESOLUÇÃO DE LOTE POR DATA (Centro de Custo)
+// =============================================
+// Dado um galpão e uma data (YYYY-MM-DD), retorna o lote cujo período
+// [data_chegada, data_encerramento] contém essa data — nunca "o lote ativo agora",
+// que mistura custos de um lote novo com o Centro de Custo de um lote antigo já
+// encerrado do mesmo galpão. Quando a data cai num "gap" (nenhum lote cobre aquela
+// data, pois está entre o encerramento de um lote e a chegada do próximo), retorna
+// lote:null e os candidatos anterior/posterior, para que o usuário seja consultado.
+function encontrarLoteParaData(galpaoId,dataStr){
+  if(!galpaoId||!dataStr)return{lote:null,anterior:null,posterior:null};
+  const data=new Date(dataStr+'T12:00:00');
+  const lotesGalpao=lotesC.filter(l=>l.galpao_id===galpaoId&&l.data_chegada).slice()
+    .sort((a,b)=>new Date(a.data_chegada)-new Date(b.data_chegada));
+  let anterior=null,posterior=null;
+  for(const l of lotesGalpao){
+    const chegada=new Date(l.data_chegada+'T00:00:00');
+    const encerr=l.data_encerramento?new Date(l.data_encerramento+'T23:59:59'):null;
+    if(data>=chegada&&(!encerr||data<=encerr))return{lote:l,anterior:null,posterior:null};
+    if(encerr&&encerr<data){if(!anterior||new Date(anterior.data_encerramento)<encerr)anterior=l;}
+    if(chegada>data){if(!posterior||new Date(posterior.data_chegada)>chegada)posterior=l;}
+  }
+  return{lote:null,anterior,posterior};
+}
+
+// Resolve o lote_id de uma lista de {galpaoId,data} de uma só vez. Itens cuja data cai
+// dentro do período de um lote são resolvidos direto; itens com um único candidato
+// (só anterior ou só posterior) usam esse candidato sem perguntar; itens realmente
+// ambíguos (anterior E posterior existem) acionam o modal perguntarLoteGap. Retorna uma
+// Promise que resolve num mapa {galpaoId: loteId|null}, ou rejeita se o usuário cancelar.
+function resolverLotesPorData(itens){
+  const resultado={};const pendentes=[];const vistos=new Set();
+  for(const it of itens){
+    const key=it.galpaoId+'|'+it.data;
+    if(vistos.has(key))continue;vistos.add(key);
+    const{lote,anterior,posterior}=encontrarLoteParaData(it.galpaoId,it.data);
+    if(lote)resultado[it.galpaoId]=lote.id;
+    else if(anterior&&posterior)pendentes.push({galpaoId:it.galpaoId,data:it.data,anterior,posterior});
+    else if(anterior)resultado[it.galpaoId]=anterior.id;
+    else if(posterior)resultado[it.galpaoId]=posterior.id;
+    else resultado[it.galpaoId]=null;
+  }
+  if(pendentes.length===0)return Promise.resolve(resultado);
+  return new Promise((resolve,reject)=>{
+    perguntarLoteGap(pendentes,escolhas=>{Object.assign(resultado,escolhas);resolve(resultado);},()=>reject(new Error('cancelado')));
+  });
+}
+
+// Modal: para cada galpão cuja data caiu num "gap" entre dois lotes (nenhum lote aberto
+// naquela data), pergunta se o valor deve ser atribuído ao lote ANTERIOR (já encerrado)
+// ou ao lote SEGUINTE (aberto depois). Chama onConfirm({galpaoId:loteId,...}) ao confirmar,
+// ou onCancel() se o usuário cancelar.
+function perguntarLoteGap(pendentes,onConfirm,onCancel){
+  const overlay=document.createElement('div');overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:399;display:flex;align-items:center;justify-content:center;padding:20px';
+  const box=document.createElement('div');box.style.cssText='background:var(--card);border-radius:16px;padding:24px;width:100%;max-width:460px;max-height:90vh;overflow-y:auto;box-shadow:var(--shadow)';
+  box.innerHTML='<h3 style="margin-bottom:4px">A qual lote isso pertence?</h3>'
+    +'<div style="font-size:13px;color:var(--muted);margin-bottom:18px">Não há lote aberto nesta data para '+(pendentes.length>1?'estes galpões':'este galpão')+'. Escolha a quem o valor deve ser atribuído.</div>';
+  const escolhas={};
+  pendentes.forEach(p=>{
+    const g=GALPOES.find(x=>x.id===p.galpaoId);
+    escolhas[p.galpaoId]=p.anterior.id;
+    const wrap=document.createElement('div');wrap.className='field-group';
+    wrap.innerHTML='<div class="field-label">'+(g?g.nome:p.galpaoId)+' — '+fmtD(p.data)+'</div>';
+    const row=document.createElement('div');row.style.cssText='display:flex;gap:8px';
+    const antBtn=document.createElement('button');antBtn.type='button';
+    antBtn.textContent='Lote anterior ('+(p.anterior.codigo||p.anterior.id)+')';
+    const posBtn=document.createElement('button');posBtn.type='button';
+    posBtn.textContent='Lote seguinte ('+(p.posterior.codigo||p.posterior.id)+')';
+    const estilo=(sel)=>'flex:1;padding:10px;border-radius:8px;border:1.5px solid '+(sel?'var(--green)':'var(--border)')+';background:'+(sel?'var(--green-pale)':'var(--card)')+';color:'+(sel?'var(--green)':'var(--text)')+';font-size:12px;font-family:var(--font);cursor:pointer';
+    const atualiza=()=>{antBtn.style.cssText=estilo(escolhas[p.galpaoId]===p.anterior.id);posBtn.style.cssText=estilo(escolhas[p.galpaoId]===p.posterior.id);};
+    antBtn.onclick=()=>{escolhas[p.galpaoId]=p.anterior.id;atualiza();};
+    posBtn.onclick=()=>{escolhas[p.galpaoId]=p.posterior.id;atualiza();};
+    atualiza();
+    row.appendChild(antBtn);row.appendChild(posBtn);wrap.appendChild(row);box.appendChild(wrap);
+  });
+  const btnRow=document.createElement('div');btnRow.style.cssText='display:flex;gap:8px;margin-top:16px';
+  const cancelBtn=document.createElement('button');cancelBtn.className='modal-btn modal-btn-cancel';cancelBtn.textContent='Cancelar';
+  cancelBtn.onclick=()=>{document.body.removeChild(overlay);if(onCancel)onCancel();};
+  const confBtn=document.createElement('button');confBtn.className='modal-btn modal-btn-save';confBtn.textContent='Confirmar';
+  confBtn.onclick=()=>{document.body.removeChild(overlay);onConfirm(escolhas);};
+  btnRow.appendChild(cancelBtn);btnRow.appendChild(confBtn);box.appendChild(btnRow);
+  overlay.appendChild(box);document.body.appendChild(overlay);
 }
 
 // =============================================
@@ -5237,7 +5986,7 @@ async function abrirProdutoDetalhe(pid){
   document.getElementById('modal-produto-detail').classList.remove('hidden');
   const isInsProd=p.tipo==='Insumo producao'||p.natureza==='Insumos producao';
   const [movs,comps]=await Promise.all([
-    supa.get('estoque_movimentos?produto_id=eq.'+pid+'&order=created_at.desc&limit=200'),
+    supa.get('estoque_movimentos?produto_id=eq.'+pid+'&cancelado=eq.false&order=created_at.desc&limit=200'),
     supa.get('compras?produto_id=eq.'+pid+'&order=data_transacao.desc&limit=20'),
   ]);
   let movsValidas=[];
@@ -5249,12 +5998,13 @@ async function abrirProdutoDetalhe(pid){
       if(mv.origem==='compra'&&mv.origem_id){
         if(!compIds.has(mv.origem_id)){
           const check=await supa.get('compras?id=eq.'+mv.origem_id+'&select=id');
-          if(!check||!check.length){await supa.del('estoque_movimentos?id=eq.'+mv.id);valida=false;}
+          // so trata como orfao quando a consulta de fato respondeu vazio — null (falha de rede) nunca e tratado como "nao encontrado"
+          if(check&&check.length===0){await supa.patch('estoque_movimentos?id=eq.'+mv.id,{cancelado:true});valida=false;}
         }
       } else if(mv.origem==='fabricacao_racao'&&mv.origem_id){
         if(!fabIds.has(mv.origem_id)){
           const check=await supa.get('fabricacao_racao?id=eq.'+mv.origem_id+'&select=id');
-          if(!check||!check.length){await supa.del('estoque_movimentos?id=eq.'+mv.id);valida=false;}
+          if(check&&check.length===0){await supa.patch('estoque_movimentos?id=eq.'+mv.id,{cancelado:true});valida=false;}
         }
       }
       if(valida)movsValidas.push(mv);
@@ -5279,6 +6029,7 @@ async function abrirProdutoDetalhe(pid){
       +'<div style="font-size:20px;font-weight:700;font-family:var(--mono);color:var(--text)">'+(estG+estM).toLocaleString('pt-BR')+'</div>'
       +'<div style="font-size:11px;color:var(--muted);font-family:var(--mono)">'+p.unidade+'</div></div>'
       +'</div>'
+      +(estG<0||estM<0?'<div style="font-size:11px;color:var(--red);font-family:var(--mono);font-weight:700;margin-bottom:8px">⚠ Estoque NEGATIVO — confira os lançamentos deste produto</div>':'')
       +'<button onclick="abrirModalTransferencia('+pid+')" style="width:100%;padding:8px;border-radius:8px;border:1.5px solid var(--green);background:var(--green-pale);color:var(--green);font-family:var(--font);font-size:13px;font-weight:600;cursor:pointer;margin-bottom:8px">⇄ Transferir entre entrepostos</button>'
       +'<button onclick="abrirModalCorrecaoEstoque('+pid+')" style="width:100%;padding:8px;border-radius:8px;border:1.5px solid var(--amber);background:var(--amber-pale);color:var(--amber);font-family:var(--font);font-size:13px;font-weight:600;cursor:pointer">⚙ Corrigir estoque</button>'
       +'</div>';
@@ -5291,6 +6042,7 @@ async function abrirProdutoDetalhe(pid){
       +'<div style="text-align:right"><div style="font-size:11px;font-family:var(--mono);color:var(--muted)">Custo médio</div>'
       +'<div style="font-size:16px;font-weight:600;font-family:var(--mono)">'+(parseFloat(p.custo_medio||0)>0?'R$ '+parseFloat(p.custo_medio).toFixed(2):'—')+'</div></div>'
       +'</div>'
+      +(est<0?'<div style="font-size:11px;color:var(--red);font-family:var(--mono);font-weight:700;margin-bottom:8px">⚠ Estoque NEGATIVO — confira os lançamentos deste produto</div>':'')
       +'<button onclick="abrirModalCorrecaoEstoque('+pid+')" style="width:100%;padding:8px;border-radius:8px;border:1.5px solid var(--amber);background:var(--amber-pale);color:var(--amber);font-family:var(--font);font-size:13px;font-weight:600;cursor:pointer">⚙ Corrigir estoque</button>'
       +'</div>';
   }
@@ -5387,13 +6139,10 @@ function abrirModalTransferencia(pid){
     const dispAtual=de==='grota'?parseFloat(p.estoque_grota||0):parseFloat(p.estoque_matriz||0);
     if(qtd>dispAtual){toast('Quantidade supera o estoque disponível ('+dispAtual.toLocaleString('pt-BR')+')',true);return;}
     saveBtn.disabled=true;saveBtn.textContent='Transferindo...';
-    const colDe='estoque_'+de;const colPara='estoque_'+para;
-    const novoEstDe=Math.max(0,parseFloat(p[colDe]||0)-qtd);
-    const novoEstPara=parseFloat(p[colPara]||0)+qtd;
-    await supa.patch('produtos?id=eq.'+pid,{[colDe]:parseFloat(novoEstDe.toFixed(4)),[colPara]:parseFloat(novoEstPara.toFixed(4))});
-    produtosC=produtosC.map(x=>x.id===pid?{...x,[colDe]:novoEstDe,[colPara]:novoEstPara}:x);
     await supa.post('estoque_movimentos',{produto_id:pid,produto_nome:p.descricao,tipo_movimento:'saida',origem:'transferencia',quantidade:qtd,unidade:p.unidade,entreposto:de,entreposto_destino:para});
     await supa.post('estoque_movimentos',{produto_id:pid,produto_nome:p.descricao,tipo_movimento:'entrada',origem:'transferencia',quantidade:qtd,unidade:p.unidade,entreposto:para,entreposto_destino:para});
+    // Recalcula estoque a partir do ledger (fonte unica de verdade)
+    await recalcularEstoqueEPeps([pid]);
     toast('Transferência realizada!');
     document.body.removeChild(overlay);
     renderEstoque();
@@ -5478,32 +6227,14 @@ async function abrirModalCorrecaoEstoque(pid,movId){
     saveBtn.disabled=true;saveBtn.textContent='Salvando...';
 
     if(isEdit){
-      // Estornar o efeito antigo
-      const colOld=isInsProd?'estoque_'+(editMv.entreposto||'grota'):'estoque_atual';
-      const oldDelta=editMv.tipo_movimento==='entrada'?-parseFloat(editMv.quantidade):parseFloat(editMv.quantidade);
-      let estApósEstorno=parseFloat(p[colOld]||0)+oldDelta;
-      // Aplicar novo efeito
-      const colNew=isInsProd?'estoque_'+entreposto:'estoque_atual';
-      const newDelta=tipoMov==='entrada'?qtd:-qtd;
-      if(colOld===colNew){
-        const novoEst=Math.max(0,estApósEstorno+newDelta);
-        await supa.patch('produtos?id=eq.'+pid,{[colNew]:parseFloat(novoEst.toFixed(4))});
-        produtosC=produtosC.map(x=>x.id===pid?{...x,[colNew]:novoEst}:x);
-      } else {
-        const novoEstOld=Math.max(0,estApósEstorno);
-        const novoEstNew=Math.max(0,parseFloat(p[colNew]||0)+newDelta);
-        await supa.patch('produtos?id=eq.'+pid,{[colOld]:parseFloat(novoEstOld.toFixed(4)),[colNew]:parseFloat(novoEstNew.toFixed(4))});
-        produtosC=produtosC.map(x=>x.id===pid?{...x,[colOld]:novoEstOld,[colNew]:novoEstNew}:x);
-      }
+      // Nunca mexe no estoque por delta: atualiza o movimento e deixa o recalculo central
+      // (fonte unica de verdade) refazer estoque_atual/grota/matriz e o PEPS do zero
       await supa.patch('estoque_movimentos?id=eq.'+editMv.id,{tipo_movimento:tipoMov,quantidade:qtd,obs,is_perda:isPerda,entreposto,created_at:dataVal+'T12:00:00'});
+      await recalcularEstoqueEPeps([pid]);
       toast('Correção atualizada!');
     } else {
-      const col=isInsProd?'estoque_'+entreposto:'estoque_atual';
-      const delta=tipoMov==='entrada'?qtd:-qtd;
-      const novoEst=Math.max(0,parseFloat(p[col]||0)+delta);
-      await supa.patch('produtos?id=eq.'+pid,{[col]:parseFloat(novoEst.toFixed(4))});
-      produtosC=produtosC.map(x=>x.id===pid?{...x,[col]:novoEst}:x);
       await supa.post('estoque_movimentos',{produto_id:pid,produto_nome:p.descricao,tipo_movimento:tipoMov,origem:'correcao',quantidade:qtd,unidade:p.unidade,entreposto,obs,is_perda:isPerda,created_at:dataVal+'T12:00:00'});
+      await recalcularEstoqueEPeps([pid]);
       toast('Correção registrada!');
     }
     document.body.removeChild(overlay);
@@ -5520,13 +6251,9 @@ async function deletarCorrecaoEstoque(movId){
   if(!mv||!mv[0])return;
   const m=mv[0];
   const p=produtosC.find(x=>x.id===m.produto_id);if(!p)return;
-  const isInsProd=p.tipo==='Insumo producao'||p.natureza==='Insumos producao';
-  const col=isInsProd?'estoque_'+(m.entreposto||'grota'):'estoque_atual';
-  const reverseDelta=m.tipo_movimento==='entrada'?-parseFloat(m.quantidade):parseFloat(m.quantidade);
-  const novoEst=Math.max(0,parseFloat(p[col]||0)+reverseDelta);
-  await supa.patch('produtos?id=eq.'+p.id,{[col]:parseFloat(novoEst.toFixed(4))});
-  produtosC=produtosC.map(x=>x.id===p.id?{...x,[col]:novoEst}:x);
-  await supa.del('estoque_movimentos?id=eq.'+movId);
+  // Nunca apaga do ledger: marca como cancelado para preservar o historico de auditoria
+  await supa.patch('estoque_movimentos?id=eq.'+movId,{cancelado:true});
+  await recalcularEstoqueEPeps([p.id]);
   toast('Correção removida!');
   renderEstoque();
   abrirProdutoDetalhe(p.id);
@@ -5583,30 +6310,44 @@ async function deletarProduto(pid){
 }
 
 async function deletarRegistro(rid){
-  if(!confirm('Excluir este registro permanentemente?'))return;
   const r=histCache.find(x=>x.id===rid);
+  if(r&&parseFloat(r.saida_abate||0)>0){
+    toast('Este dia tem uma saída para abate registrada ('+parseFloat(r.saida_abate).toLocaleString('pt-BR')+' aves). Exclua ou edite a saída primeiro, em "Saídas para abate" na tela do lote, antes de excluir o registro — senão a baixa das aves se perde.',true);
+    return;
+  }
+  if(!confirm('Excluir este registro permanentemente?'))return;
   const gid=r?.galpao_id;
   const dataDoExcluido=r?.data_registro;
+  const loteIdExcluido=r?.lote_id||null;
   await supa.del('registros?id=eq.'+rid);
   histCache=histCache.filter(x=>x.id!==rid);
   LS.set('g_hist',histCache);
   if(gid&&dataDoExcluido){
     toast('Registro excluído. Recalculando dias seguintes...');
-    // Recalcula a partir do dia seguinte ao excluido (o proprio dia nao existe mais)
-    const todos=await supa.getAll('registros?galpao_id=eq.'+gid+'&order=created_at.asc');
+    // Recalcula a partir do dia seguinte ao excluido (o proprio dia nao existe mais) — escopado
+    // ao mesmo lote do registro excluido, pra nao vazar pra um lote seguinte que ja exista
+    // no mesmo galpao.
+    let qDel='registros?galpao_id=eq.'+gid+'&order=created_at.asc';
+    if(loteIdExcluido)qDel+='&lote_id=eq.'+loteIdExcluido;
+    const todos=await supa.getAll(qDel);
     const toISO=(dr)=>{const p=dr.split('/');return p[2]+'-'+p[1]+'-'+p[0];};
     const dataExcluidaISO=toISO(dataDoExcluido);
     const proximo=(todos||[]).filter(x=>toISO(x.data_registro)>dataExcluidaISO).sort((a,b)=>toISO(a.data_registro).localeCompare(toISO(b.data_registro)))[0];
     if(proximo){
-      await recalcularCascataAves(gid,proximo.data_registro);
+      await recalcularCascataAves(gid,loteIdExcluido,proximo.data_registro);
     } else {
-      // Nao ha dias seguintes: recalcular galpoes.aves_atuais a partir do ultimo registro restante
+      // Nao ha dias seguintes neste lote: recalcular o valor a partir do ultimo registro
+      // restante dele — mas so sincroniza galpoes.aves_atuais se este ainda for o lote ATIVO
+      // do galpao (excluir um dia de um lote ja encerrado nao deve mexer na contagem atual).
       const restantes=(todos||[]).filter(x=>toISO(x.data_registro)<=dataExcluidaISO).sort((a,b)=>toISO(b.data_registro).localeCompare(toISO(a.data_registro)));
       const valorFinal=restantes.length?parseFloat(restantes[0].aves_restantes||0):0;
-      avesReais[gid]=valorFinal;LS.set('g_aves',avesReais);
-      const gRow=await supa.get('galpoes?galpao_id=eq.'+gid);
-      if(gRow&&gRow.length>0)await supa.patch('galpoes?galpao_id=eq.'+gid,{aves_atuais:valorFinal});
-      else await supa.post('galpoes',{galpao_id:gid,aves_atuais:valorFinal});
+      const loteAlvoDel=loteIdExcluido?lotesC.find(l=>l.id===loteIdExcluido):null;
+      if(!loteIdExcluido||(loteAlvoDel&&loteAlvoDel.status==='ativo')){
+        avesReais[gid]=valorFinal;LS.set('g_aves',avesReais);
+        const gRow=await supa.get('galpoes?galpao_id=eq.'+gid);
+        if(gRow&&gRow.length>0)await supa.patch('galpoes?galpao_id=eq.'+gid,{aves_atuais:valorFinal});
+        else await supa.post('galpoes',{galpao_id:gid,aves_atuais:valorFinal});
+      }
       toast('Registro excluído. Total atual: '+valorFinal.toLocaleString('pt-BR')+' aves.');
     }
   } else {
@@ -5893,18 +6634,21 @@ function abrirResumoLote(gid,loteId,panel){
       const dv=parseDateBR(v.data_venda);
       return p.lote_id===loteId&&dv.getFullYear()===ano&&dv.getMonth()+1===mes;
     });
-    const receitaMes=procMes.reduce((a,p)=>a+(parseFloat(p.valor)||0),0);
+    const receitaOvosMes=procMes.reduce((a,p)=>a+(parseFloat(p.valor)||0),0);
+    const saidasMes=saidasAbateC.filter(s=>s.lote_id===loteId&&parseInt(s.ano)===ano&&parseInt(s.mes)===mes);
+    const receitaAbateMes=saidasMes.reduce((a,s)=>a+(parseFloat(s.valor_total)||0),0);
+    const receitaMes=receitaOvosMes+receitaAbateMes;
 
     // Custos do mês
     const racaoMes=racaoCache.filter(r=>{
-      if(r.galpao_destino_id!==gid)return false;
+      if(r.lote_id!==loteId)return false;
       const pts=r.data_fabricacao?r.data_fabricacao.split('-'):[];
       return parseInt(pts[0])===ano&&parseInt(pts[1])===mes;
     });
     const racaoTotal=racaoMes.reduce((a,r)=>a+(parseFloat(r.valor_mistura||0)*parseFloat(r.num_misturas||1)),0);
-    const despMes=despesasC.filter(d=>d.galpao_id===gid&&parseInt(d.ano)===ano&&parseInt(d.mes)===mes&&d.categoria!=='Salario');
+    const despMes=despesasC.filter(d=>d.lote_id===loteId&&parseInt(d.ano)===ano&&parseInt(d.mes)===mes&&d.categoria!=='Salario');
     const despTotal=despMes.reduce((a,d)=>a+(parseFloat(d.valor)||0),0);
-    const salMes=salariosC.filter(s=>parseInt(s.ano)===ano&&parseInt(s.mes)===mes&&(s.lote_id===loteId||s.galpao_id===gid));
+    const salMes=salariosC.filter(s=>s.lote_id===loteId&&parseInt(s.ano)===ano&&parseInt(s.mes)===mes);
     const salTotal=salMes.reduce((a,s)=>a+(parseFloat(s.valor)||0),0);
     const custoMes=racaoTotal+despTotal+salTotal;
     const resultadoMes=receitaMes-custoMes;
@@ -5939,7 +6683,16 @@ function abrirResumoLote(gid,loteId,panel){
           +'<span style="color:var(--muted)">'+(v?v.cliente||'Cliente':'—')+(d?' · '+d.toLocaleDateString('pt-BR'):'')+'</span>'
           +'<span style="font-family:var(--mono)">'+fmtR(p.valor)+'</span></div>';
       });
-    } else {
+    }
+    if(saidasMes.length){
+      saidasMes.forEach(s=>{
+        const cli=clientesC.find(c=>c.id===s.cliente_id);
+        detail.innerHTML+='<div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:1px solid var(--border)">'
+          +'<span style="color:var(--muted)">Abate — '+(cli?cli.nome:'Cliente')+' · '+fmtD(s.data)+'</span>'
+          +'<span style="font-family:var(--mono)">'+fmtR(s.valor_total)+'</span></div>';
+      });
+    }
+    if(!procMes.length&&!saidasMes.length){
       detail.innerHTML+='<div style="font-size:12px;color:var(--muted);padding:2px 0">Sem receitas neste mês</div>';
     }
 
@@ -6026,16 +6779,18 @@ function abrirCCLote(gid,loteId,panelArg){
       const d=parseDateBR(v.data_venda);
       return p.lote_id===loteId&&d.getFullYear()===ano&&d.getMonth()+1===mes;
     });
-    const receitaMes=procMes.reduce((a,p)=>a+(parseFloat(p.valor)||0),0);
+    const receitaOvosMes=procMes.reduce((a,p)=>a+(parseFloat(p.valor)||0),0);
+    const saidasMesPrev=saidasAbateC.filter(s=>s.lote_id===loteId&&parseInt(s.ano)===ano&&parseInt(s.mes)===mes);
+    const receitaMes=receitaOvosMes+saidasMesPrev.reduce((a,s)=>a+(parseFloat(s.valor_total)||0),0);
     const racaoMes=racaoCache.filter(r=>{
-      if(r.galpao_destino_id!==gid)return false;
+      if(r.lote_id!==loteId)return false;
       const parts=r.data_fabricacao?r.data_fabricacao.split('-'):[];
       return parseInt(parts[0])===ano&&parseInt(parts[1])===mes;
     });
     const racaoTotal=racaoMes.reduce((a,r)=>a+(parseFloat(r.valor_mistura||0)*parseFloat(r.num_misturas||1)),0);
-    const despMes=despesasC.filter(d=>d.galpao_id===gid&&parseInt(d.ano)===ano&&parseInt(d.mes)===mes&&d.categoria!=='Salario');
+    const despMes=despesasC.filter(d=>d.lote_id===loteId&&parseInt(d.ano)===ano&&parseInt(d.mes)===mes&&d.categoria!=='Salario');
     const despTotal=despMes.reduce((a,d)=>a+(parseFloat(d.valor)||0),0);
-    const salMes=salariosC.filter(s=>parseInt(s.ano)===ano&&parseInt(s.mes)===mes&&(s.lote_id===loteId||s.galpao_id===gid));
+    const salMes=salariosC.filter(s=>s.lote_id===loteId&&parseInt(s.ano)===ano&&parseInt(s.mes)===mes);
     const salTotal=salMes.reduce((a,s)=>a+(parseFloat(s.valor)||0),0);
     const resultado=receitaMes-(racaoTotal+despTotal+salTotal);
     const isNeg=resultado<0;
@@ -6069,7 +6824,7 @@ function abrirCCMes(gid,loteId,ano,mes){
     const d=parseDateBR(v.data_venda);
     return p.lote_id===loteId&&d.getFullYear()===ano&&d.getMonth()+1===mes;
   });
-  const receitaTotal=procMes.reduce((a,p)=>a+(parseFloat(p.valor)||0),0);
+  const receitaOvosTotal=procMes.reduce((a,p)=>a+(parseFloat(p.valor)||0),0);
   const qtdOvosMes=procMes.reduce((a,p)=>a+(parseFloat(p.ovos_equivalentes)||0),0);
   const qtdPentesMes=Math.round(qtdOvosMes/30);
   const qtdCaixasMes=Math.round(qtdOvosMes/360);
@@ -6151,11 +6906,21 @@ function abrirCCMes(gid,loteId,ano,mes){
   } else {
     receitaItems='<div style="font-size:13px;color:var(--muted)">Nenhuma venda com procedência neste mês.</div>';
   }
-  panel.appendChild(ccCard('Receita — Vendas de Ovos','var(--green)',(receitaItems||'<div style="font-size:13px;color:var(--muted)">Nenhuma venda este mês.</div>')+qtdLabel,receitaTotal,'Receita total'));
+  panel.appendChild(ccCard('Receita — Vendas de Ovos','var(--green)',(receitaItems||'<div style="font-size:13px;color:var(--muted)">Nenhuma venda este mês.</div>')+qtdLabel,receitaOvosTotal,'Receita total'));
+
+  // ── SAÍDA PARA ABATE ───────────────────────────────
+  const saidasMes=saidasAbateC.filter(s=>s.lote_id===loteId&&parseInt(s.ano)===ano&&parseInt(s.mes)===mes);
+  const receitaAbateTotal=saidasMes.reduce((a,s)=>a+(parseFloat(s.valor_total)||0),0);
+  const abateHtml=saidasMes.length?saidasMes.map(s=>{
+    const cli=clientesC.find(c=>c.id===s.cliente_id);
+    return '<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px"><div>'+(cli?cli.nome:'Cliente')+'<div style="font-size:11px;font-family:var(--mono);color:var(--muted)">'+fmtD(s.data)+' · '+parseInt(s.quantidade).toLocaleString('pt-BR')+' aves × R$ '+parseFloat(s.valor_unitario||0).toLocaleString('pt-BR',{minimumFractionDigits:2})+'</div></div><span style="font-family:var(--mono);font-weight:600;color:var(--green)">R$ '+parseFloat(s.valor_total||0).toLocaleString('pt-BR',{minimumFractionDigits:2})+'</span></div>';
+  }).join(''):'<div style="font-size:13px;color:var(--muted)">Nenhuma saída para abate neste mês.</div>';
+  panel.appendChild(ccCard('Receita — Venda de Aves','var(--green)',abateHtml,receitaAbateTotal,'Receita total abate'));
+  const receitaTotal=receitaOvosTotal+receitaAbateTotal;
 
   // ── RAÇÕES ────────────────────────────────────────
   const racaoMes=racaoCache.filter(r=>{
-    if(r.galpao_destino_id!==gid)return false;
+    if(r.lote_id!==loteId)return false;
     const parts=r.data_fabricacao?r.data_fabricacao.split('-'):[];
     return parseInt(parts[0])===ano&&parseInt(parts[1])===mes;
   });
@@ -6173,14 +6938,14 @@ function abrirCCMes(gid,loteId,ano,mes){
   panel.appendChild(ccCard('Custo — Ração','var(--blue)',racaoDiv.innerHTML,racaoTotal,'Custo total ração'));
 
   // ── DESPESAS ──────────────────────────────────────
-  const despMes=despesasC.filter(d=>d.galpao_id===gid&&parseInt(d.ano)===ano&&parseInt(d.mes)===mes&&d.categoria!=='Salario');
+  const despMes=despesasC.filter(d=>d.lote_id===loteId&&parseInt(d.ano)===ano&&parseInt(d.mes)===mes&&d.categoria!=='Salario');
   const despTotal=despMes.reduce((a,d)=>a+(parseFloat(d.valor)||0),0);
     const despHtml=(despMes.length?despMes.map(d=>'<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px"><div><div>'+d.descricao+'</div><div style="font-size:11px;font-family:var(--mono);color:var(--muted)">'+(d.produto_nome?d.produto_nome+' · ':'')+(d.fornecedor_nome||'')+' '+(d.data_transacao?fmtD(d.data_transacao):'')+' '+(d.quantidade?d.quantidade+' '+(d.unidade||''):'')+'</div></div><div style="display:flex;align-items:center;gap:6px"><span style="font-family:var(--mono);font-weight:600;color:var(--red)">R$ '+parseFloat(d.valor||0).toLocaleString('pt-BR',{minimumFractionDigits:2})+'</span><button onclick="deletarDespesa('+d.id+')" style="font-size:10px;background:var(--red-pale);color:var(--red);border:none;border-radius:4px;padding:2px 6px;cursor:pointer">×</button></div></div>').join(''):'<div style="font-size:13px;color:var(--muted);margin-bottom:10px">Nenhuma despesa lançada.</div>')
     ;  // button added via DOM below
   panel.appendChild(ccCard('Custo — Despesas','var(--amber)',despHtml,despTotal,'Total despesas'));
 
   // ── SALÁRIOS ──────────────────────────────────────
-  const salMes=salariosC.filter(s=>parseInt(s.ano)===ano&&parseInt(s.mes)===mes&&(s.lote_id===loteId||s.galpao_id===gid));
+  const salMes=salariosC.filter(s=>s.lote_id===loteId&&parseInt(s.ano)===ano&&parseInt(s.mes)===mes);
   const salDespMes=salMes; // salarios filter by lote
   const salTotal=salDespMes.length>0?salDespMes.reduce((a,d)=>a+(parseFloat(d.valor)||0),0):0;
   const salHtmlData=salDespMes.length>0?salDespMes:salMes;
@@ -6269,7 +7034,7 @@ function abrirCCMes(gid,loteId,ano,mes){
       :null;
 
     // Custos base para custo/ovo
-    const despDiretasMes=despesasC.filter(d=>d.galpao_id===gid&&parseInt(d.ano)===ano&&parseInt(d.mes)===mes&&d.categoria!=='Salario'&&(d.tipo_despesa==='direta'||!d.tipo_despesa));
+    const despDiretasMes=despesasC.filter(d=>d.lote_id===loteId&&parseInt(d.ano)===ano&&parseInt(d.mes)===mes&&d.categoria!=='Salario'&&(d.tipo_despesa==='direta'||!d.tipo_despesa));
     const despDiretasTotal=despDiretasMes.reduce((a,d)=>a+(parseFloat(d.valor)||0),0);
     const custoOvo=totalOvosMes>0&&consumoTotalMes>0
       ?(despDiretasTotal+racaoTotal+salTotal)/totalOvosMes
@@ -6507,16 +7272,29 @@ async function salvarDespesa(){
   const prod=produtosC.find(p=>p.id===parseInt(prodId));
   const forn=fornecedoresC.find(f=>f.id===parseInt(fornId));
 
+  // Resolver o lote de cada galpão envolvido pela DATA da despesa — nunca pelo
+  // "lote ativo agora", pra um lançamento feito a partir de um lote já encerrado
+  // (ou cujo rateio toque outro galpão) ir pro lote certo mesmo assim.
+  const galpoesEnvolvidos=rateio.length===0?[gid]:[...new Set(rateio.map(r=>r.galpao_id==='outros'?gid:r.galpao_id))];
+  let mapaLotes;
+  try{
+    mapaLotes=await resolverLotesPorData(galpoesEnvolvidos.map(g2=>({galpaoId:g2,data})));
+  }catch(e){
+    reEnableBtn();
+    return;
+  }
+
   // Save one despesa per rateio entry (or one global if no rateio)
   if(rateio.length===0){
-    const res=await supa.post('despesas',{lote_id:loteId||null,galpao_id:gid,ano,mes,descricao:desc,valor:total,categoria:'Geral',produto_id:parseInt(prodId)||null,produto_nome:prod?.descricao||null,fornecedor_id:parseInt(fornId)||null,fornecedor_nome:forn?.nome||null,quantidade:qtd,unidade,data_transacao:data||null,custo_unitario:custoUnit,obs,rateio:JSON.stringify([]),tipo_despesa:tipoDespesa});
+    const loteResolvido=mapaLotes[gid]??null;
+    const res=await supa.post('despesas',{lote_id:loteResolvido,galpao_id:gid,ano,mes,descricao:desc,valor:total,categoria:'Geral',produto_id:parseInt(prodId)||null,produto_nome:prod?.descricao||null,fornecedor_id:parseInt(fornId)||null,fornecedor_nome:forn?.nome||null,quantidade:qtd,unidade,data_transacao:data||null,custo_unitario:custoUnit,obs,rateio:JSON.stringify([]),tipo_despesa:tipoDespesa});
     if(res&&res[0])despesasC.push(res[0]);
   } else {
     for(const r of rateio){
       const val=parseFloat((total*r.pct/100).toFixed(2));
       const gidR=r.galpao_id==='outros'?gid:r.galpao_id;
-      const loteR=r.galpao_id==='outros'?loteId:lotesC.find(l=>l.galpao_id===gidR&&l.status==='ativo')?.id||loteId;
-      const res=await supa.post('despesas',{lote_id:loteR||null,galpao_id:gidR,ano,mes,descricao:desc+(rateio.length>1?' ('+r.pct+'%)':''),valor:val,categoria:'Geral',produto_id:parseInt(prodId)||null,produto_nome:prod?.descricao||null,fornecedor_id:parseInt(fornId)||null,fornecedor_nome:forn?.nome||null,quantidade:qtd,unidade,data_transacao:data||null,custo_unitario:custoUnit,obs:obs+(r.outros_desc?' — '+r.outros_desc:''),rateio:JSON.stringify(rateio),tipo_despesa:tipoDespesa});
+      const loteR=mapaLotes[gidR]??null;
+      const res=await supa.post('despesas',{lote_id:loteR,galpao_id:gidR,ano,mes,descricao:desc+(rateio.length>1?' ('+r.pct+'%)':''),valor:val,categoria:'Geral',produto_id:parseInt(prodId)||null,produto_nome:prod?.descricao||null,fornecedor_id:parseInt(fornId)||null,fornecedor_nome:forn?.nome||null,quantidade:qtd,unidade,data_transacao:data||null,custo_unitario:custoUnit,obs:obs+(r.outros_desc?' — '+r.outros_desc:''),rateio:JSON.stringify(rateio),tipo_despesa:tipoDespesa});
       if(res&&res[0])despesasC.push(res[0]);
     }
   }
@@ -8387,28 +9165,28 @@ function _validarEstoqueInsumos(unidade,quantidade,entreposto){
 }
 
 async function _debitarInsumosEmpenho(unidade,quantidade,editEmp,entreposto,dataEmpenho,empenhoId){
-  const col=entreposto?'estoque_'+entreposto:'estoque_grota';
   const dataMovStr=dataEmpenho?dataEmpenho+'T12:00:00':null;
+  const afetados=[];
   if(unidade==='pente'){
     const penteId=parseInt(document.getElementById('ins-pente')?.value||0);
     if(penteId){
       const p=produtosC.find(x=>x.id===penteId);
       if(p){
-        const novo=Math.max(0,parseFloat(p[col]||0)-quantidade);
-        await supa.patch('produtos?id=eq.'+penteId,{[col]:novo});
-        produtosC=produtosC.map(x=>x.id===penteId?{...x,[col]:novo}:x);
         await supa.post('estoque_movimentos',{produto_id:penteId,produto_nome:p.descricao,tipo_movimento:'saida',origem:'empenho',origem_id:empenhoId||null,quantidade,unidade:p.unidade,entreposto,created_at:dataMovStr});
+        afetados.push(penteId);
       }
     }
+    await recalcularEstoqueEPeps(afetados);
     return {ins_pente_id:penteId||null,ins_separador_id:null,ins_caixa_id:null};
   } else if(unidade==='caixa'){
     const penteId=parseInt(document.getElementById('ins-pente')?.value||0);
     const sepId=parseInt(document.getElementById('ins-separador')?.value||0);
     const caixaId=parseInt(document.getElementById('ins-caixa')?.value||0);
     const qtdCaixas=quantidade;
-    if(penteId){const p=produtosC.find(x=>x.id===penteId);if(p){const novo=Math.max(0,parseFloat(p[col]||0)-qtdCaixas*14);await supa.patch('produtos?id=eq.'+penteId,{[col]:novo});produtosC=produtosC.map(x=>x.id===penteId?{...x,[col]:novo}:x);await supa.post('estoque_movimentos',{produto_id:penteId,produto_nome:p.descricao,tipo_movimento:'saida',origem:'empenho',origem_id:empenhoId||null,quantidade:qtdCaixas*14,unidade:p.unidade,entreposto,created_at:dataMovStr});}}
-    if(sepId){const p=produtosC.find(x=>x.id===sepId);if(p){const novo=Math.max(0,parseFloat(p[col]||0)-qtdCaixas);await supa.patch('produtos?id=eq.'+sepId,{[col]:novo});produtosC=produtosC.map(x=>x.id===sepId?{...x,[col]:novo}:x);await supa.post('estoque_movimentos',{produto_id:sepId,produto_nome:p.descricao,tipo_movimento:'saida',origem:'empenho',origem_id:empenhoId||null,quantidade:qtdCaixas,unidade:p.unidade,entreposto,created_at:dataMovStr});}}
-    if(caixaId){const p=produtosC.find(x=>x.id===caixaId);if(p){const novo=Math.max(0,parseFloat(p[col]||0)-qtdCaixas);await supa.patch('produtos?id=eq.'+caixaId,{[col]:novo});produtosC=produtosC.map(x=>x.id===caixaId?{...x,[col]:novo}:x);await supa.post('estoque_movimentos',{produto_id:caixaId,produto_nome:p.descricao,tipo_movimento:'saida',origem:'empenho',origem_id:empenhoId||null,quantidade:qtdCaixas,unidade:p.unidade,entreposto,created_at:dataMovStr});}}
+    if(penteId){const p=produtosC.find(x=>x.id===penteId);if(p){await supa.post('estoque_movimentos',{produto_id:penteId,produto_nome:p.descricao,tipo_movimento:'saida',origem:'empenho',origem_id:empenhoId||null,quantidade:qtdCaixas*14,unidade:p.unidade,entreposto,created_at:dataMovStr});afetados.push(penteId);}}
+    if(sepId){const p=produtosC.find(x=>x.id===sepId);if(p){await supa.post('estoque_movimentos',{produto_id:sepId,produto_nome:p.descricao,tipo_movimento:'saida',origem:'empenho',origem_id:empenhoId||null,quantidade:qtdCaixas,unidade:p.unidade,entreposto,created_at:dataMovStr});afetados.push(sepId);}}
+    if(caixaId){const p=produtosC.find(x=>x.id===caixaId);if(p){await supa.post('estoque_movimentos',{produto_id:caixaId,produto_nome:p.descricao,tipo_movimento:'saida',origem:'empenho',origem_id:empenhoId||null,quantidade:qtdCaixas,unidade:p.unidade,entreposto,created_at:dataMovStr});afetados.push(caixaId);}}
+    await recalcularEstoqueEPeps(afetados);
     return {ins_pente_id:penteId||null,ins_separador_id:sepId||null,ins_caixa_id:caixaId||null};
   }
   return {ins_pente_id:null,ins_separador_id:null,ins_caixa_id:null};
@@ -8416,18 +9194,19 @@ async function _debitarInsumosEmpenho(unidade,quantidade,editEmp,entreposto,data
 
 async function _estornarInsumosEmpenho(emp,entreposto){
   if(!emp)return;
-  const col=entreposto?'estoque_'+entreposto:'estoque_grota';
-  const unidade=emp.unidade;const q=parseFloat(emp.quantidade||0);
-  // Remove as movimentacoes de saida antigas vinculadas a este empenho (serao recriadas no debito novo)
-  if(emp.id)await supa.del('estoque_movimentos?origem=eq.empenho&origem_id=eq.'+emp.id);
+  const unidade=emp.unidade;
+  const afetados=[];
+  // Nunca apaga do ledger: marca como cancelado para preservar o historico de auditoria
+  // (o recalculo central refaz estoque_atual/grota/matriz e o PEPS do zero a partir dos movimentos nao-cancelados)
+  if(emp.id)await supa.patch('estoque_movimentos?origem=eq.empenho&origem_id=eq.'+emp.id,{cancelado:true});
   if(unidade==='pente'&&emp.ins_pente_id){
-    const p=produtosC.find(x=>x.id===emp.ins_pente_id);
-    if(p){const novo=parseFloat(p[col]||0)+q;await supa.patch('produtos?id=eq.'+emp.ins_pente_id,{[col]:novo});produtosC=produtosC.map(x=>x.id===emp.ins_pente_id?{...x,[col]:novo}:x);}
+    afetados.push(emp.ins_pente_id);
   } else if(unidade==='caixa'){
-    if(emp.ins_pente_id){const p=produtosC.find(x=>x.id===emp.ins_pente_id);if(p){const novo=parseFloat(p[col]||0)+q*14;await supa.patch('produtos?id=eq.'+emp.ins_pente_id,{[col]:novo});produtosC=produtosC.map(x=>x.id===emp.ins_pente_id?{...x,[col]:novo}:x);}}
-    if(emp.ins_separador_id){const p=produtosC.find(x=>x.id===emp.ins_separador_id);if(p){const novo=parseFloat(p[col]||0)+q;await supa.patch('produtos?id=eq.'+emp.ins_separador_id,{[col]:novo});produtosC=produtosC.map(x=>x.id===emp.ins_separador_id?{...x,[col]:novo}:x);}}
-    if(emp.ins_caixa_id){const p=produtosC.find(x=>x.id===emp.ins_caixa_id);if(p){const novo=parseFloat(p[col]||0)+q;await supa.patch('produtos?id=eq.'+emp.ins_caixa_id,{[col]:novo});produtosC=produtosC.map(x=>x.id===emp.ins_caixa_id?{...x,[col]:novo}:x);}}
+    if(emp.ins_pente_id)afetados.push(emp.ins_pente_id);
+    if(emp.ins_separador_id)afetados.push(emp.ins_separador_id);
+    if(emp.ins_caixa_id)afetados.push(emp.ins_caixa_id);
   }
+  await recalcularEstoqueEPeps(afetados);
 }
 
 function abrirModalEmpenho(data,estoqueOvos,editEmp){
