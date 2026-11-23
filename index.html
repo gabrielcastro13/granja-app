@@ -660,11 +660,11 @@ const supa={
     return all;
   },
 };
-const GALPOES=[{id:'g1',nome:'Galpão 1',cap:4000},{id:'g2',nome:'Galpão 2',cap:4500},{id:'g3',nome:'Galpão 3',cap:4000},{id:'pb',nome:'Pedra Bonita',cap:5000}];
+const GALPOES=[{id:'g1',nome:'Galpão 1',cap:4100},{id:'g2',nome:'Galpão 2',cap:4500},{id:'g3',nome:'Galpão 3',cap:4000},{id:'pb',nome:'Pedra Bonita',cap:5000}];
 const COLAB=['Lena','Lene','Diego','Gil'];
 const PENTE=30;
 const LS={get:(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d;}catch{return d;}},set:(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v));}catch(e){if(e.name==='QuotaExceededError')console.warn('LS quota exceeded for key:',k);}}};
-let avesReais=LS.get('g_aves',{g1:4000,g2:4500,g3:4000,pb:5000});
+let avesReais=LS.get('g_aves',{g1:4100,g2:4500,g3:4000,pb:5000});
 let histCache=[]; // sempre carrega do banco, nao do LS (muito grande)
 let pendQ=LS.get('g_pend',[]);
 let lotesC=LS.get('g_lotes',[]);
@@ -685,7 +685,11 @@ window.addEventListener('offline',()=>{isOnline=false;setSS('offline');});
 async function flushQ(){
   if(!pendQ.length){setSS('online');return;}
   let ok=0;
-  for(const r of[...pendQ]){const res=await supa.post('registros',r);if(res!==null){pendQ=pendQ.filter(p=>p.id!==r.id);ok++;}}
+  for(const r of[...pendQ]){
+    const pr=await _postRegistro(r);
+    // 'conflito' = esse dia já está gravado (o envio original chegou ao servidor, só a resposta se perdeu): descarta da fila, sem duplicar
+    if(pr.status==='ok'||pr.status==='conflito'){pendQ=pendQ.filter(p=>p.id!==r.id);if(pr.status==='ok')ok++;}
+  }
   LS.set('g_pend',pendQ);
   if(!pendQ.length){setSS('online');if(ok>0)toast(ok+' registro(s) sincronizado(s)');}else setSS('offline');
 }
@@ -1497,7 +1501,42 @@ async function saveAves(){
 }
 ['modal-aves','modal-lote','modal-doc','modal-encerrar','modal-saida-abate','modal-resp','modal-usuario','modal-edit-reg','modal-produto-detail','modal-despesa','modal-edit-venda'].forEach(id=>{document.getElementById(id).onclick=function(e){if(e.target===this)closeModal(id);};});
 
+// Trava anti-duplicidade: o botão é bloqueado NO PRIMEIRO TOQUE (antes de qualquer consulta ao banco).
+// Antes, ele só era bloqueado depois da conferência de "já existe registro", e com internet lenta
+// vários toques seguidos passavam todos pela conferência e gravavam cópias do mesmo dia.
 async function salvar(){
+  if(window._salvandoRegistro)return;
+  window._salvandoRegistro=true;
+  const b0=document.getElementById('submit-btn');if(b0){b0.disabled=true;b0.textContent='Salvando...';}
+  try{await _salvarCore();}
+  finally{
+    window._salvandoRegistro=false;
+    const b1=document.getElementById('submit-btn');if(b1){b1.disabled=false;b1.textContent='Salvar registro';}
+  }
+}
+
+// Grava um registro de postura distinguindo "já existe" (conflito 409/23505) de falha de rede/timeout.
+// 'conflito' = o dia já foi gravado (por este envio anterior ou por outro) -> NUNCA reenviar nem enfileirar.
+async function _postRegistro(rec){
+  try{
+    const usuarioNome=(typeof currentUser!=='undefined'&&currentUser)?(currentUser.adm?'ADM':currentUser.nome||'Desconhecido'):'Desconhecido';
+    const headers={'apikey':SUPA_KEY,'Authorization':'Bearer '+SUPA_KEY,'Content-Type':'application/json','Prefer':'return=representation','x-usuario-nome':encodeURIComponent(usuarioNome)};
+    const res=await Promise.race([
+      fetch(SUPA_URL+'/rest/v1/registros',{method:'POST',headers,body:JSON.stringify(rec)}),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),20000))
+    ]);
+    const text=await res.text();
+    if(res.ok)return{status:'ok',data:text?JSON.parse(text):[]};
+    if(res.status===409||text.includes('23505'))return{status:'conflito'};
+    console.error('Erro ao gravar registro:',text);
+    return{status:'erro'};
+  }catch(e){
+    console.error('Falha ao gravar registro:',e.message||e);
+    return{status:'erro'};
+  }
+}
+
+async function _salvarCore(){
   if(!selGalpao){toast('Selecione o galpão',true);return;}
   const dataInputCheck=document.getElementById('data-registro-input').value;
   const dataObjCheck=dataInputCheck?new Date(dataInputCheck+'T12:00:00'):new Date();
@@ -1506,7 +1545,8 @@ async function salvar(){
   let existente=histCache.find(r=>r.galpao_id===selGalpao&&r.data_registro===dataRegCheck);
   if(!existente&&isOnline){
     const check=await supa.get('registros?galpao_id=eq.'+selGalpao+'&data_registro=eq.'+encodeURIComponent(dataRegCheck));
-    if(check&&check.length)existente=check[0];
+    if(check===null){toast('Não foi possível confirmar se já existe registro deste dia (falha de conexão). Registro NÃO salvo — tente novamente.',true);return;}
+    if(check.length)existente=check[0];
   }
   if(existente){
     const ok=confirm('Já existe um registro para este dia, deseja alterá-lo?');
@@ -1623,7 +1663,16 @@ async function salvar(){
   const rec={id:Date.now(),created_at:now.toISOString(),data_registro:dataReg,horario:now.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}),colaborador:currentUser?(currentUser.adm?'ADM':currentUser.nome||'Não informado'):'Não informado',galpao_id:selGalpao,galpao_nome:gp.nome,lote_id:loteAtivo?loteAtivo.id:null,aves_no_dia:a,mortes:m,aves_restantes:ar,causa_morte:document.getElementById('causa').value,coletas:JSON.stringify(cd),total_pentes:tp,total_ovos:to,taxa_postura:tp2,silos:JSON.stringify(silos),tratos:JSON.stringify(tratos),obs:document.getElementById('obs_geral').value};
   if(m>0&&dataISO>=(()=>{const ultimoReg2=histCache.filter(r=>r.galpao_id===selGalpao).sort((x,y)=>toISO(y.data_registro).localeCompare(toISO(x.data_registro)))[0];return ultimoReg2?toISO(ultimoReg2.data_registro):'';})())
   {avesReais[selGalpao]=ar;LS.set('g_aves',avesReais);if(isOnline){const ex=await supa.get('galpoes?galpao_id=eq.'+selGalpao);if(ex&&ex.length)await supa.patch('galpoes?galpao_id=eq.'+selGalpao,{aves_atuais:ar});else await supa.post('galpoes',{galpao_id:selGalpao,aves_atuais:ar});}buildGReg();}
-  let saved=false;if(isOnline){const r=await supa.post('registros',rec);saved=r!==null;}
+  let saved=false;
+  if(isOnline){
+    const pr=await _postRegistro(rec);
+    if(pr.status==='conflito'){
+      toast('Já existe um registro deste galpão neste dia — NÃO foi duplicado. Confira no Histórico.',true);
+      const bC=document.getElementById('submit-btn');if(bC){bC.disabled=false;bC.textContent='Salvar registro';}
+      return;
+    }
+    saved=pr.status==='ok';
+  }
   if(!saved){pendQ.push(rec);LS.set('g_pend',pendQ);setSS('offline');}
   histCache.unshift(rec);if(histCache.length>200)histCache=histCache.slice(0,200);LS.set('g_hist',histCache);
   // Se retroativo, disparar cascata para corrigir os dias seguintes
@@ -2093,7 +2142,7 @@ function renderRacao(){
 function setRacaoTab(tab){window._racaoTab=tab;renderRacao();}
 function renderRacaoForm(){
   const el=document.getElementById('rpanel-registrar');if(!el)return;
-  _racaoPersItens=[];
+  _racaoPersItens=[];_racaoPersBase={};
   const tiposFormula=Object.keys(formulasDB).length?Object.keys(formulasDB):['Postura','Crescimento'];
   const tipoOpts=tiposFormula.map(t=>'<option value="'+t+'">'+t+'</option>').join('')+'<option value="Outro">Outro (Personalizar)</option>';
   el.innerHTML='<div class="form-card"><div class="form-card-title"><span class="dot" style="background:#52B788"></span>Nova fabricação</div>'
@@ -2145,86 +2194,122 @@ function onTipoRacaoChange(){
 }
 
 // ── Personalizar ingredientes de UMA fabricacao (sem alterar a formula padrao do tipo) ────
-let _racaoPersItens=[]; // [{produto_id, nome, unidade, quantidade}]
+// Quantidades da lista sao POR MISTURA (1 mistura = 1 conjunto da formula). O estoque e debitado
+// por quantidade x numero de misturas. O numero de misturas continua inteiro/definido pelo usuario;
+// so o peso e o custo de cada mistura mudam com a personalizacao.
+let _racaoPersItens=[]; // [{produto_id, nome, unidade, quantidade (kg POR MISTURA)}]
+let _racaoPersBase={}; // {nome do ingrediente: kg por mistura na formula base} (para mostrar o que foi ajustado)
+
+function _fmtKgRacao(v){return (parseFloat(v)||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function _racaoPersMisturasAtual(){const m=parseFloat(document.getElementById('r-misturas')?.value||1);return m>0?m:1;}
+function _racaoPersPesoMistura(itens){return (itens||[]).reduce((a,i)=>a+(parseFloat(i.quantidade)||0),0);}
+// Converte quantidades por mistura em quantidades totais da fabricacao (usado no debito de estoque)
+function _racaoPersItensTotais(itens,misturas){
+  return (itens||[]).map(i=>({...i,quantidade:parseFloat(((parseFloat(i.quantidade)||0)*misturas).toFixed(4))}));
+}
+// Lista gravada em fabricacao_racao.itens_personalizados: itens atuais (por mistura) + ingredientes
+// da formula base que foram removidos (quantidade 0), para o historico mostrar o que mudou.
+function _racaoPersSerializar(itens,base){
+  const lista=(itens||[]).map(i=>({produto_id:i.produto_id,nome:i.nome,unidade:i.unidade||'kg',quantidade:parseFloat((parseFloat(i.quantidade)||0).toFixed(4)),base:parseFloat((base&&base[i.nome])||0),pm:true}));
+  Object.entries(base||{}).forEach(([nome,q])=>{
+    if(lista.some(l=>l.nome===nome))return;
+    const prod=produtosC.find(p=>p.descricao===nome);
+    lista.push({produto_id:prod?prod.id:null,nome,unidade:prod?prod.unidade:'kg',quantidade:0,base:parseFloat(q),pm:true});
+  });
+  return lista;
+}
 
 function toggleRacaoPersonalizar(){
   const chk=document.getElementById('r-personalizar');
   const area=document.getElementById('r-personalizar-area');
   const preview=document.getElementById('r-preview-estoque');
   const corWrap=document.getElementById('r-corante-wrap');
-  const misturasInp=document.getElementById('r-misturas');
-  const noteEl=document.getElementById('r-peso-note');
   if(!chk||!area)return;
   if(chk.checked){
     const tipo=document.getElementById('r-tipo')?.value||'Postura';
-    const misturas=parseFloat(document.getElementById('r-misturas')?.value||1);
     const comCorante=document.getElementById('r-corante')?.checked!==false;
     const formula=getFormulaTipo(tipo);
+    _racaoPersBase={};
     _racaoPersItens=Object.entries(formula)
       .filter(([nome,q])=>!(nome==='Corante'&&!comCorante)&&parseFloat(q)>0)
       .map(([nome,q])=>{
         const prod=produtosC.find(p=>p.descricao===nome);
-        return {produto_id:prod?prod.id:null,nome,unidade:prod?prod.unidade:'kg',quantidade:parseFloat((parseFloat(q)*misturas).toFixed(4))};
+        _racaoPersBase[nome]=parseFloat(q);
+        return {produto_id:prod?prod.id:null,nome,unidade:prod?prod.unidade:'kg',quantidade:parseFloat(q)};
       });
     if(preview){preview.innerHTML='';preview.style.display='none';}
     if(corWrap)corWrap.style.display='none';
-    if(misturasInp)misturasInp.disabled=true;
-    if(noteEl)noteEl.textContent='Peso calculado pelos ingredientes ajustados abaixo — só vale pra esta fabricação.';
     area.style.display='block';
     _renderRacaoPersArea();
   } else {
     area.innerHTML='';area.style.display='none';
-    _racaoPersItens=[];
+    _racaoPersItens=[];_racaoPersBase={};
     if(preview)preview.style.display='';
     if(corWrap)corWrap.style.display='flex';
-    if(misturasInp)misturasInp.disabled=false;
     calcPesoTotal();
   }
+}
+
+// Atualiza so os totais (sem redesenhar a lista, para nao perder o foco do campo digitado)
+function _racaoPersAtualizarTotais(){
+  const mis=_racaoPersMisturasAtual();
+  const pm=_racaoPersPesoMistura(_racaoPersItens);
+  const total=pm*mis;
+  const spPm=document.getElementById('r-pers-pm');if(spPm)spPm.textContent=_fmtKgRacao(pm)+' kg';
+  const spTot=document.getElementById('r-pers-total');if(spTot)spTot.textContent=_fmtKgRacao(total)+' kg';
+  const pesoDisplay=document.getElementById('r-peso-display');if(pesoDisplay)pesoDisplay.textContent=_fmtKgRacao(total)+' kg';
+  const noteEl=document.getElementById('r-peso-note');
+  if(noteEl)noteEl.textContent='1 mistura personalizada = '+_fmtKgRacao(pm)+' kg · '+mis.toLocaleString('pt-BR',{maximumFractionDigits:2})+' mistura(s). Ajuste vale só pra esta fabricação.';
+  // estoque insuficiente (considera quantidade por mistura x misturas)
+  _racaoPersItens.forEach((item,i)=>{
+    const prod=item.produto_id?produtosC.find(p=>p.id===item.produto_id):null;
+    const est=prod?parseFloat(prod.estoque_atual||0):null;
+    const alerta=document.getElementById('r-pers-alerta-'+i);
+    if(alerta)alerta.textContent=(est!==null&&est<(parseFloat(item.quantidade)||0)*mis)?'(est: '+est+')':'';
+  });
+  if(typeof calcValorRacaoManual==='function')calcValorRacaoManual();
 }
 
 function _renderRacaoPersArea(){
   const area=document.getElementById('r-personalizar-area');if(!area)return;
   let html='<div style="background:var(--bg);border-radius:10px;padding:12px;margin-bottom:12px">'
-    +'<div style="font-size:11px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Ingredientes desta fabricação (ajuste vale só pra esta vez)</div>';
+    +'<div style="font-size:11px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px">Ingredientes de 1 mistura (ajuste vale só pra esta fabricação)</div>'
+    +'<div style="font-size:11px;color:var(--muted);margin-bottom:8px">Quantidades em kg por mistura. O estoque é debitado multiplicando pelo nº de misturas.</div>';
   if(!_racaoPersItens.length){
     html+='<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Nenhum ingrediente — adicione abaixo.</div>';
   } else {
     _racaoPersItens.forEach((item,i)=>{
-      const prod=item.produto_id?produtosC.find(p=>p.id===item.produto_id):null;
-      const est=prod?parseFloat(prod.estoque_atual||0):null;
-      const insuf=est!==null&&est<item.quantidade;
+      const base=_racaoPersBase[item.nome];
+      const dif=base===undefined?'novo':(Math.abs((parseFloat(item.quantidade)||0)-base)>0.0005?'fórmula: '+base:'');
       html+='<div style="display:flex;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);gap:8px">'
-        +'<span style="font-size:13px;flex:1'+(insuf?';color:var(--red)':'')+'">'+item.nome+'</span>'
+        +'<span style="font-size:13px;flex:1">'+item.nome+(dif?' <span style="font-size:10px;font-family:var(--mono);color:var(--amber)">('+dif+')</span>':'')+'</span>'
         +'<input type="number" min="0" step="0.01" value="'+item.quantidade+'" id="r-pers-qtd-'+i+'" oninput="_updateRacaoPersQtd('+i+',this.value)" '
         +'style="width:90px;font-family:var(--mono);font-size:13px;border:1.5px solid var(--border);border-radius:6px;padding:4px 6px;text-align:right">'
-        +'<span style="font-size:11px;font-family:var(--mono);color:var(--muted)">'+(item.unidade||'kg')+'</span>'
-        +(insuf&&est!==null?'<span style="font-size:10px;font-family:var(--mono);color:var(--red)">(est: '+est+')</span>':'')
+        +'<span style="font-size:11px;font-family:var(--mono);color:var(--muted)">'+(item.unidade||'kg')+'/mist.</span>'
+        +'<span id="r-pers-alerta-'+i+'" style="font-size:10px;font-family:var(--mono);color:var(--red)"></span>'
         +'<button onclick="_removerRacaoPersItem('+i+')" style="font-size:11px;background:var(--red-pale);color:var(--red);border:none;border-radius:4px;padding:2px 6px;cursor:pointer">×</button>'
         +'</div>';
     });
   }
-  const total=_racaoPersItens.reduce((a,i)=>a+(parseFloat(i.quantidade)||0),0);
-  html+='<div style="display:flex;justify-content:space-between;padding:9px 0;font-family:var(--mono);font-size:12px;font-weight:600;color:var(--green)">'
-    +'<span>Peso total desta fabricação</span><span id="r-pers-total">'+total.toFixed(2)+' kg</span></div>';
-  const jaUsados=_racaoPersItens.map(i=>i.produto_id).filter(Boolean);
+  html+='<div style="display:flex;justify-content:space-between;padding:9px 0 2px;font-family:var(--mono);font-size:12px;font-weight:600;color:var(--green)">'
+    +'<span>Peso de 1 mistura</span><span id="r-pers-pm">0,00 kg</span></div>'
+    +'<div style="display:flex;justify-content:space-between;padding:2px 0 9px;font-family:var(--mono);font-size:12px;font-weight:600;color:var(--green)">'
+    +'<span>Peso total desta fabricação</span><span id="r-pers-total">0,00 kg</span></div>';
   html+='<div style="display:flex;gap:6px;margin-top:8px">'
     +'<select id="r-pers-add-nome" class="field-input" style="flex:2;font-size:12px"><option value="">Adicionar ingrediente...</option>'
-    +produtosC.filter(p=>p.tipo==='Insumo racao'&&!jaUsados.includes(p.id)).map(p=>'<option value="'+p.id+'">'+p.descricao+'</option>').join('')
+    +produtosC.filter(p=>p.tipo==='Insumo racao').map(p=>'<option value="'+p.id+'">'+p.descricao+(_racaoPersItens.some(i=>i.produto_id===p.id)?' (soma à linha)':'')+'</option>').join('')
     +'</select>'
-    +'<input id="r-pers-add-qtd" class="field-input" type="number" min="0" step="0.01" placeholder="kg" style="flex:1;font-size:12px">'
+    +'<input id="r-pers-add-qtd" class="field-input" type="number" min="0" step="0.01" placeholder="kg/mistura" style="flex:1;font-size:12px">'
     +'<button onclick="_addRacaoPersItem()" style="padding:8px 10px;border-radius:8px;border:none;background:var(--green-pale);color:var(--green);cursor:pointer;font-size:14px;font-weight:700;flex-shrink:0">+</button>'
     +'</div></div>';
   area.innerHTML=html;
-  const pesoDisplay=document.getElementById('r-peso-display');
-  if(pesoDisplay)pesoDisplay.textContent=total.toLocaleString('pt-BR',{minimumFractionDigits:2})+' kg';
+  _racaoPersAtualizarTotais();
 }
 
 function _updateRacaoPersQtd(i,val){
   if(!_racaoPersItens[i])return;
   _racaoPersItens[i].quantidade=parseFloat(val||0);
-  const total=_racaoPersItens.reduce((a,it)=>a+(parseFloat(it.quantidade)||0),0);
-  const totalSpan=document.getElementById('r-pers-total');if(totalSpan)totalSpan.textContent=total.toFixed(2)+' kg';
-  const pesoDisplay=document.getElementById('r-peso-display');if(pesoDisplay)pesoDisplay.textContent=total.toLocaleString('pt-BR',{minimumFractionDigits:2})+' kg';
+  _racaoPersAtualizarTotais();
 }
 
 function _removerRacaoPersItem(i){
@@ -2239,8 +2324,61 @@ function _addRacaoPersItem(){
   if(!pid){toast('Selecione um ingrediente',true);return;}
   if(!qtd||qtd<=0){toast('Informe a quantidade',true);return;}
   const prod=produtosC.find(p=>p.id===pid);if(!prod)return;
-  _racaoPersItens.push({produto_id:pid,nome:prod.descricao,unidade:prod.unidade,quantidade:qtd});
+  const existente=_racaoPersItens.find(i=>i.produto_id===pid);
+  if(existente){
+    // Produto ja esta na lista (ex.: faz parte da formula): soma a quantidade na linha existente
+    existente.quantidade=parseFloat(((parseFloat(existente.quantidade)||0)+qtd).toFixed(4));
+  } else {
+    _racaoPersItens.push({produto_id:pid,nome:prod.descricao,unidade:prod.unidade,quantidade:qtd});
+  }
   _renderRacaoPersArea();
+}
+
+// ── Leitura de fabricacoes personalizadas gravadas (formato novo = por mistura, pm:true;
+// formato antigo = total da fabricacao, convertido para por mistura dividindo por num_misturas) ──
+function _racaoPersLer(r){
+  let it=r.itens_personalizados;
+  if(typeof it==='string'){try{it=JSON.parse(it);}catch(e){it=[];}}
+  if(!Array.isArray(it))it=[];
+  const mis=parseFloat(r.num_misturas||1)||1;
+  return it.map(i=>{
+    const pm=i.pm===true;const q=parseFloat(i.quantidade||0);
+    return {produto_id:i.produto_id,nome:i.nome,unidade:i.unidade||'kg',quantidade:pm?q:parseFloat((q/mis).toFixed(4)),base:pm?parseFloat(i.base||0):null};
+  });
+}
+// Diferencas contra a formula base (por mistura). Registros antigos nao guardam a base: usa a formula atual do tipo.
+function _racaoPersDiffs(r){
+  const itens=_racaoPersLer(r);
+  const formula=getFormulaTipo(r.tipo)||{};
+  const antigo=itens.length>0&&itens.every(i=>i.base===null);
+  const diffs=[];
+  itens.forEach(i=>{
+    const b=i.base!==null?i.base:parseFloat(formula[i.nome]||0);
+    const q=i.quantidade;
+    if(Math.abs(q-b)<0.0005)return;
+    if(b<=0)diffs.push('+ '+i.nome+': '+_fmtKgRacao(q)+' kg/mistura');
+    else if(q<=0)diffs.push('− '+i.nome+' (removido; fórmula: '+_fmtKgRacao(b)+' kg/mistura)');
+    else diffs.push('± '+i.nome+': '+_fmtKgRacao(b)+' → '+_fmtKgRacao(q)+' kg/mistura');
+  });
+  if(antigo){
+    Object.entries(formula).forEach(([nome,q])=>{
+      if(!(parseFloat(q)>0))return;
+      if(nome==='Corante'&&r.com_corante===false)return;
+      if(!itens.some(i=>i.nome===nome))diffs.push('− '+nome+' (removido; fórmula: '+_fmtKgRacao(q)+' kg/mistura)');
+    });
+  }
+  return diffs;
+}
+// Bloco "Ver ajustes" (sem JS: <details>) usado no Historico e no Centro de Custo
+function _racaoPersDetalheHtml(r){
+  if(!r||!r.personalizada)return '';
+  const mis=parseFloat(r.num_misturas||1)||1;
+  const diffs=_racaoPersDiffs(r);
+  return '<details style="margin-top:6px;font-size:12px"><summary style="cursor:pointer;color:var(--blue);font-family:var(--mono);font-size:11px">Ver ajustes'+(diffs.length?' ('+diffs.length+')':'')+'</summary>'
+    +'<div style="padding:6px 0 0 10px;font-family:var(--mono);font-size:11px;color:var(--muted);line-height:1.6">'
+    +'<div>Peso por mistura: <strong>'+_fmtKgRacao((parseFloat(r.peso_total_kg||0))/mis)+' kg</strong> · Total: <strong>'+_fmtKgRacao(r.peso_total_kg)+' kg</strong></div>'
+    +(diffs.length?diffs.map(d=>'<div>'+d+'</div>').join(''):'<div>Sem diferenças em relação à fórmula base.</div>')
+    +'</div></details>';
 }
 
 // Debita do estoque (PEPS ou manual) uma lista explicita de itens — usado quando uma
@@ -2540,7 +2678,8 @@ function abrirCalcValorKg(){
 
 function calcValorRacaoManual(){
   const tipo=document.getElementById('r-tipo')?.value||'Postura';
-  const pesoUnit=tipo==='Crescimento'?1004.8:1015.84;
+  const persOn=document.getElementById('r-personalizar')?.checked;
+  const pesoUnit=persOn?_racaoPersPesoMistura(_racaoPersItens):(tipo==='Crescimento'?1004.8:1015.84);
   const misturas=parseFloat(document.getElementById('r-misturas')?.value||1);
   const pesoTotal=misturas*pesoUnit;
   const vKg=parseFloat(document.getElementById('r-valor-kg')?.value||0);
@@ -2559,6 +2698,8 @@ function toggleValorModoRacao(){
 }
 
 function calcPesoTotal(){
+  // Fabricação personalizada: peso vem da lista de ingredientes (por mistura) x nº de misturas
+  if(document.getElementById('r-personalizar')?.checked){_racaoPersAtualizarTotais();return;}
   const m=parseFloat(document.getElementById('r-misturas')?.value||1);
   const tipo=document.getElementById('r-tipo')?.value||'Postura';
   const formula=getFormulaTipo(tipo);
@@ -2762,6 +2903,7 @@ async function salvarRacao(btn){
     if(!data){toast('Informe a data',true);reEnable();return;}
     if(!_racaoPersItens.length){toast('Adicione ao menos um ingrediente',true);reEnable();return;}
     const misturasPers=parseFloat(document.getElementById('r-misturas')?.value||1);
+    if(!(misturasPers>0)){toast('Informe o número de misturas',true);reEnable();return;}
     const gidDestPers=document.getElementById('r-galpao').value;
     const gNomeDestPers=gidDestPers?(GALPOES.find(g=>g.id===gidDestPers)||{}).nome||'':'';
     const valorModoPers=document.querySelector('input[name="r-valor-modo"]:checked')?.value||'peps';
@@ -2771,14 +2913,16 @@ async function salvarRacao(btn){
       try{const mapaPers=await resolverLotesPorData([{galpaoId:gidDestPers,data}]);loteIdPers=mapaPers[gidDestPers]??null;}
       catch(e){reEnable();return;}
     }
-    const pesoPers=_racaoPersItens.reduce((a,i)=>a+(parseFloat(i.quantidade)||0),0);
+    // Quantidades da lista são POR MISTURA: total da fabricação = por mistura x nº de misturas
+    const itensTotaisPers=_racaoPersItensTotais(_racaoPersItens,misturasPers);
+    const pesoPers=itensTotaisPers.reduce((a,i)=>a+(parseFloat(i.quantidade)||0),0);
     let valorManualPers=null;
     if(valorModoPers==='manual'){
       const vKgPers=parseFloat(document.getElementById('r-valor-kg')?.value||0);
       valorManualPers=parseFloat((vKgPers*pesoPers).toFixed(2));
     } else {
       // Validar estoque antes de salvar (apenas no modo PEPS)
-      const faltantePers=_racaoPersItens.find(item=>{
+      const faltantePers=itensTotaisPers.find(item=>{
         if(!item.produto_id)return false;
         const prod=produtosC.find(p=>p.id===item.produto_id);
         if(!prod)return false;
@@ -2790,11 +2934,11 @@ async function salvarRacao(btn){
         reEnable();return;
       }
     }
-    const resPers=await supa.post('fabricacao_racao',{tipo,data_fabricacao:data,num_misturas:parseFloat(misturasPers.toFixed(4)),peso_total_kg:parseFloat(pesoPers.toFixed(4)),galpao_destino_id:gidDestPers||null,galpao_destino_nome:gNomeDestPers||null,lote_id:loteIdPers,com_corante:_racaoPersItens.some(i=>i.nome==='Corante'),obs:obsPers||null,valor_modo:valorModoPers,personalizada:true,itens_personalizados:JSON.stringify(_racaoPersItens)});
+    const resPers=await supa.post('fabricacao_racao',{tipo,data_fabricacao:data,num_misturas:parseFloat(misturasPers.toFixed(4)),peso_total_kg:parseFloat(pesoPers.toFixed(4)),galpao_destino_id:gidDestPers||null,galpao_destino_nome:gNomeDestPers||null,lote_id:loteIdPers,com_corante:_racaoPersItens.some(i=>i.nome==='Corante'&&(parseFloat(i.quantidade)||0)>0),obs:obsPers||null,valor_modo:valorModoPers,personalizada:true,itens_personalizados:JSON.stringify(_racaoPersSerializar(_racaoPersItens,_racaoPersBase))});
     if(!resPers){toast('Erro ao salvar fabricação. Verifique a conexão.',true);reEnable();return;}
     const fabIdPers=resPers&&resPers[0]?resPers[0].id:null;
     if(resPers&&resPers[0])racaoCache.unshift(resPers[0]);
-    const custoTotalPers=await _debitarItensRacaoPeps(_racaoPersItens,fabIdPers,data,valorModoPers,valorManualPers);
+    const custoTotalPers=await _debitarItensRacaoPeps(itensTotaisPers,fabIdPers,data,valorModoPers,valorManualPers);
     const custoPorMisturaPers=misturasPers>0?parseFloat((custoTotalPers/misturasPers).toFixed(2)):parseFloat(custoTotalPers.toFixed(2));
     if(fabIdPers)await supa.patch('fabricacao_racao?id=eq.'+fabIdPers,{valor_mistura:custoPorMisturaPers});
     if(resPers&&resPers[0])racaoCache[0]={...racaoCache[0],valor_mistura:custoPorMisturaPers};
@@ -3033,9 +3177,11 @@ function renderRacaoHist(){
       +corTag
       +(r.valor_mistura?'<span class="tag" style="background:var(--green-pale);color:var(--green)">R$ '+parseFloat(r.valor_mistura).toFixed(2)+'/mis</span>':'')
       +(r.personalizada?'<span class="tag" style="background:var(--blue-pale);color:var(--blue)" title="Ingredientes ajustados só para esta fabricação">Personalizada</span>':'')
+      +(r.personalizada?'<span class="tag" style="background:var(--bg);color:var(--muted);border:1px solid var(--border)">'+_fmtKgRacao((parseFloat(r.peso_total_kg||0))/(parseFloat(r.num_misturas||1)||1))+' kg/mis</span>':'')
       +'</div>'
+      +_racaoPersDetalheHtml(r)
       +'<div style="display:flex;gap:6px;margin-top:6px">'
-      +(r.personalizada?'':'<button class="g-btn g-btn-edit" onclick="editarRacao('+r.id+')">Editar</button>')
+      +(r.tipo==='Outro'?'':'<button class="g-btn g-btn-edit" onclick="editarRacao('+r.id+')">Editar</button>')
       +'<button class="g-btn" style="background:var(--red-pale);color:var(--red)" onclick="deletarRacao('+r.id+')">Excluir</button>'
       +'</div>';
     el.appendChild(div);
@@ -3044,7 +3190,8 @@ function renderRacaoHist(){
 
 function editarRacao(rid){
   const r=racaoCache.find(x=>x.id===rid);if(!r)return;
-  if(r.personalizada){toast('Esta fabricação teve ingredientes personalizados — para alterar, exclua e cadastre novamente.',true);return;}
+  if(r.personalizada){editarRacaoPersonalizada(rid);return;}
+  if(r.tipo==='Outro'){toast('Fabricações do tipo "Outro" não podem ser editadas — exclua e cadastre novamente.',true);return;}
   const overlay=document.createElement('div');overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:199;display:flex;align-items:flex-end;justify-content:center';
   const box=document.createElement('div');box.style.cssText='background:var(--card);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:600px;max-height:90vh;overflow-y:auto;box-shadow:var(--shadow)';
   box.innerHTML='<h3 style="margin-bottom:16px">Editar Fabricação</h3>';
@@ -3164,6 +3311,160 @@ function editarRacao(rid){
   };
   row2.appendChild(cancelBtn);row2.appendChild(saveBtn);box.appendChild(row2);
   overlay.appendChild(box);document.body.appendChild(overlay);
+}
+
+// ── Editar fabricação PERSONALIZADA (mesma ideia do cadastro: fórmula base + ajustes, quantidades por mistura) ──
+let _erp={id:null,tipo:'',itens:[],base:{}};
+
+function editarRacaoPersonalizada(rid){
+  const r=racaoCache.find(x=>x.id===rid);if(!r)return;
+  const lido=_racaoPersLer(r);
+  const formula=getFormulaTipo(r.tipo)||{};
+  const base={};
+  if(lido.some(i=>i.base!==null)){
+    lido.forEach(i=>{if(i.base>0)base[i.nome]=i.base;});
+  } else {
+    // registro antigo (sem base gravada): usa a fórmula atual do tipo como referência
+    Object.entries(formula).forEach(([nome,q])=>{if(parseFloat(q)>0&&!(nome==='Corante'&&r.com_corante===false))base[nome]=parseFloat(q);});
+  }
+  _erp={id:rid,tipo:r.tipo,base,itens:lido.filter(i=>i.quantidade>0).map(i=>({produto_id:i.produto_id,nome:i.nome,unidade:i.unidade,quantidade:i.quantidade}))};
+
+  const overlay=document.createElement('div');overlay.id='erp-overlay';overlay.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:199;display:flex;align-items:flex-end;justify-content:center';
+  const box=document.createElement('div');box.style.cssText='background:var(--card);border-radius:16px 16px 0 0;padding:20px;width:100%;max-width:600px;max-height:90vh;overflow-y:auto;box-shadow:var(--shadow)';
+  const mis=parseFloat(r.num_misturas||1)||1;
+  const modoAtual=r.valor_modo==='manual'?'manual':'peps';
+  const vKgAtual=(modoAtual==='manual'&&parseFloat(r.peso_total_kg||0)>0)?(parseFloat(r.valor_mistura||0)*mis/parseFloat(r.peso_total_kg)):0;
+  box.innerHTML='<h3 style="margin-bottom:4px">Editar Fabricação Personalizada</h3>'
+    +'<div style="font-size:12px;color:var(--muted);margin-bottom:14px">'+r.tipo+' — as quantidades são por mistura; o estoque é debitado multiplicando pelo nº de misturas.</div>'
+    +'<div class="field-row"><div class="field-group"><div class="field-label">Data</div><input class="field-input" id="erp-data" type="date" value="'+(r.data_fabricacao||'')+'"></div>'
+    +'<div class="field-group"><div class="field-label">Num. misturas</div><input class="field-input" id="erp-misturas" type="number" min="0.5" step="0.5" value="'+mis+'" oninput="_erpTotais()"></div></div>'
+    +'<div class="field-group"><div class="field-label">Galpão de destino</div><select class="field-input" id="erp-galpao"><option value="">Selecione...</option>'+GALPOES.map(g=>'<option value="'+g.id+'"'+(r.galpao_destino_id===g.id?' selected':'')+'>'+g.nome+'</option>').join('')+'</select></div>'
+    +'<div id="erp-lista"></div>'
+    +'<div class="field-group"><div class="field-label">Valor da fabricação</div>'
+    +'<div style="display:flex;gap:12px;margin-bottom:8px">'
+    +'<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="radio" name="erp-modo" value="peps"'+(modoAtual==='peps'?' checked':'')+' onchange="_erpTotais()"> PEPS (automático)</label>'
+    +'<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer"><input type="radio" name="erp-modo" value="manual"'+(modoAtual==='manual'?' checked':'')+' onchange="_erpTotais()"> Manual</label></div>'
+    +'<div id="erp-manual-wrap" style="display:'+(modoAtual==='manual'?'block':'none')+'"><div class="field-label">Valor por kg (R$)</div><input class="field-input" id="erp-valor-kg" type="number" min="0" step="0.0001" value="'+(vKgAtual?vKgAtual.toFixed(4):'')+'" oninput="_erpTotais()"><div id="erp-valor-total" style="font-size:12px;font-family:var(--mono);color:var(--green);margin-top:4px"></div></div></div>'
+    +'<div class="field-group"><div class="field-label">Observações</div><input class="field-input" id="erp-obs" value="'+(r.obs||'').replace(/"/g,'&quot;')+'"></div>';
+  const row2=document.createElement('div');row2.style.cssText='display:flex;gap:8px;margin-top:14px';
+  const cancelBtn=document.createElement('button');cancelBtn.className='modal-btn modal-btn-cancel';cancelBtn.textContent='Cancelar';cancelBtn.onclick=()=>{if(overlay.parentNode)document.body.removeChild(overlay);};
+  const saveBtn=document.createElement('button');saveBtn.className='modal-btn modal-btn-save';saveBtn.textContent='Salvar alterações';
+  saveBtn.onclick=()=>_erpSalvar(saveBtn,overlay);
+  row2.appendChild(cancelBtn);row2.appendChild(saveBtn);box.appendChild(row2);
+  overlay.appendChild(box);document.body.appendChild(overlay);
+  _erpRender();
+}
+
+function _erpMisturas(){const m=parseFloat(document.getElementById('erp-misturas')?.value||1);return m>0?m:0;}
+
+function _erpTotais(){
+  const mis=_erpMisturas();
+  const pm=_racaoPersPesoMistura(_erp.itens);
+  const total=pm*mis;
+  const a=document.getElementById('erp-pm');if(a)a.textContent=_fmtKgRacao(pm)+' kg';
+  const b=document.getElementById('erp-total');if(b)b.textContent=_fmtKgRacao(total)+' kg';
+  _erp.itens.forEach((item,i)=>{
+    const prod=item.produto_id?produtosC.find(p=>p.id===item.produto_id):null;
+    const al=document.getElementById('erp-alerta-'+i);
+    if(al)al.textContent=(prod&&parseFloat(prod.estoque_atual||0)<(parseFloat(item.quantidade)||0)*mis)?'(est: '+parseFloat(prod.estoque_atual||0)+')':'';
+  });
+  const modo=document.querySelector('input[name="erp-modo"]:checked')?.value||'peps';
+  const wrap=document.getElementById('erp-manual-wrap');if(wrap)wrap.style.display=modo==='manual'?'block':'none';
+  const vt=document.getElementById('erp-valor-total');
+  if(vt)vt.textContent='Total: R$ '+(parseFloat(document.getElementById('erp-valor-kg')?.value||0)*total).toLocaleString('pt-BR',{minimumFractionDigits:2});
+}
+
+function _erpRender(){
+  const el=document.getElementById('erp-lista');if(!el)return;
+  let html='<div style="background:var(--bg);border-radius:10px;padding:12px;margin-bottom:12px">'
+    +'<div style="font-size:11px;font-family:var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Ingredientes de 1 mistura</div>';
+  if(!_erp.itens.length)html+='<div style="font-size:12px;color:var(--muted);margin-bottom:8px">Nenhum ingrediente — adicione abaixo.</div>';
+  _erp.itens.forEach((item,i)=>{
+    const base=_erp.base[item.nome];
+    const dif=base===undefined?'novo':(Math.abs((parseFloat(item.quantidade)||0)-base)>0.0005?'fórmula: '+base:'');
+    html+='<div style="display:flex;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);gap:8px">'
+      +'<span style="font-size:13px;flex:1">'+item.nome+(dif?' <span style="font-size:10px;font-family:var(--mono);color:var(--amber)">('+dif+')</span>':'')+'</span>'
+      +'<input type="number" min="0" step="0.01" value="'+item.quantidade+'" oninput="_erpQtd('+i+',this.value)" style="width:90px;font-family:var(--mono);font-size:13px;border:1.5px solid var(--border);border-radius:6px;padding:4px 6px;text-align:right">'
+      +'<span style="font-size:11px;font-family:var(--mono);color:var(--muted)">'+(item.unidade||'kg')+'/mist.</span>'
+      +'<span id="erp-alerta-'+i+'" style="font-size:10px;font-family:var(--mono);color:var(--red)"></span>'
+      +'<button onclick="_erpDel('+i+')" style="font-size:11px;background:var(--red-pale);color:var(--red);border:none;border-radius:4px;padding:2px 6px;cursor:pointer">×</button></div>';
+  });
+  html+='<div style="display:flex;justify-content:space-between;padding:9px 0 2px;font-family:var(--mono);font-size:12px;font-weight:600;color:var(--green)"><span>Peso de 1 mistura</span><span id="erp-pm">0,00 kg</span></div>'
+    +'<div style="display:flex;justify-content:space-between;padding:2px 0 9px;font-family:var(--mono);font-size:12px;font-weight:600;color:var(--green)"><span>Peso total desta fabricação</span><span id="erp-total">0,00 kg</span></div>'
+    +'<div style="display:flex;gap:6px;margin-top:8px"><select id="erp-add-nome" class="field-input" style="flex:2;font-size:12px"><option value="">Adicionar ingrediente...</option>'
+    +produtosC.filter(p=>p.tipo==='Insumo racao').map(p=>'<option value="'+p.id+'">'+p.descricao+(_erp.itens.some(i=>i.produto_id===p.id)?' (soma à linha)':'')+'</option>').join('')
+    +'</select><input id="erp-add-qtd" class="field-input" type="number" min="0" step="0.01" placeholder="kg/mistura" style="flex:1;font-size:12px">'
+    +'<button onclick="_erpAdd()" style="padding:8px 10px;border-radius:8px;border:none;background:var(--green-pale);color:var(--green);cursor:pointer;font-size:14px;font-weight:700;flex-shrink:0">+</button></div></div>';
+  el.innerHTML=html;
+  _erpTotais();
+}
+function _erpQtd(i,val){if(!_erp.itens[i])return;_erp.itens[i].quantidade=parseFloat(val||0);_erpTotais();}
+function _erpDel(i){_erp.itens.splice(i,1);_erpRender();}
+function _erpAdd(){
+  const sel=document.getElementById('erp-add-nome');const qEl=document.getElementById('erp-add-qtd');if(!sel||!qEl)return;
+  const pid=parseInt(sel.value);const qtd=parseFloat(qEl.value||0);
+  if(!pid){toast('Selecione um ingrediente',true);return;}
+  if(!qtd||qtd<=0){toast('Informe a quantidade',true);return;}
+  const prod=produtosC.find(p=>p.id===pid);if(!prod)return;
+  const ex=_erp.itens.find(i=>i.produto_id===pid);
+  if(ex)ex.quantidade=parseFloat(((parseFloat(ex.quantidade)||0)+qtd).toFixed(4));
+  else _erp.itens.push({produto_id:pid,nome:prod.descricao,unidade:prod.unidade,quantidade:qtd});
+  _erpRender();
+}
+
+async function _erpSalvar(saveBtn,overlay){
+  const reEnable=()=>{saveBtn.disabled=false;saveBtn.textContent='Salvar alterações';};
+  if(saveBtn.disabled)return;
+  saveBtn.disabled=true;saveBtn.textContent='Salvando...';
+  try{
+    const rid=_erp.id;
+    const data=document.getElementById('erp-data')?.value;
+    const misturas=_erpMisturas();
+    const gidDest=document.getElementById('erp-galpao')?.value||'';
+    const gNomeDest=gidDest?(GALPOES.find(g=>g.id===gidDest)||{}).nome||'':'';
+    const modo=document.querySelector('input[name="erp-modo"]:checked')?.value||'peps';
+    const obs=document.getElementById('erp-obs')?.value||'';
+    if(!data){toast('Informe a data',true);reEnable();return;}
+    if(!(misturas>0)){toast('Informe o número de misturas',true);reEnable();return;}
+    if(!_erp.itens.some(i=>(parseFloat(i.quantidade)||0)>0)){toast('Adicione ao menos um ingrediente',true);reEnable();return;}
+    const itensTotais=_racaoPersItensTotais(_erp.itens,misturas);
+    const pesoTotal=itensTotais.reduce((a,i)=>a+(parseFloat(i.quantidade)||0),0);
+    let valorManualTotal=null;
+    if(modo==='manual'){
+      valorManualTotal=parseFloat((parseFloat(document.getElementById('erp-valor-kg')?.value||0)*pesoTotal).toFixed(2));
+    }
+    // Resolve o lote pela data ANTES de mexer no estoque (cancelar o modal de gap não deixa nada pela metade)
+    let loteId=null;
+    if(gidDest){
+      try{const mapa=await resolverLotesPorData([{galpaoId:gidDest,data}]);loteId=mapa[gidDest]??null;}
+      catch(e){reEnable();return;}
+    }
+    // Valida estoque projetado (estoque atual + o que esta própria fabricação devolveria) ANTES de estornar
+    const oldMovs=await supa.get('estoque_movimentos?origem=eq.fabricacao_racao&origem_id=eq.'+rid+'&cancelado=eq.false');
+    if(oldMovs===null){toast('Não foi possível conferir o estoque (falha de conexão). Nada foi alterado.',true);reEnable();return;}
+    const devolvido={};
+    oldMovs.forEach(m=>{devolvido[m.produto_id]=(devolvido[m.produto_id]||0)+(m.tipo_movimento==='saida'?parseFloat(m.quantidade||0):-parseFloat(m.quantidade||0));});
+    for(const item of itensTotais){
+      if(!item.produto_id||!(item.quantidade>0))continue;
+      const prod=produtosC.find(p=>p.id===item.produto_id);if(!prod)continue;
+      const proj=parseFloat(prod.estoque_atual||0)+(devolvido[prod.id]||0);
+      if(proj<item.quantidade){
+        alert('Sua solicitação não pode ser atendida. Não há estoque suficiente do produto: '+item.nome+'\n\nEstoque disponível (já considerando a devolução desta edição): '+proj.toLocaleString('pt-BR',{minimumFractionDigits:2})+' kg\nQuantidade necessária: '+item.quantidade.toLocaleString('pt-BR',{minimumFractionDigits:2})+' kg');
+        reEnable();return;
+      }
+    }
+    await _estornarRacaoEstoque(rid);
+    const custoTotal=await _debitarItensRacaoPeps(itensTotais,rid,data,modo,valorManualTotal);
+    const valorMistura=parseFloat((custoTotal/misturas).toFixed(2));
+    const payload={data_fabricacao:data,num_misturas:parseFloat(misturas.toFixed(4)),peso_total_kg:parseFloat(pesoTotal.toFixed(4)),galpao_destino_id:gidDest||null,galpao_destino_nome:gNomeDest||null,lote_id:loteId,com_corante:_erp.itens.some(i=>i.nome==='Corante'&&(parseFloat(i.quantidade)||0)>0),valor_mistura:valorMistura,valor_modo:modo,obs:obs||null,itens_personalizados:JSON.stringify(_racaoPersSerializar(_erp.itens,_erp.base))};
+    const res=await supa.patch('fabricacao_racao?id=eq.'+rid,payload);
+    if(res===null){toast('O estoque foi recalculado, mas os dados da fabricação não foram salvos. Clique em Salvar alterações novamente.',true);reEnable();return;}
+    racaoCache=racaoCache.map(x=>x.id===rid?{...x,...payload}:x);
+    if(overlay&&overlay.parentNode)document.body.removeChild(overlay);
+    toast('Fabricação atualizada! Estoque e custo recalculados.');
+    refreshProducaoIfActive();
+    renderRacaoHist();
+  }catch(e){console.error(e);toast('Erro ao salvar alterações',true);reEnable();}
 }
 
 function calcErPeso(){
@@ -4685,6 +4986,7 @@ async function salvarVenda(){
   const obs=document.getElementById('v-obs').value;
   if(!data){toast('Informe a data',true);return;}
   const itens=[];let subtotalVenda=0;
+  const itemIdxPorRow={}; // linha da tela -> posição em "itens" (linhas com qtd 0 são puladas)
   (window._vendaRows||[]).forEach((row,i)=>{
     const qtd=parseFloat(document.getElementById('vqtd_'+i)?.value||0);
     if(!qtd)return;
@@ -4692,6 +4994,7 @@ async function salvarVenda(){
     const desc=parseFloat(document.getElementById('vdesc_'+i)?.value||0);
     const fin=qtd*(unit-desc);subtotalVenda+=fin;
     itens.push({produto:row.produto,quantidade:qtd,valor_unitario:unit,desconto_unitario:desc,valor_final:fin});
+    itemIdxPorRow[i]=itens.length-1;
   });
   const descontoGlobal=parseFloat(document.getElementById('v-desconto-global')?.value||0);
   const totalVenda=Math.max(0,subtotalVenda-descontoGlobal);
@@ -4720,23 +5023,27 @@ async function salvarVenda(){
     const qtdUnit=parseFloat(document.getElementById('vqtd_'+parseInt(i))?.value||0);
     const vUnit=parseFloat(document.getElementById('vunit_'+parseInt(i))?.value||0);
     const vDesc=parseFloat(document.getElementById('vdesc_'+parseInt(i))?.value||0);
-    const valorTotal=qtdUnit*(vUnit-vDesc);
+    // Receita do lote já líquida do desconto global da nota (proporcional ao valor de cada item)
+    const fatorGlobalV=subtotalVenda>0?totalVenda/subtotalVenda:1;
+    const valorTotal=qtdUnit*(vUnit-vDesc)*fatorGlobalV;
     const totalProcQtd=entries.reduce((a,x)=>a+parseFloat(x.qtd),0);
     // Find the venda_item for this row (match by produto name and order)
     const rowNome=row.produto||'';
-    const vendaItem=vendasItensC.filter(it=>it.venda_id===vid)[parseInt(i)]||null;
+    const vendaItem=vendasItensC.filter(it=>it.venda_id===vid)[itemIdxPorRow[parseInt(i)]]||null;
     const vendaItemId=vendaItem?.id||null;
     for(const entry of entries){
       const pct=qtdUnit>0?parseFloat(entry.qtd)/qtdUnit:0;
       const valor=parseFloat((valorTotal*pct).toFixed(2));
       const qtdOvos=entry.qtd*unid.fator;
       const lote=lotesC.find(l=>l.id===entry.lote_id);
-      if(valor<=0)continue;
+      // Vendas "sem preço" (valor lançado depois, em edição) também gravam a procedência, com valor 0.
+      if(!(parseFloat(entry.qtd)>0))continue;
       const pr=await supa.post('venda_procedencia',{
         venda_id:vid,venda_item_id:vendaItemId,lote_id:entry.lote_id,
         lote_codigo:lote?.codigo||null,quantidade:entry.qtd,
         unidade:unid.id,valor,ovos_equivalentes:qtdOvos
       });
+      if(pr===null){toast('Venda salva, mas a procedência do lote '+(lote?.codigo||entry.lote_id)+' NÃO foi gravada. Abra a venda em Editar e adicione novamente.',true);continue;}
       if(pr&&pr[0])vendaProcedenciaC.push(pr[0]);
     }
   }
@@ -5453,7 +5760,7 @@ function editarVenda(vid){
       const row=document.createElement('div');
       row.style.cssText='display:flex;align-items:center;gap:6px;margin-bottom:6px;font-size:13px';
       row.innerHTML='<span style="flex:2;font-family:var(--mono)">'+nomeLimpo+'</span>'
-        +'<input type="number" min="0" step="0.01" value="'+parseFloat(item.quantidade||0)+'" id="ev-qtd-'+i+'" style="width:60px;font-family:var(--mono);border:1.5px solid var(--border);border-radius:6px;padding:3px 6px;text-align:right" oninput="calcEvTotal()">'
+        +'<input type="number" min="0" step="0.01" value="'+parseFloat(item.quantidade||0)+'" id="ev-qtd-'+i+'" style="width:60px;font-family:var(--mono);border:1.5px solid var(--border);border-radius:6px;padding:3px 6px;text-align:right" oninput="calcEvTotal()" onchange="_evQtdMudou()">'
         +'<input type="number" min="0" step="0.01" value="'+parseFloat(item.valor_unitario||0)+'" id="ev-unit-'+i+'" style="width:70px;font-family:var(--mono);border:1.5px solid var(--border);border-radius:6px;padding:3px 6px;text-align:right" oninput="calcEvTotal()">'
         +'<input type="number" min="0" step="0.01" value="'+parseFloat(item.desconto_unitario||0)+'" id="ev-desc-'+i+'" style="width:60px;font-family:var(--mono);border:1.5px solid var(--border);border-radius:6px;padding:3px 6px;text-align:right" oninput="calcEvTotal()">'
         +'<span id="ev-fin-'+i+'" style="flex:1;font-family:var(--mono);font-weight:600;text-align:right;color:var(--green)">R$ '+parseFloat(item.valor_final||0).toLocaleString('pt-BR',{minimumFractionDigits:2})+'</span>';
@@ -5493,7 +5800,9 @@ function renderEvProcedencia(vid,itens,proc){
 
   itens.forEach((item,idx2)=>{
     const nomeLimpo=(item.produto||'').replace(/\s*\(Caixa \(360 ovos\)\)(\s*\(Caixa \(360 ovos\)\))*/g,' (Caixa)').replace(/\s*\(Pente \(30 ovos\)\)(\s*\(Pente \(30 ovos\)\))*/g,' (Pente)').replace(/\s*\(Ovo\)(\s*\(Ovo\))*/g,'').trim();
-    const qtd=parseFloat(item.quantidade||0);
+    // Quantidade ATUAL do campo (se o usuário alterou a quantidade, a procedência é ajustada manualmente contra ela)
+    const qtdCampo=document.getElementById('ev-qtd-'+idx2);
+    const qtd=qtdCampo?parseFloat(qtdCampo.value||0):parseFloat(item.quantidade||0);
     const unid=item.produto&&item.produto.includes('Caixa')?'caixa':item.produto&&item.produto.includes('Pente')?'pente':'ovo';
     const fator=unid==='caixa'?360:unid==='pente'?30:1;
 
@@ -5518,7 +5827,7 @@ function renderEvProcedencia(vid,itens,proc){
       row.style.cssText='display:flex;align-items:center;gap:8px;margin-bottom:4px;font-size:12px;font-family:var(--mono);background:var(--green-pale);border-radius:8px;padding:6px 8px';
       row.innerHTML='<span style="flex:1;color:var(--green);font-weight:600">'+(lote?.codigo||p.lote_codigo||'?')+(g?' ('+g.nome+')':'')+'</span>'
         +'<span>'+p.quantidade+' '+unid+'</span>'
-        +'<span style="color:var(--green)">R$ '+parseFloat(p.valor||0).toLocaleString('pt-BR',{minimumFractionDigits:2})+'</span>';
+        +'<span class="ev-proc-val" data-idx="'+idx2+'" data-q="'+parseFloat(p.quantidade||0)+'" style="color:var(--green)">'+_evProcValorTxt(idx2,parseFloat(p.quantidade||0))+'</span>';
       const del=document.createElement('button');del.textContent='×';
       del.style.cssText='background:var(--red-pale);color:var(--red);border:none;border-radius:4px;padding:0 6px;cursor:pointer';
       del.onclick=(()=>{
@@ -5535,7 +5844,9 @@ function renderEvProcedencia(vid,itens,proc){
     if(remaining>0.001){
       const addRow=document.createElement('div');addRow.style.cssText='display:flex;align-items:center;gap:6px;margin-top:6px';
       const restLbl=document.createElement('div');restLbl.style.cssText='font-size:11px;font-family:var(--mono);color:var(--muted);margin-bottom:4px';
-      restLbl.textContent='Restam: '+remaining+' '+unid;card.appendChild(restLbl);
+      const uPr=parseFloat(document.getElementById('ev-unit-'+idx2)?.value||0)-parseFloat(document.getElementById('ev-desc-'+idx2)?.value||0);
+      const semLote=remaining*uPr*_evFatorGlobal();
+      restLbl.textContent='Restam: '+remaining+' '+unid+(semLote>0?' · ⚠ R$ '+semLote.toLocaleString('pt-BR',{minimumFractionDigits:2})+' sem lote (fora do Centro de Custo)':'');card.appendChild(restLbl);
       const sel=document.createElement('select');sel.className='field-input';sel.style.cssText='flex:2;font-size:12px';
       const lotesAtivos=lotesC.filter(l=>l.status==='ativo');
       sel.innerHTML='<option value="">Selecione lote...</option>'+lotesAtivos.map(l=>{
@@ -5551,8 +5862,7 @@ function renderEvProcedencia(vid,itens,proc){
         // Calculate proportional value
         const vUnit=parseFloat(document.getElementById('ev-unit-'+idx2)?.value||item.valor_unitario||0);
         const vDesc=parseFloat(document.getElementById('ev-desc-'+idx2)?.value||item.desconto_unitario||0);
-        const totalItemVal=parseFloat(item.quantidade||0)*(vUnit-vDesc);
-        const valor=parseFloat((totalItemVal*(q/qtd)).toFixed(2));
+        const valor=parseFloat((q*(vUnit-vDesc)*_evFatorGlobal()).toFixed(2));
         const lote=lotesC.find(l=>l.id===lid);
         if(!window._editVendaProc)window._editVendaProc=[];
         window._editVendaProc.push({lote_id:lid,lote_codigo:lote?.codigo||null,quantidade:q,unidade:unid,valor,ovos_equivalentes:q*fator,_itemIdx:idx2});
@@ -5564,6 +5874,32 @@ function renderEvProcedencia(vid,itens,proc){
       ok.textContent='✓ Procedência completa';card.appendChild(ok);
     }
     evProc.appendChild(card);
+  });
+}
+
+// Texto do valor (R$) de uma procedência na edição de venda, calculado ao vivo com os campos atuais.
+// Valor 0 = venda ainda sem preço -> mostra "aguardando preço".
+// Fator do desconto global da nota (total líquido / soma dos itens), lido dos campos atuais da tela.
+function _evFatorGlobal(){
+  const v=(vendasC||[]).find(x=>x.id===window._editVendaId)||{};
+  const dg=parseFloat(v.desconto_global||0);if(!(dg>0))return 1;
+  let sub=0;(window._editVendaItensData||[]).forEach((_,i)=>{
+    sub+=parseFloat(document.getElementById('ev-qtd-'+i)?.value||0)*(parseFloat(document.getElementById('ev-unit-'+i)?.value||0)-parseFloat(document.getElementById('ev-desc-'+i)?.value||0));
+  });
+  return sub>0?Math.max(0,sub-dg)/sub:1;
+}
+function _evProcValorTxt(idx,q){
+  const unit=parseFloat(document.getElementById('ev-unit-'+idx)?.value||0);
+  const desc=parseFloat(document.getElementById('ev-desc-'+idx)?.value||0);
+  const v=q*(unit-desc)*_evFatorGlobal();
+  if(!(v>0))return 'aguardando preço';
+  return 'R$ '+v.toLocaleString('pt-BR',{minimumFractionDigits:2});
+}
+// Quantidade do item mudou na edição: redesenha a procedência (o "Restam" passa a usar a quantidade nova).
+function _evQtdMudou(){renderEvProcedencia(window._editVendaId,window._editVendaItensData||[],window._editVendaProc||[]);}
+function _evProcAtualizarValores(){
+  document.querySelectorAll('.ev-proc-val').forEach(el=>{
+    el.textContent=_evProcValorTxt(parseInt(el.dataset.idx),parseFloat(el.dataset.q));
   });
 }
 
@@ -5579,7 +5915,9 @@ function calcEvTotal(){
     if(el)el.textContent='R$ '+fin.toLocaleString('pt-BR',{minimumFractionDigits:2});
   });
   const el=document.getElementById('ev-total');
-  if(el)el.textContent='Total: R$ '+total.toLocaleString('pt-BR',{minimumFractionDigits:2});
+  const dgEv=parseFloat(((vendasC||[]).find(x=>x.id===window._editVendaId)||{}).desconto_global||0);
+  if(el)el.textContent='Total: R$ '+Math.max(0,total-dgEv).toLocaleString('pt-BR',{minimumFractionDigits:2})+(dgEv>0?' (desc. global −R$ '+dgEv.toLocaleString('pt-BR',{minimumFractionDigits:2})+')':'');
+  _evProcAtualizarValores();
 }
 
 async function salvarEdicaoVenda(){
@@ -5601,9 +5939,36 @@ async function salvarEdicaoVenda(){
     const fin=qtd*(unit-desc);total+=fin;
     return{...item,quantidade:qtd,valor_unitario:unit,desconto_unitario:desc,valor_final:fin};
   });
+  // Desconto global da venda (campo fixo em vendas.desconto_global): o total gravado e a receita por lote
+  // precisam refletir esse desconto, senão o Centro de Custo fica maior que a nota.
+  const vAtual=vendasC.find(x=>x.id===vid)||{};
+  const descGlobal=parseFloat(vAtual.desconto_global||0);
+  const totalLiquido=Math.max(0,total-descGlobal);
+  const fatorGlobal=total>0?totalLiquido/total:1;
+  // Procedência: a quantidade por lote é AJUSTE MANUAL. Se a quantidade do item mudou, não reescala nada:
+  // bloqueia se a procedência passou da quantidade e avisa se deixou de cobrir o item todo.
+  const somaProcItem={};
+  (window._editVendaProc||[]).forEach(p=>{const k=p._itemIdx||0;somaProcItem[k]=(somaProcItem[k]||0)+parseFloat(p.quantidade||0);});
+  let avisoProc=[];
+  for(const k of Object.keys(somaProcItem)){
+    const idx=parseInt(k);const itA=itens[idx],itN=novosItens[idx];if(!itA||!itN)continue;
+    const nomeIt=String(itA.produto||'').replace(/\s*\(.*$/,'').trim();
+    if(somaProcItem[k]>itN.quantidade+0.001){
+      toast('A procedência de "'+nomeIt+'" ('+somaProcItem[k]+') é maior que a quantidade do item ('+itN.quantidade+'). Ajuste a procedência (×) antes de salvar.',true);
+      return;
+    }
+    const mudou=Math.abs(parseFloat(itA.quantidade||0)-itN.quantidade)>0.001;
+    if(mudou&&somaProcItem[k]+0.001<itN.quantidade)avisoProc.push(nomeIt);
+  }
+  if(avisoProc.length&&!confirm('A quantidade mudou em: '+avisoProc.join(', ')+'.\n\nA procedência (lotes) não cobre mais o item inteiro — a parte sem lote NÃO entra no Centro de Custo. Salvar assim mesmo?'))return;
   // Update venda
-  await supa.patch('vendas?id=eq.'+vid,{cliente,cliente_id:parseInt(clidSel)||null,data_venda:data,numero_venda:numero,obs,valor_total:total});
-  vendasC=vendasC.map(v=>v.id===vid?{...v,cliente,cliente_id:parseInt(clidSel)||null,data_venda:data,numero_venda:numero,obs,valor_total:total}:v);
+  const resV=await supa.patch('vendas?id=eq.'+vid,{cliente,cliente_id:parseInt(clidSel)||null,data_venda:data,numero_venda:numero,obs,valor_total:totalLiquido});
+  if(resV===null)return;
+  // Mudou o total? Reavalia o status de pagamento com o que já foi pago.
+  const jaPago=parseFloat(vAtual.valor_pago||0);
+  const novoStatusPg=jaPago>=totalLiquido-0.01&&totalLiquido>0?'pago':jaPago>0?'parcial':'nao_pago';
+  if(novoStatusPg!==vAtual.status_pagamento)await supa.patch('vendas?id=eq.'+vid,{status_pagamento:novoStatusPg});
+  vendasC=vendasC.map(v=>v.id===vid?{...v,cliente,cliente_id:parseInt(clidSel)||null,data_venda:data,numero_venda:numero,obs,valor_total:totalLiquido,status_pagamento:novoStatusPg}:v);
   // Update itens (apagar procedencia primeiro, pois tem FK para venda_itens)
   await supa.del('venda_procedencia?venda_id=eq.'+vid);
   vendaProcedenciaC=vendaProcedenciaC.filter(x=>x.venda_id!==vid);
@@ -5614,9 +5979,40 @@ async function salvarEdicaoVenda(){
     if(r&&r[0])vendasItensC.push(r[0]);
   }
   // Recriar procedencia
-  const newProc=window._editVendaProc||[];
-  for(const p of newProc){
-    if(!p.valor||p.valor<=0)continue;
+  // Os valores (R$) e as quantidades por lote são RECALCULADOS a partir dos campos atuais da tela:
+  // assim, lançar/alterar preço ou quantidade depois atualiza a receita de cada lote automaticamente,
+  // e a procedência é gravada mesmo com valor 0 (venda ainda sem preço).
+  const procPorItem={};
+  (window._editVendaProc||[]).forEach(p=>{const k=p._itemIdx||0;(procPorItem[k]=procPorItem[k]||[]).push(p);});
+  const procFinal=[];
+  Object.keys(procPorItem).forEach(k=>{
+    const idx=parseInt(k);
+    const itemAntigo=itens[idx],itemNovo=novosItens[idx];
+    if(!itemAntigo||!itemNovo)return;
+    const qtdAntiga=parseFloat(itemAntigo.quantidade||0);
+    const qtdNova=parseFloat(itemNovo.quantidade||0);
+    if(!(qtdNova>0))return;
+    // Quantidade por lote = a que está na tela (ajuste manual). Só o VALOR (R$) é recalculado,
+    // já com desconto do item e desconto global da nota.
+    const valorItemLiq=itemNovo.valor_final*fatorGlobal;
+    const lista=procPorItem[k].map(p=>{
+      const q=parseFloat(parseFloat(p.quantidade||0).toFixed(4));
+      const un=p.unidade||(String(itemNovo.produto||'').includes('Caixa')?'caixa':String(itemNovo.produto||'').includes('Pente')?'pente':'ovo');
+      const fator=un==='caixa'?360:un==='pente'?30:1;
+      return{...p,quantidade:q,unidade:un,ovos_equivalentes:q*fator,valor:parseFloat((valorItemLiq*(q/qtdNova)).toFixed(2))};
+    }).filter(p=>p.quantidade>0);
+    // Se a procedência cobre 100% do item, ajusta o centavo de arredondamento na última linha
+    const somaQ=lista.reduce((a,p)=>a+p.quantidade,0);
+    if(lista.length&&Math.abs(somaQ-qtdNova)<0.001){
+      const somaV=lista.reduce((a,p)=>a+p.valor,0);
+      const ult=lista[lista.length-1];
+      ult.valor=parseFloat((ult.valor+(valorItemLiq-somaV)).toFixed(2));
+    }
+    lista.forEach(p=>procFinal.push({...p,_itemIdx:idx}));
+  });
+  window._editVendaProc=procFinal;
+  let procFalhou=false;
+  for(const p of procFinal){
     // Get venda_item_id from saved items
     const savedItem=vendasItensC.filter(it=>it.venda_id===vid)[p._itemIdx||0]||null;
     const pr=await supa.post('venda_procedencia',{
@@ -5625,10 +6021,12 @@ async function salvarEdicaoVenda(){
       quantidade:p.quantidade,unidade:p.unidade,
       valor:p.valor,ovos_equivalentes:p.ovos_equivalentes||0
     });
+    if(pr===null){procFalhou=true;continue;}
     if(pr&&pr[0])vendaProcedenciaC.push(pr[0]);
   }
+  if(procFalhou)toast('Venda atualizada, mas parte da procedência NÃO foi gravada. Abra Editar novamente e confira.',true);
   closeModal('modal-edit-venda');
-  toast('Venda atualizada!');
+  if(!procFalhou)toast('Venda atualizada!');
   setFinTab('vendas');
   }finally{window._salvandoEdicaoVenda=false;}
 }
@@ -5737,6 +6135,13 @@ async function abrirNovoRegistroDia(gid, dia, mesAno){
 }
 
 async function salvarEdicaoRegistro(){
+  if(window._salvandoEdicaoReg)return;
+  window._salvandoEdicaoReg=true;
+  const bs=document.querySelector('#modal-edit-reg .modal-btn-save');if(bs){bs.disabled=true;}
+  try{await _salvarEdicaoRegistroCore();}
+  finally{window._salvandoEdicaoReg=false;if(bs)bs.disabled=false;}
+}
+async function _salvarEdicaoRegistroCore(){
   const ridRaw=document.getElementById('edit-reg-id').value;
   const pentes=parseInt(document.getElementById('edit-reg-pentes').value||0);
   const mortes=parseInt(document.getElementById('edit-reg-mortes').value||0);
@@ -5758,53 +6163,55 @@ async function salvarEdicaoRegistro(){
     let existente=histCache.find(r=>r.galpao_id===gid&&r.data_registro===dr);
     if(!existente&&isOnline){
       const check=await supa.get('registros?galpao_id=eq.'+gid+'&data_registro=eq.'+encodeURIComponent(dr));
-      if(check&&check.length)existente=check[0];
+      if(check===null){toast('Não foi possível confirmar se já existe registro deste dia (falha de conexão). NÃO salvo — tente novamente.',true);return;}
+      if(check.length)existente=check[0];
     }
-    // Se o dia ja tinha uma baixa de abate registrada (registros.saida_abate), ela precisa sobreviver
-    // ao delete+recriacao abaixo — senao a baixa desaparece e as aves "voltam" (mesma classe do bug
-    // das quedas fantasma, por outro caminho). As saidas_abate vinculadas a esse registro tambem
-    // precisam ser re-apontadas pro id novo, senao editar/excluir essa saida depois nao acha mais o registro.
+    // Já existe registro neste dia: ATUALIZA o registro existente (PATCH) em vez de apagar e recriar.
+    // Assim o id é mantido, a baixa de abate (saida_abate) e as saidas_abate vinculadas continuam intactas,
+    // e nunca sobra cópia caso o apagamento falhasse (era o caminho antigo de duplicidade).
     let saidaAbatePreservada=0;
-    let saidasVinculadas=[];
     if(existente){
       const ok=confirm('Já existe um registro para este dia, deseja alterá-lo?');
       if(!ok)return;
       saidaAbatePreservada=parseFloat(existente.saida_abate||0);
-      if(isOnline&&existente.id&&typeof existente.id!=='string'){
-        if(saidaAbatePreservada>0){
-          const vinc=await supa.get('saidas_abate?registro_id=eq.'+existente.id+'&select=id');
-          if(vinc)saidasVinculadas=vinc;
-        }
-        await supa.del('registros?id=eq.'+existente.id);
-      }
-      histCache=histCache.filter(r=>!(r.galpao_id===gid&&r.data_registro===dr));
-      LS.set('g_hist',histCache);
     }
     const g=GALPOES.find(x=>x.id===gid);
-    const aves=avesReais[gid]||1;
-    const taxa=parseFloat((ovos/aves*100).toFixed(1));
     const now=new Date();
-    const newRec={
-      data_registro:dr,
-      horario:now.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}),
-      colaborador:currentUser?(currentUser.adm?'ADM':currentUser.nome||''):'',
-      galpao_id:gid,galpao_nome:g?g.nome:gid,
-      lote_id:loteId,aves_no_dia:aves,mortes,saida_abate:saidaAbatePreservada,aves_restantes:Math.max(0,aves-mortes-saidaAbatePreservada),
-      causa_morte:causa,total_pentes:pentes,total_ovos:ovos,taxa_postura:taxa,
-      coletas:'[]',silos:'[]',tratos:'[]',obs
-    };
-    const res=await supa.post('registros',newRec);
-    if(res&&res[0]){
-      histCache.unshift(res[0]);LS.set('g_hist',histCache);
-      if(saidasVinculadas.length){
-        await Promise.all(saidasVinculadas.map(s=>supa.patch('saidas_abate?id=eq.'+s.id,{registro_id:res[0].id})));
-        saidasAbateC=saidasAbateC.map(s=>saidasVinculadas.find(v=>v.id===s.id)?{...s,registro_id:res[0].id}:s);
-      }
+    if(existente&&isOnline&&existente.id&&typeof existente.id!=='string'){
+      const avesDia=parseFloat(existente.aves_no_dia||avesReais[gid]||1)||1;
+      const patchEx={
+        horario:now.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}),
+        colaborador:currentUser?(currentUser.adm?'ADM':currentUser.nome||''):'',
+        mortes,aves_restantes:Math.max(0,avesDia-mortes-saidaAbatePreservada),
+        causa_morte:causa,total_pentes:pentes,total_ovos:ovos,taxa_postura:parseFloat((ovos/avesDia*100).toFixed(1)),
+        obs,editado_em:new Date().toISOString()
+      };
+      const pRes=await supa.patch('registros?id=eq.'+existente.id,patchEx);
+      if(pRes===null){toast('Não foi possível atualizar o registro (falha de conexão). NADA foi alterado — tente novamente.',true);return;}
+      histCache=histCache.map(r=>r.id===existente.id?{...r,...patchEx}:r);
+      LS.set('g_hist',histCache);
+    } else {
+      const aves=avesReais[gid]||1;
+      const taxa=parseFloat((ovos/aves*100).toFixed(1));
+      const newRec={
+        data_registro:dr,
+        horario:now.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}),
+        colaborador:currentUser?(currentUser.adm?'ADM':currentUser.nome||''):'',
+        galpao_id:gid,galpao_nome:g?g.nome:gid,
+        lote_id:loteId,aves_no_dia:aves,mortes,saida_abate:0,aves_restantes:Math.max(0,aves-mortes),
+        causa_morte:causa,total_pentes:pentes,total_ovos:ovos,taxa_postura:taxa,
+        coletas:'[]',silos:'[]',tratos:'[]',obs
+      };
+      const prN=await _postRegistro(newRec);
+      if(prN.status==='conflito'){toast('Já existe um registro deste galpão neste dia — NÃO foi duplicado. Atualize a tela.',true);return;}
+      if(prN.status==='erro'){toast('Falha ao gravar o registro. Tente novamente.',true);return;}
+      const res=prN.data;
+      if(res&&res[0]){histCache.unshift(res[0]);LS.set('g_hist',histCache);}
     }
     // Reset modal title
     const h3=document.querySelector('#modal-edit-reg h3');if(h3)h3.textContent='Editar registro';
     closeModal('modal-edit-reg');
-    toast('Registro adicionado!'+(saidaAbatePreservada>0?' (saída de '+saidaAbatePreservada.toLocaleString('pt-BR')+' aves pra abate preservada)':'')+' Recalculando dias seguintes...');
+    toast((existente?'Registro atualizado!':'Registro adicionado!')+(saidaAbatePreservada>0?' (saída de '+saidaAbatePreservada.toLocaleString('pt-BR')+' aves pra abate preservada)':'')+' Recalculando dias seguintes...');
     await recalcularCascataAves(gid,loteId,dr);
     renderHist();
     return;
@@ -6593,6 +7000,32 @@ function renderCCGalpoes(panel){
   });
 }
 
+// Meses do Centro de Custo de um lote, em ordem crescente: da chegada até o mês do ENCERRAMENTO
+// (lote encerrado não gera mais meses novos). Se existir lançamento do lote em mês posterior
+// ao encerramento (venda/despesa tardia), esse mês entra para o valor não ficar escondido.
+// Lote ativo: vai até o mês atual.
+function _ccMesesDoLote(lote,loteId){
+  const hoje=new Date();
+  const ini=lote&&lote.data_chegada?parseDateBR(lote.data_chegada):hoje;
+  const mesAtual=hoje.getFullYear()*12+hoje.getMonth();
+  let fimIdx=mesAtual;
+  if(lote&&lote.status!=='ativo'&&lote.data_encerramento){
+    const e=parseDateBR(lote.data_encerramento);
+    fimIdx=e.getFullYear()*12+e.getMonth();
+    let maxDados=fimIdx;
+    const reg=(a,m)=>{a=parseInt(a);m=parseInt(m);if(a&&m)maxDados=Math.max(maxDados,a*12+(m-1));};
+    vendaProcedenciaC.filter(p=>p.lote_id===loteId).forEach(p=>{const v=vendasC.find(x=>x.id===p.venda_id);if(v){const d=parseDateBR(v.data_venda);reg(d.getFullYear(),d.getMonth()+1);}});
+    saidasAbateC.filter(s=>s.lote_id===loteId).forEach(s=>reg(s.ano,s.mes));
+    racaoCache.filter(r=>r.lote_id===loteId&&r.data_fabricacao).forEach(r=>{const p=r.data_fabricacao.split('-');reg(p[0],p[1]);});
+    despesasC.filter(d=>d.lote_id===loteId).forEach(d=>reg(d.ano,d.mes));
+    salariosC.filter(s=>s.lote_id===loteId).forEach(s=>reg(s.ano,s.mes));
+    fimIdx=Math.min(maxDados,mesAtual);
+  }
+  const meses=[];
+  for(let i=ini.getFullYear()*12+ini.getMonth();i<=fimIdx;i++)meses.push({ano:Math.floor(i/12),mes:(i%12)+1});
+  return meses;
+}
+
 function abrirResumoLote(gid,loteId,panel){
   const lote=lotesC.find(l=>l.id===loteId);
   const g=GALPOES.find(x=>x.id===gid);
@@ -6602,12 +7035,7 @@ function abrirResumoLote(gid,loteId,panel){
   const isPos=v=>parseFloat(v||0)>=0;
 
   // Meses do lote em ordem crescente
-  const chegada=lote.data_chegada?new Date(lote.data_chegada):new Date();
-  const fim=lote.data_encerramento?new Date(lote.data_encerramento):new Date();
-  const months=[];
-  let d=new Date(chegada.getFullYear(),chegada.getMonth(),1);
-  const limMes=new Date(fim.getFullYear(),fim.getMonth(),1);
-  while(d<=limMes){months.push({ano:d.getFullYear(),mes:d.getMonth()+1});d=new Date(d.getFullYear(),d.getMonth()+1,1);}
+  const months=_ccMesesDoLote(lote,loteId);
 
   // Custo das galinhas
   const custoGalinhas=(lote.aves_iniciais||0)*(lote.valor_unitario_ave||0);
@@ -6748,15 +7176,8 @@ function abrirCCLote(gid,loteId,panelArg){
   const lote=lotesC.find(l=>l.id===loteId);
   const g=GALPOES.find(x=>x.id===gid);
   // Build list of months since lote start
-  const chegada=lote&&lote.data_chegada?new Date(lote.data_chegada):new Date();
-  const now=new Date();
-  const months=[];
-  let d=new Date(chegada.getFullYear(),chegada.getMonth(),1);
-  while(d<=new Date(now.getFullYear(),now.getMonth(),1)){
-    months.push({ano:d.getFullYear(),mes:d.getMonth()+1});
-    d=new Date(d.getFullYear(),d.getMonth()+1,1);
-  }
-  months.reverse();
+  // Lote encerrado: só vai até o mês do encerramento (ver _ccMesesDoLote)
+  const months=_ccMesesDoLote(lote,loteId).reverse();
   panel.innerHTML='';
   const back=document.createElement('button');back.className='back-btn';back.textContent='← Voltar';
   back.onclick=()=>renderCCGalpoes(panel);panel.appendChild(back);
@@ -6929,11 +7350,16 @@ function abrirCCMes(gid,loteId,ano,mes){
   racaoDiv.innerHTML=racaoMes.length?racaoMes.map(r=>{
     const val=parseFloat(r.valor_mistura||0)*parseFloat(r.num_misturas||1);
     const isAdm=currentUser&&(currentUser.adm||currentUser.nivel===1);
-    return '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">'
-      +'<div>'+r.tipo+' — '+parseFloat(r.num_misturas||1).toLocaleString('pt-BR',{maximumFractionDigits:2})+' mistura(s)<div style="font-size:11px;font-family:var(--mono);color:var(--muted)">'+fmtD(r.data_fabricacao)+'</div></div>'
+    const misCC=parseFloat(r.num_misturas||1)||1;
+    const pesoMisCC=parseFloat(r.peso_total_kg||0)/misCC;
+    const detPers=r.personalizada
+      ?'<div style="font-size:11px;font-family:var(--mono);color:var(--muted)">Personalizada · '+_fmtKgRacao(pesoMisCC)+' kg/mistura · '+_fmtKgRacao(r.peso_total_kg)+' kg no total · R$ '+parseFloat(r.valor_mistura||0).toLocaleString('pt-BR',{minimumFractionDigits:2})+'/mistura'+(parseFloat(r.peso_total_kg||0)>0?' · R$ '+(val/parseFloat(r.peso_total_kg)).toLocaleString('pt-BR',{minimumFractionDigits:3,maximumFractionDigits:3})+'/kg':'')+'</div>'
+      :'';
+    return '<div style="padding:6px 0;border-bottom:1px solid var(--border);font-size:13px"><div style="display:flex;justify-content:space-between;align-items:center">'
+      +'<div>'+r.tipo+' — '+parseFloat(r.num_misturas||1).toLocaleString('pt-BR',{maximumFractionDigits:2})+' mistura(s)<div style="font-size:11px;font-family:var(--mono);color:var(--muted)">'+fmtD(r.data_fabricacao)+'</div>'+detPers+'</div>'
       +'<div style="display:flex;align-items:center;gap:8px">'
       +'<span style="font-family:var(--mono);font-weight:600">R$ '+val.toLocaleString('pt-BR',{minimumFractionDigits:2})+'</span>'
-      +'</div></div>';
+      +'</div></div>'+_racaoPersDetalheHtml(r)+'</div>';
   }).join(''):'<div style="font-size:13px;color:var(--muted)">Nenhuma fabricação este mês.</div>';
   panel.appendChild(ccCard('Custo — Ração','var(--blue)',racaoDiv.innerHTML,racaoTotal,'Custo total ração'));
 
